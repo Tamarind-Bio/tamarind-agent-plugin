@@ -1,0 +1,12 @@
+{
+  "name": "tamarind-agent-plugin",
+  "interface": { "displayName": "Tamarind Bio Agent Skills" },
+  "plugins": [
+    {
+      "name": "tamarind",
+      "source": { "source": "local", "path": "./plugins/tamarind" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Education & Research"
+    }
+  ]
+}

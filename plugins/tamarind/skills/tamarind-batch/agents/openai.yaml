@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tamarind Batch"
+  short_description: "Run one Tamarind tool across many inputs; poll the parent's batchStatus"
+  default_prompt: "Use $tamarind-batch to run this tool across many inputs on Tamarind: confirm the per-input cost multiplier, submit the batch, poll the PARENT's batchStatus through aggregation, download the aggregated result, and rank the subjobs."

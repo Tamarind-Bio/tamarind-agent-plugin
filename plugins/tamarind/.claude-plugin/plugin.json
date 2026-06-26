@@ -1,0 +1,12 @@
+{
+  "name": "tamarind",
+  "version": "0.1.0",
+  "description": "Run Tamarind Bio biology tools from your agent: predict structures, fold complexes, dock ligands, design and screen binders, and fine-tune models via the Tamarind API.",
+  "author": { "name": "Tamarind Bio", "url": "https://www.tamarind.bio" },
+  "homepage": "https://www.tamarind.bio",
+  "repository": "https://github.com/Tamarind-Bio/tamarind-agent-plugin",
+  "license": "MIT",
+  "keywords": ["tamarind", "computational-biology", "protein-design", "structure-prediction", "docking", "drug-discovery"],
+  "displayName": "Tamarind Bio",
+  "skills": ["./skills/"]
+}

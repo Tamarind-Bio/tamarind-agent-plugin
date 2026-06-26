@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "tamarind": {
+      "type": "http",
+      "url": "https://mcp.tamarind.bio/mcp",
+      "env_http_headers": {
+        "x-api-key": "TAMARIND_API_KEY"
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "tamarind",
+  "version": "0.1.0",
+  "description": "Run Tamarind Bio biology tools from your agent: predict structures, fold complexes, dock ligands, design and screen binders, and fine-tune models via the Tamarind API.",
+  "author": { "name": "Tamarind Bio", "url": "https://www.tamarind.bio" },
+  "homepage": "https://www.tamarind.bio",
+  "repository": "https://github.com/Tamarind-Bio/tamarind-agent-plugin",
+  "license": "MIT",
+  "keywords": ["tamarind", "computational-biology", "protein-design", "structure-prediction", "docking", "drug-discovery", "biotech"],
+  "skills": "./skills",
+  "mcpServers": "./.mcp.codex.json",
+  "interface": {
+    "displayName": "Tamarind Bio",
+    "shortDescription": "Fold, dock, design, and screen biomolecules via Tamarind",
+    "longDescription": "Use Tamarind Bio from your agent to run hundreds of biology tools: predict protein/RNA/DNA/ligand complex structures, dock small molecules, design and screen binders and antibodies, and fine-tune models. Submit jobs, poll status, and download results through the Tamarind API. One API key, the whole toolbox, no local GPU.",
+    "developerName": "Tamarind Bio",
+    "category": "Education & Research",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://www.tamarind.bio",
+    "brandColor": "#0B5",
+    "screenshots": [],
+    "defaultPrompt": [
+      "Fold this antibody-antigen complex with Boltz",
+      "Dock this ligand to my receptor with AutoDock Vina",
+      "Design binders for my target and screen them"
+    ]
+  }
+}

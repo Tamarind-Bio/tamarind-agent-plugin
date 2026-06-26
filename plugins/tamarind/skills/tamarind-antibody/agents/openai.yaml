@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tamarind Antibody"
+  short_description: "Design, redesign, and model antibodies and nanobodies on Tamarind"
+  default_prompt: "Use $tamarind-antibody to engineer this antibody or nanobody on Tamarind: design CDRs against an epitope, redesign CDR sequences on a complex, or predict the Fv/VHH structure."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tamarind Developability"
+  short_description: "Filter a hit list for stability, aggregation, solubility, and immunogenicity on Tamarind"
+  default_prompt: "Use $tamarind-developability to score this protein or antibody on Tamarind as a developability filter: thermostability, aggregation, solubility, viscosity, polyreactivity, glycosylation, or immunogenicity. Pick TAP for a paired antibody, TNP for a nanobody."

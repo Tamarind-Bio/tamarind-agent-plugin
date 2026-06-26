@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tamarind Docking"
+  short_description: "Dock a ligand, screen a library, or score binding affinity on Tamarind"
+  default_prompt: "Use $tamarind-docking to dock this ligand into the receptor (or screen a library / score binding affinity), then rank the poses and download the best."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tamarind Finetune and Inference"
+  short_description: "Fine-tune a model on your data, then run inference with it on Tamarind"
+  default_prompt: "Use $tamarind-finetune to train a model on my labeled data on Tamarind and then run inference with it (set the inference model to the finetune job's name)."

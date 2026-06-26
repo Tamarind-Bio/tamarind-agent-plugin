@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tamarind Binder Design"
+  short_description: "Design de novo protein, peptide, and small-molecule binders on Tamarind"
+  default_prompt: "Use $tamarind-binder-design to design de novo binders for my target on Tamarind, then rank the designs by interface confidence."

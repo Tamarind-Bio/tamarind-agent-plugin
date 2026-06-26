@@ -1,0 +1,9 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    { "title": "Setup & core", "skills": ["tamarind-api-setup", "tamarind-tool-discovery", "tamarind-submit-and-poll", "tamarind-results-analysis"] },
+    { "title": "Domain tools", "skills": ["tamarind-structure-prediction", "tamarind-antibody", "tamarind-binder-design", "tamarind-inverse-folding", "tamarind-docking", "tamarind-developability", "tamarind-finetune", "tamarind-more-tools"] },
+    { "title": "Scale & orchestration", "skills": ["tamarind-batch", "tamarind-pipeline"] }
+  ]
+}

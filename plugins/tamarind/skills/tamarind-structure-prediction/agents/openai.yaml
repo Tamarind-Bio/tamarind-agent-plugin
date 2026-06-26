@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tamarind Structure Prediction"
+  short_description: "Fold or co-fold a biomolecule from sequence on Tamarind (AlphaFold, Boltz, Chai, ESMFold2, Protenix)"
+  default_prompt: "Use $tamarind-structure-prediction to predict the 3D structure: pick the right folder for the input, build and validate settings, submit, poll to completion, download, and rank the models by confidence."

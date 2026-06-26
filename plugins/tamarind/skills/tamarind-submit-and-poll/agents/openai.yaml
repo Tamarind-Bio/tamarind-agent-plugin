@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tamarind Submit and Poll"
+  short_description: "Submit one Tamarind job, poll to terminal, download results"
+  default_prompt: "Use $tamarind-submit-and-poll to run this tool on Tamarind end to end: validate, submit, poll until it finishes, and download the output."
