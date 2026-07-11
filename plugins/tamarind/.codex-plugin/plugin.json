@@ -1,23 +1,36 @@
 {
   "name": "tamarind",
-  "version": "0.1.0",
-  "description": "Run Tamarind Bio biology tools from your agent: predict structures, fold complexes, dock ligands, design and screen binders, and fine-tune models via the Tamarind API.",
-  "author": { "name": "Tamarind Bio", "url": "https://www.tamarind.bio" },
+  "version": "0.2.0",
+  "description": "Run Tamarind Bio biology tools through the agent-friendly Tamarind CLI: discover, validate, submit, monitor, and analyze computational-biology jobs.",
+  "author": {
+    "name": "Tamarind Bio",
+    "url": "https://www.tamarind.bio"
+  },
   "homepage": "https://www.tamarind.bio",
   "repository": "https://github.com/Tamarind-Bio/tamarind-agent-plugin",
   "license": "MIT",
-  "keywords": ["tamarind", "computational-biology", "protein-design", "structure-prediction", "docking", "drug-discovery", "biotech"],
-  "skills": "./skills",
-  "mcpServers": "./.mcp.codex.json",
+  "keywords": [
+    "tamarind",
+    "computational-biology",
+    "protein-design",
+    "structure-prediction",
+    "docking",
+    "drug-discovery",
+    "biotech"
+  ],
+  "skills": "./skills/",
   "interface": {
     "displayName": "Tamarind Bio",
     "shortDescription": "Fold, dock, design, and screen biomolecules via Tamarind",
-    "longDescription": "Use Tamarind Bio from your agent to run hundreds of biology tools: predict protein/RNA/DNA/ligand complex structures, dock small molecules, design and screen binders and antibodies, and fine-tune models. Submit jobs, poll status, and download results through the Tamarind API. One API key, the whole toolbox, no local GPU.",
+    "longDescription": "Use Tamarind Bio from your agent to run hundreds of biology tools through the Tamarind CLI: predict protein/RNA/DNA/ligand complex structures, dock small molecules, design and screen binders and antibodies, and fine-tune models. The CLI owns authentication, validation, job state, and downloads; the plugin supplies workflow and scientific guidance.",
     "developerName": "Tamarind Bio",
     "category": "Education & Research",
-    "capabilities": ["Interactive", "Write"],
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
     "websiteURL": "https://www.tamarind.bio",
-    "brandColor": "#0B5",
+    "brandColor": "#00BB55",
     "screenshots": [],
     "defaultPrompt": [
       "Fold this antibody-antigen complex with Boltz",

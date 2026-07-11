@@ -46,7 +46,7 @@ DEFAULT_CUTOFF = {"ipsae": 0.7, "iptm": 0.6, "pdockq": 0.23, "plddt": 80.0,
 def _pick(row, aliases):
     for alias in aliases:
         for col, val in row.items():
-            if col.strip().lower() == alias and isinstance(val, float):
+            if col.strip().lower() == alias and _common.is_finite_number(val):
                 return val
     return None
 
@@ -104,7 +104,7 @@ def _resolve_metric(designs, forced):
                              f"choose from {list(HIGHER_BETTER)}")
         return forced
     for key in METRIC_PRIORITY:
-        if any(d.get(key) is not None for d in designs):
+        if any(_common.is_finite_number(d.get(key)) for d in designs):
             return key
     raise SystemExit("no rankable interface metric present in the CSV")
 
@@ -118,8 +118,11 @@ def summarize(designs, metric=None, cutoff=None):
     metric = _resolve_metric(designs, metric)
     if cutoff is None:
         cutoff = DEFAULT_CUTOFF[metric]
+    if not _common.is_finite_number(cutoff):
+        raise SystemExit("cutoff must be a finite number")
 
-    scored = [d for d in designs if d.get(metric) is not None]
+    normalized = [_common.normalize_non_finite(d) for d in designs]
+    scored = [d for d in normalized if _common.is_finite_number(d.get(metric))]
     ranked = sorted(scored, key=lambda d: d[metric], reverse=True)
     for r, d in enumerate(ranked, 1):
         d["rank"] = r
@@ -177,7 +180,7 @@ def main(argv=None):
 
     summary = summarize(load_designs(a.run_dir), metric=a.metric, cutoff=a.cutoff)
     if a.json:
-        print(json.dumps(summary, indent=2))
+        print(json.dumps(summary, indent=2, allow_nan=False))
     else:
         print_summary(summary, show=a.show)
     return 0

@@ -1,4 +1,4 @@
 interface:
   display_name: "Tamarind Inverse Folding and PLMs"
-  short_description: "Design sequences for a backbone, or run a protein language model on Tamarind"
-  default_prompt: "Use $tamarind-inverse-folding to design sequences for this backbone (ProteinMPNN/LigandMPNN/ESM-IF1) or run a protein language model for embeddings, mutational scanning, or generation."
+  short_description: "Design sequences or run protein language models"
+  default_prompt: "Use $tamarind-inverse-folding to design sequences for this backbone or run the requested protein language-model task."

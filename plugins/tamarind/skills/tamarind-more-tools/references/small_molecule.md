@@ -1,13 +1,15 @@
 # Small-molecule property / ADMET / quantum chemistry
 
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
 Compute properties of a single small molecule from its 2D/3D structure: drug-likeness / ADMET, physicochemical descriptors (logP, pKa, solubility), quantum chemistry (energies, geometries, electronic structure, spectra), conformer ensembles, and library generation / search. Mostly fast CPU predictors keyed off a SMILES string or an SDF file. NOT docking or simulation (use the docking skill or [references/md.md](md.md)).
 
 Discover live, then read the schema:
 
-```
-getAvailableTools(function="small-molecule-property-prediction")
-getAvailableTools(modality="small-molecule")
-getJobSchema(jobType="logp")            # exact params + conditionals before you submit
+```bash
+tamarind --json tools --function small-molecule-property-prediction
+tamarind --json tools --modality small-molecule
+tamarind --json schema logp
 ```
 
 Most of the QM / property tools (`logp`, `pka`, `conformer-generation`, and the rest of the qchem suite) share ONE CPU Docker image and the same SMILES-or-SDF input shape, so once you know one, the others follow the same pattern. Each typically has a `task` / `inputType` selector picking `smiles` (text) vs `sdf` (file, bare filename, uploaded first).
@@ -24,7 +26,7 @@ Broad first-pass profile across many ADMET / physicochemical endpoints (permeabi
 Single physicochemical properties with method control.
 - `logp`: `inputType` (`smiles`/`sdf`), then `smiles` or `sdfFile`; `method` (`crippen` instant atom-contribution, or `xtb` physics-based ~30s); `charge` (only respected when `method=xtb`).
 - `pka`: `inputType`, then `smiles`/`sdfFile`; `method` (`xtb-gfn2`); `charge` is the charge of the MOST PROTONATED state (set it correctly for already-charged inputs); `ionizableSites` uses 0-based RDKit atom INDICES (auto-detect by leaving empty).
-- Conditional fields are silent no-ops when their condition is unmet, so `validateJob` before submitting.
+- Conditional fields are silent no-ops when their condition is unmet, so run `tamarind --json validate TOOL --input FILE --name JOB_NAME` before submitting.
 
 ### conformer-generation (Conformer Generation)
 Generate, cluster, and energy-rank a 3D conformer ensemble to feed docking, shape comparison, QM, or pharmacophore work.
@@ -33,7 +35,7 @@ Generate, cluster, and energy-rank a 3D conformer ensemble to feed docking, shap
 - Siblings: `openconf` (preset workflows), `loqi` (QM-accuracy low-energy conformers), `geometry-optimization` (relax ONE geometry, not an ensemble).
 
 ### The qchem suite (shared CPU image)
-One image, the SMILES-or-SDF input shape, fast and cheap. Discover the current set with `getAvailableTools(function="small-molecule-property-prediction")` and `getJobSchema(<tool>)` for each tool's method-specific knobs.
+One image, the SMILES-or-SDF input shape, fast and cheap. Discover the current set with `tamarind --json tools --function small-molecule-property-prediction`, then run `tamarind --json schema TOOL` for each tool's method-specific knobs.
 
 ### reinvent-finetune / enumeration (library generation)
 - `enumeration` (R-Group Enumeration): build a combinatorial library from a `[*:1]/[*:2]`-marked scaffold SMILES plus an R-group CSV, with optional Lipinski / MW / logP / TPSA filters and diversity selection.
@@ -41,7 +43,7 @@ One image, the SMILES-or-SDF input shape, fast and cheap. Discover the current s
 
 ## Catalog (one-liners)
 
-Reach for `getJobSchema(<tool>)` for exact knobs; most share the qchem image.
+Run `tamarind --json schema TOOL` for exact knobs; most share the qchem image.
 
 - Physicochemical / solubility: `aqueous-solubility` (logS, optional xTB solvation), `fastsolv` (solubility in a named solvent), `molecular-descriptors` (200+ RDKit descriptors + fingerprints).
 - Acid/base and protonation: `microscopic-pka` (per-group), `qupkake` (fast ML pKa, optional tautomerize), `protonation-state` (dominant species at a pH), `tautomer` (enumerate + rank tautomers). Note `propka` is for ionizable RESIDUES in a PROTEIN, not a small molecule.

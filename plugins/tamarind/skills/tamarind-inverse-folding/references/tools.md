@@ -1,6 +1,8 @@
 # Inverse folding and PLMs: field maps, outputs, catalog
 
-Source of truth is live `getJobSchema(<tool>)` and `getAvailableTools(function="inverse-folding")` / `function="protein-language-models"`. The catalog drifts; treat everything below as a grounded snapshot and re-fetch when a field stops validating. File-typed params (`pdbFile`) take the **bare filename** of an uploaded file, a prior-job output path (`JobName/...`), or inline PDB text; they do NOT take an email-prefixed S3 key (see `tamarind-submit-and-poll` for the full file-param rule).
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
+Source of truth is `tamarind --json tools --function inverse-folding`, `tamarind --json tools --function protein-language-models`, and `tamarind --json schema TOOL`. The catalog drifts; treat everything below as a grounded snapshot and re-query when a field stops validating. File-typed parameters such as `pdbFile` take the **bare filename** returned by `tamarind --json files upload PATH`, a prior-job output path (`JobName/...`), or inline PDB text; they do NOT take an email-prefixed object key (see `tamarind-submit-and-poll` for the full file-parameter rule).
 
 The two families differ in input: inverse folders take a STRUCTURE (`pdbFile`) and emit SEQUENCES; PLMs take a SEQUENCE (`sequence`) and emit vectors, score matrices, or new sequences. Read the residue-numbering convention per tool: the MPNN family uses PDB AUTHOR numbers, ESM-IF1 requires 1..N renumbering.
 
@@ -12,7 +14,7 @@ The workhorse inverse folder: a message-passing GNN that autoregressively sample
 
 - `pdbFile` (required, `.pdb`): the backbone to design.
 - `designedResidues` (required, `selectMultichainResidues`, per-chain map, **space-separated** PDB author numbers within a chain): the residues to redesign, e.g. `{"B": "26 27 28 29 30 31 32"}`. An empty value for a listed chain redesigns that whole chain.
-- `designedChains` (`list`, `exclude:["api"]`): chains to redesign (rest held fixed). Omit over the API (omitted = design all chains).
+- `designedChains` is UI-only for this tool. Omit it from CLI settings (omitted = design all chains).
 - `numSequences` (default 2): sequences per backbone.
 - `temperature` (default 0.1, 0-1): sampling diversity; higher = more diverse, suggested 0.1-0.3.
 - `modelType` (default `proteinmpnn`; `task`-typed): `proteinmpnn` | `ligandmpnn` | `solublempnn` | `hypermpnn` | `abmpnn`. The variant selector that reaches four siblings without switching tools (soluble = soluble-only training; hyper = thermostability-biased; ab = antibody-finetuned, IMGT-renumbers in place; ligand = cofactor-aware).
@@ -22,7 +24,7 @@ The workhorse inverse folder: a message-passing GNN that autoregressively sample
 - `bias_AA_per_residue` (json, keyed `{"C1": {"P": 10.0}}` = chain+resnum): per-position per-AA bias.
 - `omit_AA_per_residue` (json): per-position omit; to FORCE a residue at a position, omit all others.
 - `homo_oligomer` (number): copies to tie sequences across symmetric chains (2 = dimer, 3 = trimer).
-- `verifySequences` (`exclude:["api","pipelines","batch"]`): UI-only auto-fold-back; do NOT send over the API.
+- `verifySequences` is UI-only auto-fold-back; do not include it in CLI settings.
 
 Output: a FASTA of designed sequences (`seqs/...fa`) plus a `metrics.csv` (per-sequence ProteinMPNN score / global score / recovery). Each header carries its sampling temperature and score.
 
@@ -35,7 +37,7 @@ Numbering: `designedResidues` are PDB author numbers, NOT 0-indexed. Do not pre-
 Inverse folding with the bound ligand / metal / nucleic acid held fixed as context. The same wrapper as ProteinMPNN run with `--model_type ligand_mpnn`, so the fields match proteinmpnn minus the `modelType` selector.
 
 - `pdbFile` (required, `.pdb`): the backbone INCLUDING the ligand/metal/nucleic-acid HETATM or chain records (those are the context).
-- `designedChains` (`exclude:["api"]`), `designedResidues` (per-chain, space-separated author numbers), `numSequences` (default 2), `temperature` (default 0.1), `omitAAs` (default `C`), `bias_AA`, `bias_AA_per_residue`, `omit_AA_per_residue`, `homo_oligomer`: same semantics as proteinmpnn.
+- `designedChains` is UI-only; `designedResidues` (per-chain, space-separated author numbers), `numSequences` (default 2), `temperature` (default 0.1), `omitAAs` (default `C`), `bias_AA`, `bias_AA_per_residue`, `omit_AA_per_residue`, and `homo_oligomer` otherwise have the same semantics as proteinmpnn.
 - `noiseLevel`: present in the schema but gated to `modelType == proteinmpnn`; the ligandmpnn tool uses the LigandMPNN checkpoint directly.
 - Categories include `small-molecule-binding-protein` and `nucleic-acid`, reflecting the ligand/NA awareness.
 
@@ -118,13 +120,13 @@ PLM and inverse-folding outputs depend on seed / model / temperature, so read th
 - **Masked-LM scan** -> a per-position x AA log-likelihood matrix (CSV/JSON). Higher likelihood for a substitution = more tolerated; rank candidate mutations by the matrix.
 - **Job row `Score`**: tool-specific metrics on a completed job. **`WeightedHours`**: the billing unit (weighted hours; GPU tools cost more per wall-hour than CPU tools, and the 6B/15B models are the slow/expensive end).
 
-Enumerate exact output paths with `listJobFiles(jobName)` (returns `s3Path`) before downloading; do not hardcode filenames, which vary by tool and version.
+Download one completed small job with `tamarind --no-json results JOB_NAME --download DIRECTORY` and inspect the extracted paths; do not hardcode filenames, which vary by tool and version.
 
 ---
 
 ## Catalog: the rest of the bucket (one line each)
 
-Reach for one of these when a workflow names it; `getJobSchema` it first since these drift.
+Reach for one of these when a workflow names it; run `tamarind --json schema TOOL` first because these drift.
 
 **Inverse-folding / MPNN family**
 - **`caliby`** (Caliby): SOTA ensemble/multistate inverse folding; builds a structure-conditioned Potts model (sitewise fields + pairwise couplings) and samples sequences by discrete Langevin MC, averaging energies across a structural ensemble (synthetic via partial diffusion, or user-provided). Reach for it to design over multiple structural states or to rescue native/de novo backbones ProteinMPNN fails to design; apo backbone-conditioned (for a fixed pocket ligand use `ligandmpnn`). Also packs sidechains on a backbone+sequence.

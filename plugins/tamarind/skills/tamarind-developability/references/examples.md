@@ -1,12 +1,14 @@
 # Tamarind Bio: developability example payloads
 
-The freshest example for any tool is the `exampleJob` that MCP `getJobSchema(<tool>)`
-returns: a `{jobName, type, settings}` assembled from each param's example/default (file
-params get placeholder names). It is the best starting point, but **run `validateJob` on it
-before submitting** - it is built from per-param examples, not a guaranteed-valid payload.
-The payloads below are a worked, `validateJob`-confirmed fallback for REST callers. Schemas
-evolve; if one stops validating, re-fetch with `getJobSchema(<tool>)`. Sequences here are
-illustrative; swap your own candidate.
+> Operational examples in this reference use the Tamarind CLI. Query live fields with `tamarind --json schema TOOL`, validate settings with `tamarind --json validate TOOL --input FILE --name JOB_NAME`, and download completed outputs with `tamarind --no-json results JOB_NAME --download DIRECTORY`.
+
+The freshest example for any tool is the `exampleJob` in `tamarind --json schema TOOL`:
+a `{jobName, type, settings}` assembled from each parameter's example/default (file
+parameters get placeholder names). It is a useful starting point, but validate the adapted
+settings before submitting because per-parameter examples are not guaranteed to form a valid
+job together. The payloads below were validated against the live service when this reference
+was authored; treat them as historical snapshots and re-run the CLI schema and validation
+commands whenever a field stops validating. Sequences are illustrative; swap your own candidate.
 
 **File params (`pdbFile`) need a real file value:** the **bare filename** of an uploaded file
 (`my_protein.pdb`, NOT email-prefixed), a prior-job output path (`JobName/out/x.pdb`), or
@@ -14,20 +16,22 @@ inline PDB text (multi-line `ATOM`/`HETATM` records). A `<...>` placeholder is N
 written; replace it. Don't put an amino-acid sequence in a file param - a structure goes in
 `pdbFile`, a sequence goes in `sequence` (or `heavySequence`/`lightSequence`).
 
-`BASE = "https://app.tamarind.bio/api"`, `HEADERS = {"x-api-key": <key>}`.
-
 ## Self-check (run this first, read-only, no cost)
 
 Confirms the discover -> validate loop end to end with no submission:
 
-```python
-import os, requests
-BASE, HEADERS = "https://app.tamarind.bio/api", {"x-api-key": os.environ["TAMARIND_API_KEY"]}
-tools = requests.get(f"{BASE}/tools", headers=HEADERS).json()
-assert any(t["name"] == "tap" for t in tools), "developability tools reachable"
+```yaml
+# netsolp-selfcheck.yaml
+sequence: MKTVRQERLKSIVRILERSKEPVSGAQLAEELSVSRQVIVQDIAYLRSLGYNIVATPRGYVLAGG
 ```
 
-With the MCP, `validateJob(jobName="selfcheck", type="netsolp", settings={"sequence":"MKTVRQERLKSIVRILERSKEPVSGAQLAEELSVSRQVIVQDIAYLRSLGYNIVATPRGYVLAGG"})` returns `valid: true`.
+```bash
+tamarind --json tools --function developability
+tamarind --json schema netsolp
+tamarind --json validate netsolp --input netsolp-selfcheck.yaml --name selfcheck
+```
+
+The validation command should return `valid: true`. It does not submit a job.
 
 ## Canonical tools
 
@@ -53,7 +57,8 @@ antibody (it ignores the light chain).
 ```
 `pdbFile` is a file param (upload first, reference the bare filename). `chains` is a **LIST**,
 required unless `allChains: true`. `topK` is the max sequences out (a string dropdown). Do NOT
-pass `verify` over the API (`exclude:["api","pipelines","batch"]`, silently dropped).
+include `verify` in CLI settings; the live schema marks it as UI-only and it is ignored by
+submission paths.
 
 ### thermompnn-d - propose stabilizing double mutations
 ```json
@@ -184,14 +189,14 @@ single `tamarind-batch` call, then keep the candidates that pass. This folds the
 inputs (poll the batch PARENT's `batchStatus`, not subjob `JobStatus` - see `tamarind-batch`):
 
 ```bash
-# Score MANY antibody candidates with TAP in one batch: use the inline submit_batch()
-# client function (see tamarind-batch). The tamarind_job.py CLI has no batch subcommand;
-# `submit` posts a SINGLE job, so it cannot drive a batch.
-#   from tamarind_client import submit_batch
-#   submit_batch("dev-batch", "tap", jobNames, settingsList)   # then poll the parent's batchStatus
-# Single candidate, one-at-a-time:
-python3 scripts/tamarind_job.py run cand-a-tap tap '{"heavySequence":"...","lightSequence":"..."}'
+# Put one settings object per candidate in dev-batch.yaml. Validate every row or
+# distinct conditional shape before multiplying the run.
+tamarind --json batch tap --input dev-batch.yaml --name dev-batch
+tamarind --json status dev-batch | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+tamarind --json jobs --batch dev-batch --include-subjobs --all
 ```
+
+On CLI 0.1.4, repeat the one-shot parent `status` check through the agent host at a bounded cadence and inspect `batchStatus`; do not call the single-job waiter for a batch parent.
 
 For a structure-based filter (e.g. `aggrescan3d` / `thermompnn` across a set of folded
 candidates), upload each structure first, then reference the bare filename in each subjob's
@@ -207,10 +212,10 @@ settings. The general pattern is the same: one developability tool over many inp
   error. A structure goes in the file param; a sequence goes in `sequence`.
 - **An email-prefixed file key** (`{email}/my.pdb`) in a file param - treated as inline content
   and 400s as not-uploaded. Use the BARE filename.
-- **`thermompnn` `chains` as a bare string** instead of a list, or passing `verify` over the
-  API (silently dropped, `exclude:["api"]`).
+- **`thermompnn` `chains` as a bare string** instead of a list, or including the UI-only
+  `verify` field (ignored by CLI submission).
 - **`protein-sol` with a sequence under 21 residues** - rejected (minimum length).
-- **Building a submit from `validateJob`'s `normalized` echo** - submit the clean settings you
+- **Building a submit from the validator's `normalized` echo** - submit the clean settings you
   validated, not the normalized blob (it carries filled-in defaults).
 
 ## Output shapes (describe, don't expect exact values)
@@ -236,5 +241,6 @@ the folded structure (for sequence tools that fold first, like TAP):
   mapped on; look at the high-propensity surface patches, not just a single aggregate.
 
 Job-row `Score` (JSON string on completed jobs) is tool-family dependent; `WeightedHours` is
-the billing unit. To learn a tool's exact output filenames, run one small job and
-`listJobFiles(jobName)` (MCP) before downloading - filenames vary by tool and version.
+the billing unit. To inspect a tool's exact output filenames, download one completed small job
+with `tamarind --no-json results JOB_NAME --download DIRECTORY` and inspect the extracted
+bundle; filenames vary by tool and version.

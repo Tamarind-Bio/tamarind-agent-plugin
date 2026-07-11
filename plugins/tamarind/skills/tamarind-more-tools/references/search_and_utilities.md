@@ -1,11 +1,13 @@
 # Search + format utilities
 
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
 Homology / structure search, structural alignment, and format / misc utilities. Discover live, then read the schema:
 
-```
-getAvailableTools(function="structure-search")    # foldseek, foldmason, us-align
-getAvailableTools(function="utilities")            # the broad utility set
-getJobSchema(jobType="foldseek")                   # exact params before you submit
+```bash
+tamarind --json tools --function structure-search
+tamarind --json tools --function utilities
+tamarind --json schema foldseek
 ```
 
 Pick by what you have and what you want:
@@ -14,7 +16,7 @@ Pick by what you have and what you want:
 - Align MANY structures at scale: `foldmason`. A careful pairwise structural superposition + TM-score: `us-align`.
 - Convert a file format: `file-converter`. Rebuild side chains on a coarse (CA-only) model: `pulchra`. Trim disordered regions: `alphacutter`. A quick pI / charge estimate: `ipc`.
 
-File params take a BARE filename uploaded first; `validateJob` checks file existence (an unuploaded filename returns `valid:false` while the rest resolved). You can also chain by passing an `s3Path` from `listJobFiles` of a prior job.
+File params take a bare filename uploaded first; `tamarind --json validate` checks file existence. For a prior result, download and inspect its bundle, then upload the exact selected artifact rather than guessing a remote path.
 
 ## Anchor tools
 

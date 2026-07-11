@@ -1,10 +1,12 @@
 # Cryo-EM model building
 
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
 Build, predict, and improve atomic models from cryo-EM density maps. Discover live, then read the schema:
 
-```
-getAvailableTools(modality="cryoem")
-getJobSchema(jobType="modelangelo")     # exact params before you submit
+```bash
+tamarind --json tools --modality cryoem
+tamarind --json schema modelangelo
 ```
 
 Pick by goal:

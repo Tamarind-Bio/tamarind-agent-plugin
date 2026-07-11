@@ -1,4 +1,4 @@
 interface:
   display_name: "Tamarind Pipeline"
-  short_description: "Chain multiple Tamarind tools: a declarative server-side pipeline or an imperative campaign loop"
-  default_prompt: "Use $tamarind-pipeline to chain multiple Tamarind tools (e.g. design -> fold -> score): pick the declarative pipeline or the imperative campaign loop, match stage types, wire stage 1 with the real value and stages 2+ with the pipe sentinel, and build only the stages asked for."
+  short_description: "Chain Tamarind jobs as resumable CLI stages"
+  default_prompt: "Use $tamarind-pipeline to turn this multi-tool workflow into resumable validated stages with explicit artifact handoffs."

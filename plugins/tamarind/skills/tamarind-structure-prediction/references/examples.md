@@ -1,29 +1,29 @@
 # Tamarind structure-prediction: validated examples & output shapes
 
-The freshest example for any folder is the `exampleJob` field that `getJobSchema(<tool>)` returns (an `{jobName, type, settings}` built from each param's example/default). It is the best starting point, but **run `validateJob` on it before submitting**: it is assembled from per-param examples, not a guaranteed-valid payload. The payloads below are a `validateJob`-confirmed fallback for REST callers or a worked example. Schemas evolve, so if one stops validating, re-fetch with `getJobSchema(<tool>)` / `GET /tools`. Sequences here are illustrative; swap your own.
+> Operational examples in this reference use the Tamarind CLI. Query live fields with `tamarind --json schema TOOL`, validate settings with `tamarind --json validate TOOL --input FILE --name JOB_NAME`, and download completed outputs with `tamarind --no-json results JOB_NAME --download DIRECTORY`.
 
-`BASE = "https://app.tamarind.bio/api"`, `HEADERS = {"x-api-key": <key>}`.
+The freshest example for any tool is the `exampleJob` field in `tamarind --json schema TOOL` (a `{jobName, type, settings}` built from each parameter's example/default). It is a useful starting point, but validate the adapted settings before submitting because per-parameter examples are not guaranteed to form a valid job together. The payloads below were validated against the live service when this reference was authored; treat them as historical snapshots and re-run the CLI schema and validation commands whenever a field stops validating. Sequences are illustrative; swap your own.
 
 ## Self-check (run this first)
 
 Read-only + dry-run, no submission, no cost. Confirms the discover -> schema -> validate loop end to end:
 
-```python
-import os, requests
-BASE, HEADERS = "https://app.tamarind.bio/api", {"x-api-key": os.environ["TAMARIND_API_KEY"]}
-
-# 1. discovery reachable?
-tools = requests.get(f"{BASE}/tools", headers=HEADERS).json()
-assert isinstance(tools, list) and any(t["name"] == "alphafold" for t in tools), "tools endpoint"
-
-# 2. validate a known-good payload (MCP validateJob; skip if REST-only) -> expect {"valid": true, ...}
+```yaml
+# alphafold-selfcheck.yaml
+sequence: MKTAYIAKQRQISFVKSHFSRQLEERLGLIE
 ```
 
-With the MCP server: `validateJob(jobName="selfcheck", type="alphafold", settings={"sequence": "MKTAYIAKQRQISFVKSHFSRQLEERLGLIE"})` -> `valid: true`.
+```bash
+tamarind --json tools --search alphafold
+tamarind --json schema alphafold
+tamarind --json validate alphafold --input alphafold-selfcheck.yaml --name selfcheck
+```
+
+The validation command should return `valid: true`. It does not submit a job.
 
 ## Validated input payloads
 
-Each below returned `valid:true` from `validateJob` against the live API.
+Each payload below returned `valid:true` against the live service when this reference was authored. Re-run CLI validation before use.
 
 ### AlphaFold, monomer
 ```json
@@ -88,7 +88,7 @@ Set `useMSA:false` to swap the real MSA for a language-model embedding (~90% acc
   "a3mMapping": [ {"a3mName": "chain_a.a3m", "boltzChainID": "A"},
                   {"a3mName": "chain_b.a3m", "boltzChainID": "B"} ] }
 ```
-Upload each `.a3m` first (reference by bare filename). **An a3m is matched to its chain by query sequence, not by filename**: the first sequence in `chain_a.a3m` must equal chain A's sequence. MSA generation is skipped for any chain you supply an a3m for. `a3mFiles`/`a3mMapping` are gated on `version:"2.2.1"` (confirm with `getJobSchema`).
+Upload each `.a3m` first (reference by bare filename). **An a3m is matched to its chain by query sequence, not by filename**: the first sequence in `chain_a.a3m` must equal chain A's sequence. MSA generation is skipped for any chain you supply an a3m for. `a3mFiles`/`a3mMapping` are gated on `version:"2.2.1"`; confirm with `tamarind --json schema boltz`.
 
 ### Batch, same folder, many sequences
 ```json
@@ -101,8 +101,8 @@ Poll the batch PARENT on `batchStatus` (not subjob `JobStatus`). See `tamarind-b
 
 ## What fails (and the exact error), confirmed live
 
-- **Boltz without `inputFormat`** -> `valid:false`, `Missing required boltz field "inputFormat"`. `sequence` alone is not enough for boltz/chai/protenix; always check required fields with `getJobSchema` first.
-- **Building a submit from validateJob's `normalized` blob** -> `normalized` is informational (defaults filled in, sometimes platform-managed fields). Submit the clean `settings` you validated, not the normalized echo.
+- **Boltz without `inputFormat`** -> `valid:false`, `Missing required boltz field "inputFormat"`. `sequence` alone is not enough for boltz/chai/protenix; always check required fields with `tamarind --json schema TOOL` first.
+- **Building a submit from the validator's `normalized` blob** -> `normalized` is informational (defaults filled in, sometimes platform-managed fields). Submit the clean `settings` you validated, not the normalized echo.
 - **A file param (`templateFiles`, `a3mFiles`, `initialGuess`) given a bare string that isn't a real path** -> treated as INLINE file content, not a reference. Point at an uploaded file by its bare filename (`template.cif`, NOT email-prefixed), or reference a prior job's output by the `JobName/path/to/file.ext` form. An email-prefixed key 400s as not-uploaded.
 - **A ligand value copied from boltz into protenix** -> protenix needs the `CCD_` prefix on CCD codes (`CCD_ATP`), so a bare `ATP` will not resolve. SMILES strings are portable; CCD codes are not.
 
@@ -111,7 +111,7 @@ Poll the batch PARENT on `batchStatus` (not subjob `JobStatus`). See `tamarind-b
 Outputs are non-deterministic (seed / model / MSA), so reason about the SHAPE, not golden numbers.
 
 - **Job row `Score`** (a JSON STRING on completed jobs): for folding (alphafold/boltz/chai/esmfold2/protenix) carries `plddt`, `ptm`, and for complexes `iptm` plus interface metrics (ipSAE, pDockQ). Higher pLDDT/pTM = more confident; ipTM/ipSAE/pDockQ gauge interface quality. A boltz affinity job adds an affinity score.
-- **Results zip** (`POST /result` -> presigned URL -> GET): typically the structure files (`rank_*.pdb` / `*.cif`), a per-model scores CSV, and logs. Use `listJobFiles(jobName)` (MCP) to enumerate exact filenames before downloading.
+- **Results bundle:** typically the structure files (`rank_*.pdb` / `*.cif`), a per-model scores CSV, and logs. Download it with `tamarind --no-json results JOB_NAME --download DIRECTORY` and inspect the extracted filenames.
 - **`WeightedHours`** on the row is the billing unit (it scales with runtime and GPU tier; GPU folders cost more than CPU tools, and `numSamples`/`numModels`/`numBatches` multiply it).
 
-Rank and flag the models with `scripts/parse_boltz_confidence.py <run-dir>` (works across boltz/chai/alphafold/protenix/esmfold2 output). To learn a specific folder's exact outputs, run one small job and `listJobFiles` it; don't hardcode filenames, which vary by tool and version. And verify at least one actual output structure (chain count, sequence, atom count) before trusting a job, since the metrics CSV can pass while the structure is wrong.
+Rank and flag the models with the absolute helper path documented in the parent skill: `python3 "$SKILL_DIR/scripts/parse_boltz_confidence.py" <run-dir>` (works across boltz/chai/alphafold/protenix/esmfold2 output). Resolve `SKILL_DIR` to the directory containing the parent `SKILL.md`; never assume the user's workspace is the skill directory. To learn a specific tool's exact outputs, download one completed small job with `tamarind --no-json results JOB_NAME --download DIRECTORY` and inspect the extracted bundle; don't hardcode filenames, which vary by tool and version. Verify at least one actual output structure (chain count, sequence, atom count) before trusting a job, since the metrics CSV can pass while the structure is wrong.

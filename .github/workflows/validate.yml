@@ -1,0 +1,44 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+        cli_spec:
+          - "tamarind-cli==0.1.4"
+          - "tamarind-cli>=0.1.4,<0.2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install oldest or latest supported CLI
+        run: python -m pip install '${{ matrix.cli_spec }}' pytest PyYAML
+      - name: Run plugin and CLI contract tests
+        run: python -m pytest --strict-markers
+      - name: Verify installed dependency consistency
+        run: python -m pip check
+      - name: Compile retained helpers
+        run: python -m compileall -q plugins/tamarind/skills
+      - name: Run every retained helper from an unrelated directory
+        shell: bash
+        run: |
+          repo="$PWD"
+          workdir="$(mktemp -d)"
+          cd "$workdir"
+          while IFS= read -r script; do
+            python "$script" --help >/dev/null
+          done < <(find "$repo/plugins/tamarind/skills" -path '*/scripts/*.py' ! -name '_common.py' -type f | sort)

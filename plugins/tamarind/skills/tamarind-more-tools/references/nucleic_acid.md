@@ -1,15 +1,17 @@
 # Nucleic-acid: design, language models, codon optimization
 
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
 RNA/DNA sequence design, mRNA codon optimization, nucleic-acid language models (embeddings + scoring), and structure-conditioned generation. This domain does NOT cover cofolding a complex that happens to contain RNA/DNA (that is structure prediction: `boltz`, `chai`, `protenix`, `esmfold2`, which carry the `nucleic-acid` modality but predict a 3D complex rather than design or score a sequence).
 
 Discover live, then read the schema:
 
-```
-getAvailableTools(modality="nucleic-acid")       # the whole nucleic-acid catalog
-getAvailableTools(function="rna-design")          # RNA design / inverse folding
-getAvailableTools(function="rna-language-models") # embeddings + scoring
-getAvailableTools(function="codon-optimization")  # mRNA codon optimizers
-getJobSchema(jobType="evo2")                       # exact params before you submit
+```bash
+tamarind --json tools --modality nucleic-acid
+tamarind --json tools --function rna-design
+tamarind --json tools --function rna-language-models
+tamarind --json tools --function codon-optimization
+tamarind --json schema evo2
 ```
 
 Alphabet matters: DNA tools use `ACGT`, RNA tools use `ACGU`. A lowercase or wrong-alphabet input is usually the wrong tool.

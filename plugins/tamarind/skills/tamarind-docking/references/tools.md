@@ -1,6 +1,8 @@
 # Tamarind docking and affinity tools
 
-Per-tool detail for the dockers and scorers this skill covers. `getJobSchema(<tool>)` is the authority for required fields, options, bounds, and defaults; this file captures when-to-pick and the gotchas the schema does not spell out. Schemas evolve, so re-fetch if a payload stops validating. Filter the live catalog with `getAvailableTools(function="protein-ligand-docking")` or `function="protein-protein-docking"`.
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
+Per-tool detail for the dockers and scorers this skill covers. `tamarind --json schema TOOL` is the authority for required fields, options, bounds, and defaults; this file captures when-to-pick and the gotchas the schema does not spell out. Schemas evolve, so re-query if a payload stops validating. Filter the live catalog with `tamarind --json tools --function protein-ligand-docking` or `tamarind --json tools --function protein-protein-docking`.
 
 A note that applies to every file-typed param below (`receptorFile`, `proteinFile`, `ligandFile`, `wildtypeFile`, `mutantFile`): reference an uploaded file by its **bare filename** (e.g. `receptor.pdb`), never an email-prefixed S3 key. Upload first, then pass the returned bare name. A raw string in a file param is treated as inline file CONTENT, not a reference. See `tamarind-submit-and-poll/references/api_reference.md`.
 
@@ -18,7 +20,7 @@ Pick autodock-vina when:
 - For an UNKNOWN pocket with no box, use a blind ML docker (`diffdock`, `unimol2`) that finds the site itself. (`surfdock` is NOT blind; it needs a `referenceLigandFile` defining the site.)
 - Do not use Vina for protein-protein docking (`equidock` / `geodock`) or for co-folding a complex from sequence (`boltz` / `chai` / `protenix`).
 
-Schema highlights (from `getJobSchema`):
+Schema highlights (confirm with `tamarind --json schema autodock-vina`):
 - `receptorFile` (required, `.pdb`): the protein. Bare filename. (Note: `receptorFile` here, NOT `proteinFile` like the others.)
 - `ligandFormat` (dropdown, default `sdf`): `sdf` or `smiles`. **Lowercase** here (DiffDock uses different strings).
 - `ligandFile` (required when `ligandFormat=="sdf"`, `.sdf`): the ligand structure. Bare filename.
@@ -31,7 +33,7 @@ Gotchas:
 - The box must be a FOCUSED pocket box (~20-30 Angstroms per side), not the whole protein. A box exceeding the protein bounding box makes the search explode and time out. For whole-protein blind docking use `gnina wholeProtein` or `diffdock`.
 - The schema box center defaults to `0,0,0`, which usually misses the protein. Supply real coordinates (a known ligand centroid, a pocket-residue centroid, or a pocket-detection job's output).
 
-Output: a docked ligand pose in `ligand_out.{pdbqt,sdf,pdb}` plus a `log.txt` with the Vina binding-affinity table (kcal/mol per pose; more negative is better). Delivered as a result zip via `getResult`.
+Output: a docked ligand pose in `ligand_out.{pdbqt,sdf,pdb}` plus a `log.txt` with the Vina binding-affinity table (kcal/mol per pose; more negative is better). Download the completed result with `tamarind --no-json results JOB_NAME --download DIRECTORY`.
 
 ---
 
@@ -45,7 +47,7 @@ Pick diffdock when:
 - For state-of-the-art ML docking when DiffDock poses look off, try `unimol2` (strong general docker), or `surfdock` (surface-informed) if you have a reference-bound ligand for the site (it requires `referenceLigandFile`).
 - To co-fold the whole complex from SEQUENCE (no input receptor structure), use `boltz` / `chai` / `protenix` (in `tamarind-structure-prediction`).
 
-Schema highlights (from `getJobSchema`):
+Schema highlights (confirm with `tamarind --json schema diffdock`):
 - `proteinFile` (required, `.pdb`): the receptor. Bare filename. (Named `proteinFile`, NOT `receptorFile`.)
 - `ligandFormat` (required, dropdown, default `sdf/mol2 file`): `sdf/mol2 file` or `SMILES`. These option STRINGS differ from Vina's lowercase `sdf`/`smiles`; use the exact strings (capital `SMILES`).
 - `ligandFile` (required when `ligandFormat=="sdf/mol2 file"`, `.sdf` or `.mol2`): the ligand. Bare filename; the wrapper routes by extension.
@@ -69,7 +71,7 @@ Pick gnina when:
 - Use `gnina scoreOnly` to score an EXISTING ligand pose (e.g. rescore a DiffDock or cofold pose) without re-docking.
 - For the lightest, most interpretable classical baseline, or for large SMILES/CSV screens, use `autodock-vina`. For smina's custom scoring-function tuning, use `smina`.
 
-Schema highlights (from `getJobSchema`):
+Schema highlights (confirm with `tamarind --json schema gnina`):
 - `proteinFile` (required, `.pdb`): the protein. Bare filename.
 - `ligandFile` (required, `.sdf`): the ligand. Bare filename. **No SMILES option** in the gnina schema; supply an SDF (convert a SMILES to a 3D SDF first via Conformer Generation / obabel). (The schema's `descr` mislabels the ligand field "for your receptor"; it is the ligand.)
 - Bounding box (all required, number): `boxX`/`boxY`/`boxZ` (center; defaults 35/27/35), `width`/`height`/`depth` (defaults 20).
@@ -96,7 +98,7 @@ Pick prodigy when:
 - For antibody-antigen complexes and a learned model rather than a contact heuristic, use `dsmbind`.
 - To score docking/interface QUALITY rather than affinity, use `dockq`, `pdockq`, `ipsae`, or `spatial-ppi`.
 
-Schema highlights (from `getJobSchema`):
+Schema highlights (confirm with `tamarind --json schema binding-ddg`):
 - `proteinFile` (required, `.pdb`): the protein COMPLEX structure to predict dG for (both partners in one PDB). Bare filename.
 
 Gotchas:
@@ -110,7 +112,7 @@ Output: an `output.csv` of PRODIGY properties (predicted binding affinity dG, pr
 
 ## Affinity and interface-scoring set (a number off a structure, no pose)
 
-These take a STRUCTURE you already have and return a binding/interface number, not a docked pose. When you only have sequence, chain a fold tool (`boltz` / `alphafold` / `chai`) upstream first. `getJobSchema(<tool>)` for exact fields.
+These take a STRUCTURE you already have and return a binding/interface number, not a docked pose. When you only have sequence, chain a fold tool (`boltz` / `alphafold` / `chai`) upstream first. Run `tamarind --json schema TOOL` for exact fields.
 
 Protein-ligand affinity:
 - `aev-plig` (AEV-PLIG): protein-ligand affinity from a 3D complex (atomic-environment-vector graph model). Takes `pdbFile` (protein) + `sdfFile` (bound ligand). Fast structure-based number, no finetuning. Reach for it on a docked pose.
@@ -136,7 +138,7 @@ Mutation-effect ddG:
 
 ## Wider catalog (one line each; confirm params live)
 
-`getAvailableTools(function="protein-ligand-docking" | "protein-protein-docking")` to enumerate, `getJobSchema(<tool>)` for params.
+Run `tamarind --json tools --function protein-ligand-docking` and `tamarind --json tools --function protein-protein-docking` to enumerate, then `tamarind --json schema TOOL` for parameters.
 
 More small-molecule dockers:
 - `smina` (Smina): customizable AutoDock-Vina fork; Vina-style box docking with extra scoring/minimization control. `proteinFile` + `ligandFile` (SDF) + box; the public schema is box + SDF only (no SMILES branch).
@@ -148,7 +150,7 @@ More small-molecule dockers:
 Local pose-ensemble refinement (NOT a docker; needs an existing pose):
 - `placer` (PLACER): local protein-ligand conformational ENSEMBLE sampling plus active-site preorganization scoring around an EXISTING pose (SOTA for local ensemble modeling, PNAS 2025; used as the design filter in Baker-lab enzyme-design pipelines). It is not a blind docker, it needs an initial pose, so pair it DOWNSTREAM of a docker (Vina / GNINA / Uni-Mol2 / FlowDock) or a cofold. Good for modeling joint ligand + side-chain conformational heterogeneity and active-site preorganization of designed enzymes.
 
-De novo ligand / pocket generation (designing, not docking; these are small-molecule generators, discover via `getAvailableTools(function="ligand-generation")`):
+De novo ligand / pocket generation (designing, not docking; these are small-molecule generators, discover with `tamarind --json tools --function ligand-generation`):
 - `drugflow` (DrugFlow): SOTA structure-based pocket-conditioned de novo small-molecule generation built around a REFERENCE LIGAND that defines the site (ICLR 2025); emits an SDF library for downstream docking/scoring.
 - `diffsbdd` (DiffSBDD): SE(3)-equivariant pocket-conditioned generator that is pocket-only (no reference ligand needed) and supports inpainting (fragment growing/linking, scaffold hopping, substructure fixing) via an atom mask.
 - `flowr` (FlowR): flow-matching pocket-conditioned small-molecule generator (confirm params live).

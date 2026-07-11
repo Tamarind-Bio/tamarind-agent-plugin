@@ -8,7 +8,9 @@ references/workflows.md (poll the PARENT on batchStatus, then read per-subjob Sc
 
 Input is a directory or JSON file holding the saved rows. Accepted shapes:
   - a DOWNLOADED batch dir: one subdir per subjob (named <batch>-<subjob>/), each
-    holding that subjob's metrics.csv + result files (the shape `download` unzips to)
+    holding that subjob's metrics.csv + result files (status is unknown, so these
+    rows are reported as unranked unless status-bearing JSON is also supplied)
+  - the native CLI envelope: {"jobs": [<subjob-row>, ...], ...}
   - {"parent": <parent-row>, "subjobs": [<subjob-row>, ...]}
   - a bare list of subjob rows (no parent), or a dir with parent.json + subjobs.json
 The parent row carries the aggregate tally (batchStatus + statuses, e.g.
@@ -49,15 +51,31 @@ def _rows_from_download_dir(path):
             with open(csvs[0], newline="") as fh:
                 r = next(csv.DictReader(fh), {}) or {}
             for k, v in r.items():
-                try:
-                    score[k] = float(v)
-                except (TypeError, ValueError):
-                    pass
+                parsed = _common._maybe_float(v)
+                if _common.is_finite_number(parsed):
+                    score[k] = parsed
         except OSError:
             pass
-        rows.append({"JobName": os.path.basename(sub), "JobStatus": "Complete",
-                     "Score": json.dumps(score)})
+        # A metrics file proves that an artifact exists, not that the remote job
+        # reached a successful terminal state. Keep the status explicit and
+        # unrankable until authoritative job JSON is supplied.
+        rows.append({"JobName": os.path.basename(sub), "JobStatus": "Unknown",
+                     "Score": json.dumps(score, allow_nan=False)})
     return rows
+
+
+def _rows_from_document(data):
+    """Return (parent, rows) from a supported JSON document shape."""
+    if isinstance(data, dict) and isinstance(data.get("jobs"), list):
+        parent = {"statuses": data.get("statuses")} if data.get("statuses") else None
+        return parent, data["jobs"]
+    if isinstance(data, dict) and isinstance(data.get("subjobs"), list):
+        return data.get("parent"), data["subjobs"]
+    if isinstance(data, list):
+        return None, data
+    if isinstance(data, dict) and ("JobStatus" in data or "Score" in data):
+        return None, [data]
+    return None
 
 
 def _load_rows(path):
@@ -71,7 +89,12 @@ def _load_rows(path):
                 parent = json.load(fh)
         if os.path.exists(sj):
             with open(sj) as fh:
-                subs = json.load(fh)
+                subdoc = json.load(fh)
+            parsed = _rows_from_document(subdoc)
+            if parsed is None:
+                raise SystemExit(f"{sj} is not a recognized subjob JSON shape")
+            embedded_parent, subs = parsed
+            parent = parent or embedded_parent
         if not subs and not parent:
             # A downloaded+unzipped batch: per-subjob subdirs with metrics.csv.
             subs = _rows_from_download_dir(path)
@@ -83,12 +106,9 @@ def _load_rows(path):
 
     with open(path) as fh:
         data = json.load(fh)
-    if isinstance(data, dict) and "subjobs" in data:
-        return data.get("parent"), data["subjobs"]
-    if isinstance(data, list):
-        return None, data
-    if isinstance(data, dict) and ("JobStatus" in data or "Score" in data):
-        return None, [data]
+    parsed = _rows_from_document(data)
+    if parsed is not None:
+        return parsed
     raise SystemExit(f"{path} is not a recognized batch-rows shape")
 
 
@@ -120,7 +140,8 @@ def load_batch(path):
         out["subjobs"].append({
             "name": _subjob_name(row),
             "status": row.get("JobStatus") or row.get("jobStatus"),
-            "score": {k: v for k, v in score.items() if isinstance(v, (int, float))},
+            "score": {k: v for k, v in score.items()
+                      if _common.is_finite_number(v)},
         })
     return out
 
@@ -129,9 +150,10 @@ def _auto_metric(subjobs):
     """Pick the numeric Score key present on the most completed subjobs."""
     counts = {}
     for s in subjobs:
-        if s["status"] == "Complete":
-            for k in s["score"]:
-                counts[k] = counts.get(k, 0) + 1
+        if str(s["status"] or "").strip().lower() in {"complete", "completed"}:
+            for k, value in s["score"].items():
+                if _common.is_finite_number(value):
+                    counts[k] = counts.get(k, 0) + 1
     if not counts:
         return None
     return max(sorted(counts), key=counts.get)
@@ -141,22 +163,31 @@ def summarize(batch, metric=None, ascending=False):
     """Rank completed subjobs by the chosen Score metric.
 
     Returns {batch_status, statuses, selection_metric, ascending, n_subjobs,
-    n_ranked, ranked:[{rank, name, status, metric_value, score}]}. Subjobs missing
-    the metric (incomplete or no Score) are listed after the ranked ones with a
-    None value."""
+    n_ranked, ranked:[...], unranked:[...]}. Only successfully completed rows
+    carrying the selected numeric metric appear in ``ranked``. Every other row
+    appears in ``unranked`` with ``rank: null`` and an explicit reason."""
     subjobs = batch["subjobs"]
     metric = metric or _auto_metric(subjobs)
 
     scored, unscored = [], []
     for s in subjobs:
-        val = s["score"].get(metric) if metric else None
-        rec = {"name": s["name"], "status": s["status"],
-               "metric_value": val, "score": s["score"]}
-        (scored if isinstance(val, (int, float)) else unscored).append(rec)
+        score = _common.normalize_non_finite(s["score"])
+        val = score.get(metric) if metric else None
+        status = str(s["status"] or "Unknown")
+        rec = {"name": s["name"], "status": status,
+               "metric_value": val, "score": score}
+        is_complete = status.strip().lower() in {"complete", "completed"}
+        if is_complete and _common.is_finite_number(val):
+            scored.append(rec)
+        else:
+            rec["rank"] = None
+            rec["unranked_reason"] = (
+                "status-not-complete" if not is_complete else "missing-metric"
+            )
+            unscored.append(rec)
 
     scored.sort(key=lambda r: r["metric_value"], reverse=not ascending)
-    ranked = scored + unscored
-    for r, rec in enumerate(ranked, 1):
+    for r, rec in enumerate(scored, 1):
         rec["rank"] = r
 
     return {
@@ -166,20 +197,24 @@ def summarize(batch, metric=None, ascending=False):
         "ascending": ascending,
         "n_subjobs": len(subjobs),
         "n_ranked": len(scored),
-        "ranked": ranked,
+        "n_unranked": len(unscored),
+        "ranked": scored,
+        "unranked": unscored,
     }
 
 
 def write_csv(summary, out_path):
-    """Write the ranked candidate -> metric table to a CSV."""
+    """Write ranked rows followed by explicitly unranked rows to a CSV."""
     metric = summary["selection_metric"] or "metric"
     with open(out_path, "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["rank", "candidate", "status", metric])
-        for rec in summary["ranked"]:
+        w.writerow(["rank", "candidate", "status", metric, "unranked_reason"])
+        for rec in summary["ranked"] + summary["unranked"]:
             val = rec["metric_value"]
-            w.writerow([rec["rank"], rec["name"], rec["status"],
-                        "" if val is None else val])
+            w.writerow(["" if rec["rank"] is None else rec["rank"],
+                        rec["name"], rec["status"],
+                        "" if val is None else val,
+                        rec.get("unranked_reason", "")])
     return out_path
 
 
@@ -201,6 +236,12 @@ def print_summary(summary, written):
         vs = f"{val:.3f}" if isinstance(val, float) else (str(val) if val is not None else "-")
         print(f"{rec['rank']:>4}  {rec['name'][:28]:<28} "
               f"{str(rec['status'] or '-')[:12]:<12} {vs:>12}")
+    if summary["unranked"]:
+        print("\nUnranked:")
+        for rec in summary["unranked"]:
+            print(f"   -  {rec['name'][:28]:<28} "
+                  f"{str(rec['status'] or '-')[:12]:<12} "
+                  f"{rec['unranked_reason']}")
     if written:
         print(f"\nWrote ranked CSV: {written}")
 
@@ -225,7 +266,8 @@ def main(argv=None):
     written = write_csv(summary, out_path)
 
     if a.json:
-        print(json.dumps({**summary, "written": written}, indent=2))
+        print(json.dumps({**summary, "written": written}, indent=2,
+                         allow_nan=False))
     else:
         print_summary(summary, written)
     return 0

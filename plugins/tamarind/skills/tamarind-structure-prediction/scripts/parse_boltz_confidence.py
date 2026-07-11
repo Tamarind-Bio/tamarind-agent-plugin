@@ -2,13 +2,14 @@
 """Parse confidence metrics from a structure-prediction results dir and rank models.
 
 Reads a downloaded Boltz / Chai / AlphaFold / Protenix / ESMFold2 results directory
-(or a single scores CSV) and prints a per-model table ranked by the platform's own
-selection metric: confidence_score where present (the rank key in the *-scores.csv),
-otherwise pTM. Surfaces the interface metrics (ipTM, ipSAE, pDockQ) and flags any
-model whose interface confidence falls below a cutoff.
+(or a single scores CSV), surfaces interface metrics (ipTM, ipSAE, pDockQ), and
+flags models below a configured interface cutoff.
 
-Selection metric: confidence_score (Boltz/Chai aggregate; falls back to pTM). The
-ranked-best model is whatever the scores CSV ranks first (rank_001 / -scores-best).
+Ranking uses the first finite metric shared by every model in this priority:
+confidence_score, then ipTM, then pTM. Rows may therefore be reordered from the
+CSV. If no finite metric is shared by every model, source order is preserved and
+no numeric ranks are assigned; the helper never invents a total ordering from a
+partial metric column.
 
 Metric names are grounded in research/dossiers/structure-prediction.md:
   pLDDT  - per-residue / mean predicted local distance difference test (B-factor col)
@@ -41,8 +42,8 @@ METRIC_ALIASES = {
     "confidence_score": ["confidence_score", "confidence", "ranking_score",
                          "aggregate_score", "model_confidence"],
 }
-# Selection metric priority: rank on the aggregate confidence the tool itself ranks
-# by; pTM is the cross-tool fallback when no aggregate column is present.
+# Selection priority. A candidate is usable only when every model has a finite
+# value for it, so a partial column never creates a misleading total ordering.
 RANK_PRIORITY = ["confidence_score", "iptm", "ptm"]
 # Interface metrics whose low values flag a weak complex interface. ipTM and ipSAE
 # share the TM (0-1) scale, so the --iptm-cutoff applies to both; pDockQ uses a
@@ -56,7 +57,7 @@ def _pick(row, key):
     """Return the first present alias for a logical metric, coerced to float."""
     for alias in METRIC_ALIASES[key]:
         for col, val in row.items():
-            if col.strip().lower() == alias and isinstance(val, float):
+            if col.strip().lower() == alias and _common.is_finite_number(val):
                 return val
     return None
 
@@ -71,13 +72,21 @@ def _model_label(row):
 
 def _find_scores_csv(run_dir):
     """Locate the per-model scores CSV(s). Prefer the all-models file over -best."""
-    patterns = ["*-scores.csv", "*scores*.csv", "*confidence*.csv", "*.csv"]
+    patterns = ["*-scores.csv", "*scores*.csv", "*confidence*.csv"]
     for pat in patterns:
         hits = sorted(glob.glob(os.path.join(run_dir, "**", pat), recursive=True))
         hits = [h for h in hits if "best" not in os.path.basename(h).lower()]
         if hits:
             return hits
-    return []
+    # Some result bundles contain only the platform-selected best row. It is
+    # still useful as a one-model summary and its source order is authoritative.
+    best = sorted(glob.glob(os.path.join(run_dir, "**", "*scores-best.csv"),
+                            recursive=True))
+    if best:
+        return best
+    # Cross-tool fallback for result bundles that do not use a conventional
+    # scores/confidence filename.
+    return sorted(glob.glob(os.path.join(run_dir, "**", "*.csv"), recursive=True))
 
 
 def load_models(path):
@@ -110,11 +119,18 @@ def load_models(path):
     return models
 
 
-def _rank_key(model):
+def _selection_metric(models):
+    """Choose one finite metric shared by every model.
+
+    A partial column cannot define an honest total ordering: assigning numeric
+    ranks to rows missing that metric would imply evidence that is not present.
+    """
+    if not models:
+        return None
     for key in RANK_PRIORITY:
-        if model.get(key) is not None:
-            return model[key]
-    return float("-inf")
+        if all(_common.is_finite_number(model.get(key)) for model in models):
+            return key
+    return None
 
 
 def summarize(models, iptm_cutoff=0.6):
@@ -123,23 +139,27 @@ def summarize(models, iptm_cutoff=0.6):
     Returns {selection_metric, ranked:[...], low_confidence_interfaces:[...]}.
     A model is flagged when a TM-scaled interface metric (ipTM/ipSAE) is below
     iptm_cutoff, or pDockQ is below its own conventional threshold."""
-    ranked = sorted(models, key=_rank_key, reverse=True)
-    for r, m in enumerate(ranked, 1):
-        m["rank"] = r
-
-    metric = "ptm"
-    if ranked:
-        for key in RANK_PRIORITY:
-            if ranked[0].get(key) is not None:
-                metric = key
-                break
+    if not _common.is_finite_number(iptm_cutoff):
+        raise SystemExit("iptm cutoff must be a finite number")
+    normalized = [_common.normalize_non_finite(dict(model)) for model in models]
+    metric = _selection_metric(normalized)
+    if metric is None:
+        ranked = normalized
+        for model in ranked:
+            model["rank"] = None
+    else:
+        ranked = sorted(normalized, key=lambda model: model[metric], reverse=True)
+        for r, model in enumerate(ranked, 1):
+            model["rank"] = r
 
     low = []
     for m in ranked:
-        present = {k: m[k] for k in INTERFACE_METRICS if m.get(k) is not None}
-        weak = any(m.get(k) is not None and m[k] < iptm_cutoff
+        present = {k: m[k] for k in INTERFACE_METRICS
+                   if _common.is_finite_number(m.get(k))}
+        weak = any(_common.is_finite_number(m.get(k)) and m[k] < iptm_cutoff
                    for k in TM_INTERFACE_METRICS)
-        weak = weak or (m.get("pdockq") is not None and m["pdockq"] < PDOCKQ_CUTOFF)
+        weak = weak or (_common.is_finite_number(m.get("pdockq"))
+                        and m["pdockq"] < PDOCKQ_CUTOFF)
         if present and weak:
             low.append({"label": m["label"], "rank": m["rank"], **present})
 
@@ -147,23 +167,29 @@ def summarize(models, iptm_cutoff=0.6):
         "selection_metric": metric,
         "iptm_cutoff": iptm_cutoff,
         "n_models": len(ranked),
+        "n_ranked": len(ranked) if metric is not None else 0,
         "ranked": ranked,
         "low_confidence_interfaces": low,
     }
 
 
 def _fmt(v):
-    return f"{v:.3f}" if isinstance(v, float) else "-"
+    return f"{v:.3f}" if _common.is_finite_number(v) else "-"
 
 
 def print_summary(summary):
     metric = summary["selection_metric"]
-    print(f"Selection metric: {metric} "
-          f"(ranked best first; {summary['n_models']} model(s))")
+    if metric is None:
+        print("Selection metric: none (no finite metric is shared by every model; "
+              "source order preserved without numeric ranks)")
+    else:
+        print(f"Selection metric: {metric} "
+              f"(ranked best first; {summary['n_models']} model(s))")
     print(f"{'rank':>4}  {'model':<22} {'pLDDT':>7} {'pTM':>6} "
           f"{'ipTM':>6} {'ipSAE':>6} {'pDockQ':>6}")
     for m in summary["ranked"]:
-        print(f"{m['rank']:>4}  {m['label'][:22]:<22} "
+        rank = "-" if m["rank"] is None else str(m["rank"])
+        print(f"{rank:>4}  {m['label'][:22]:<22} "
               f"{_fmt(m['plddt']):>7} {_fmt(m['ptm']):>6} {_fmt(m['iptm']):>6} "
               f"{_fmt(m['ipsae']):>6} {_fmt(m['pdockq']):>6}")
     low = summary["low_confidence_interfaces"]
@@ -173,8 +199,9 @@ def print_summary(summary):
         for m in low:
             vals = ", ".join(f"{k}={_fmt(v)}" for k, v in m.items()
                              if k not in ("label", "rank"))
-            print(f"  rank {m['rank']}: {m['label']} ({vals})")
-    elif any(m.get(k) is not None for m in summary["ranked"]
+            rank = m["rank"] if m["rank"] is not None else "-"
+            print(f"  rank {rank}: {m['label']} ({vals})")
+    elif any(_common.is_finite_number(m.get(k)) for m in summary["ranked"]
              for k in INTERFACE_METRICS):
         print("\nNo low-confidence interfaces flagged.")
 
@@ -190,7 +217,7 @@ def main(argv=None):
 
     summary = summarize(load_models(a.run_dir), iptm_cutoff=a.iptm_cutoff)
     if a.json:
-        print(json.dumps(summary, indent=2))
+        print(json.dumps(summary, indent=2, allow_nan=False))
     else:
         print_summary(summary)
     return 0

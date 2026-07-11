@@ -1,7 +1,7 @@
 {
   "name": "tamarind",
-  "version": "0.1.0",
-  "description": "Run Tamarind Bio biology tools from your agent: predict structures, fold complexes, dock ligands, design and screen binders, and fine-tune models via the Tamarind API.",
+  "version": "0.2.0",
+  "description": "Run Tamarind Bio biology tools through the Tamarind CLI: discover, validate, submit, monitor, and analyze computational-biology jobs.",
   "author": { "name": "Tamarind Bio", "url": "https://www.tamarind.bio" },
   "homepage": "https://www.tamarind.bio",
   "repository": "https://github.com/Tamarind-Bio/tamarind-agent-plugin",

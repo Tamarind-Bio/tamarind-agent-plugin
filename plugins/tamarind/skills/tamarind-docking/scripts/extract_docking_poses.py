@@ -11,8 +11,10 @@ Selection metric depends on the docker:
     sdf,pdb}; smina writes a multi-model ligand_out.pdbqt + a log.txt score table.
     The N models in the ensemble are in the same order as the N log rows, so model
     i pairs with affinity row i.
-  - gnina: CNN affinity + pose score in out/log.txt, poses in a multi-model
-    out/result.sdf (one record per pose, same order as the log).
+  - gnina: prefer the per-record CNNscore (then CNNaffinity) embedded in
+    out/result.sdf. If those properties are absent or incomplete, preserve
+    gnina's source pose order; do not reinterpret Vina-like log columns as the
+    GNINA ranking objective.
   - DiffDock: one file per ranked pose, rank<N>_confidence<score>.sdf, no physics
     energy; HIGHER confidence is better and the score's sign is part of the number.
 
@@ -29,12 +31,11 @@ Usage:
 import argparse
 import glob
 import json
+import math
 import os
 import re
 import shutil
 import sys
-
-import _common
 
 # Vina/gnina/smina log lines like:  "   1     -7.088      0.000      0.000"
 # (mode/rank, affinity kcal/mol, then RMSD columns). Capture rank + affinity.
@@ -45,6 +46,7 @@ _AFFINITY_LINE = re.compile(r"^\s*(\d+)\s+(-?\d+\.\d+)")
 # separator (the bug fixed here was `[_-]?` eating that minus -> sign flip).
 _RANK_CONF = re.compile(r"rank_?(\d+).*?confidence_?(-?\d+(?:\.\d+)?)", re.I)
 _RANK_ONLY = re.compile(r"rank_?(\d+)", re.I)
+_SDF_PROPERTY = re.compile(r"^>\s*<([^>]+)>")
 
 # A single multi-model ensemble a Vina/gnina/smina run writes (one file holds
 # every pose). Preferred extension order: split just one, they hold the same
@@ -53,12 +55,26 @@ _ENSEMBLE_GLOBS = ("*ligand_out*", "*result*", "*docked*", "*poses*")
 _ENSEMBLE_EXT_PREF = (".sdf", ".pdbqt", ".pdb", ".mol2")
 
 
+def _is_generated_output(path, run_dir):
+    """Exclude files this helper wrote during an earlier run."""
+    rel_parts = [part.lower() for part in os.path.relpath(path, run_dir).split(os.sep)]
+    base = os.path.basename(path).lower()
+    return "top_poses" in rel_parts or re.match(r"pose_rank\d+", base) is not None
+
+
 def _find(run_dir, *names):
     for name in names:
         hits = sorted(glob.glob(os.path.join(run_dir, "**", name), recursive=True))
+        hits = [hit for hit in hits if not _is_generated_output(hit, run_dir)]
         if hits:
             return hits
     return []
+
+
+def _finite_number(value):
+    return (not isinstance(value, bool)
+            and isinstance(value, (int, float))
+            and math.isfinite(value))
 
 
 def _parse_affinity_log(log_path):
@@ -72,7 +88,10 @@ def _parse_affinity_log(log_path):
         for line in fh:
             m = _AFFINITY_LINE.match(line)
             if m:
-                rows.append({"rank": int(m.group(1)), "affinity": float(m.group(2))})
+                affinity = float(m.group(2))
+                if math.isfinite(affinity):
+                    rows.append({"source_rank": int(m.group(1)),
+                                 "affinity": affinity})
     return rows
 
 
@@ -105,6 +124,40 @@ def _split_models(path):
     return [(b, ext) for b in blocks]
 
 
+def _sdf_numeric_properties(block):
+    """Read finite GNINA CNN fields from one SDF record."""
+    wanted = {"cnnscore": "cnnscore", "cnnaffinity": "cnnaffinity"}
+    values = {}
+    lines = block.splitlines()
+    for index, line in enumerate(lines[:-1]):
+        match = _SDF_PROPERTY.match(line.strip())
+        if not match:
+            continue
+        key = re.sub(r"[^a-z0-9]", "", match.group(1).lower())
+        logical = wanted.get(key)
+        if logical is None:
+            continue
+        try:
+            value = float(lines[index + 1].strip())
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            values[logical] = value
+    return values
+
+
+def _logs_look_like_gnina(log_paths):
+    markers = re.compile(r"\bgnina\b|cnn\s*(?:score|affinity)", re.I)
+    for path in log_paths:
+        try:
+            with open(path, errors="replace") as fh:
+                if markers.search(fh.read()):
+                    return True
+        except OSError:
+            continue
+    return False
+
+
 def _ensemble_file(run_dir):
     """The single multi-model ensemble file to split (preferred extension)."""
     cands = []
@@ -129,12 +182,15 @@ def _parse_diffdock_poses(run_dir):
         base = os.path.basename(path)
         m = _RANK_CONF.search(base)
         if m:
-            poses.append({"rank": int(m.group(1)),
-                          "confidence": float(m.group(2)), "file": path})
+            confidence = float(m.group(2))
+            poses.append({"source_rank": int(m.group(1)),
+                          "confidence": confidence if math.isfinite(confidence) else None,
+                          "file": path})
             continue
         m = _RANK_ONLY.search(base)
         if m:
-            poses.append({"rank": int(m.group(1)), "confidence": None, "file": path})
+            poses.append({"source_rank": int(m.group(1)),
+                          "confidence": None, "file": path})
     return poses
 
 
@@ -142,15 +198,16 @@ def load_poses(run_dir):
     """Load ranked poses from a docking results dir.
 
     Returns (metric, poses) where metric is 'affinity' (kcal/mol, lower better),
-    'confidence' (higher better), or 'rank' (file order only). A pose dict carries
-    its rank, the metric value, and EITHER a 'file' (a per-pose file to copy, e.g.
-    DiffDock) OR 'content'+'ext' (a split-out model block to write)."""
+    'confidence'/'cnnscore'/'cnnaffinity' (higher better), or 'source_rank'
+    (authoritative input order only). A pose dict keeps source_rank separate from
+    the helper's output rank and carries EITHER a 'file' (a per-pose file to copy,
+    e.g. DiffDock) OR 'content'+'ext' (a split-out model block to write)."""
     if not os.path.isdir(run_dir):
         raise SystemExit(f"{run_dir} is not a directory")
 
     # DiffDock: one file per ranked pose, confidence in the filename.
     dd = _parse_diffdock_poses(run_dir)
-    if dd and any(p.get("confidence") is not None for p in dd):
+    if dd and all(_finite_number(p.get("confidence")) for p in dd):
         return "confidence", dd
 
     # Vina / gnina / smina: split the single multi-model ensemble into poses and
@@ -163,31 +220,60 @@ def load_poses(run_dir):
             break
     ensemble = _ensemble_file(run_dir)
     if ensemble:
+        blocks = _split_models(ensemble)
+        sdf_metrics = [_sdf_numeric_properties(block) if ext == ".sdf" else {}
+                       for block, ext in blocks]
+        looks_like_gnina = (
+            any(metrics for metrics in sdf_metrics)
+            or _logs_look_like_gnina(logs)
+            or os.path.basename(ensemble).lower() == "result.sdf"
+        )
         poses = []
-        for i, (block, ext) in enumerate(_split_models(ensemble)):
-            row = {"rank": i + 1, "content": block, "ext": ext}
+        for i, (block, ext) in enumerate(blocks):
+            row = {"source_rank": i + 1, "content": block, "ext": ext}
+            row.update(sdf_metrics[i])
             if i < len(aff_rows):
                 row["affinity"] = aff_rows[i]["affinity"]
             poses.append(row)
-        if any("affinity" in p for p in poses):
+
+        if looks_like_gnina:
+            for metric in ("cnnscore", "cnnaffinity"):
+                if poses and all(_finite_number(p.get(metric)) for p in poses):
+                    return metric, poses
+            return "source_rank", poses
+        if poses and all(_finite_number(p.get("affinity")) for p in poses):
             return "affinity", poses
-        return "rank", poses
+        return "source_rank", poses
 
     # Fallback: DiffDock rank-only files (no confidence parsed).
     if dd:
-        return "rank", dd
+        return "source_rank", dd
     raise SystemExit(f"no docked poses or affinity log found under {run_dir}")
 
 
 def summarize(metric, poses, top=3):
     """Rank poses by the detected metric and select the top-N."""
+    rows = []
+    for index, pose in enumerate(poses, 1):
+        row = dict(pose)
+        if not _finite_number(row.get("source_rank")):
+            row["source_rank"] = index
+        for key in ("affinity", "confidence", "cnnscore", "cnnaffinity"):
+            if key in row and not _finite_number(row[key]):
+                row[key] = None
+        rows.append(row)
+
+    numeric_metrics = {"affinity", "confidence", "cnnscore", "cnnaffinity"}
+    if metric in numeric_metrics and not all(
+            _finite_number(row.get(metric)) for row in rows):
+        metric = "source_rank"
     if metric == "affinity":          # kcal/mol: more negative is better
-        ranked = sorted(poses, key=lambda p: p.get("affinity", float("inf")))
-    elif metric == "confidence":      # higher is better
-        ranked = sorted(poses, key=lambda p: (p.get("confidence") is None,
-                                              -(p.get("confidence") or 0.0)))
-    else:                             # rank: preserve given order
-        ranked = sorted(poses, key=lambda p: p.get("rank", 0))
+        ranked = sorted(rows, key=lambda p: p["affinity"])
+    elif metric in {"confidence", "cnnscore", "cnnaffinity"}:
+        ranked = sorted(rows, key=lambda p: p[metric], reverse=True)
+    else:                              # preserve authoritative source order
+        metric = "source_rank"
+        ranked = sorted(rows, key=lambda p: p["source_rank"])
     for r, p in enumerate(ranked, 1):
         p["rank"] = r
     return {"selection_metric": metric, "n_poses": len(ranked),
@@ -221,13 +307,16 @@ def print_summary(summary, written):
     metric = summary["selection_metric"]
     label = {"affinity": "binding affinity kcal/mol (lower is better)",
              "confidence": "DiffDock confidence (higher is better)",
-             "rank": "pose order (no score parsed)"}[metric]
+             "cnnscore": "GNINA CNN pose score (higher is better)",
+             "cnnaffinity": "GNINA CNN affinity (higher is better)",
+             "source_rank": "source pose order (no complete score parsed)"}[metric]
     print(f"Selection metric: {label} ({summary['n_poses']} pose(s))")
     print(f"{'rank':>4}  {metric:>10}  source")
     for p in summary["ranked"]:
         val = p.get(metric)
-        vs = f"{val:.3f}" if isinstance(val, float) else "-"
-        src = os.path.basename(p["file"]) if p.get("file") else f"model {p['rank']}"
+        vs = f"{float(val):.3f}" if _finite_number(val) else "-"
+        src = (os.path.basename(p["file"]) if p.get("file")
+               else f"model {p['source_rank']}")
         print(f"{p['rank']:>4}  {vs:>10}  {src}")
     if written:
         print(f"\nWrote top {len(written)} pose(s):")
@@ -253,7 +342,7 @@ def main(argv=None):
     if a.json:
         slim = {**summary, "ranked": [{k: v for k, v in p.items() if k != "content"}
                                       for p in summary["ranked"]], "written": written}
-        print(json.dumps(slim, indent=2))
+        print(json.dumps(slim, indent=2, allow_nan=False))
     else:
         print_summary(summary, written)
     return 0

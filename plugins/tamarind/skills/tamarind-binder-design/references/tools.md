@@ -1,6 +1,8 @@
 # Binder design tools: full field maps, outputs, catalog
 
-Source of truth is live `getJobSchema(<tool>)` and `getAvailableTools(function="binder-design")`. The catalog drifts; treat everything below as a grounded snapshot and re-fetch when a field stops validating. File-typed params (`pdbFile`, `targetFile`, `foldConditioningTargetFile`, ...) take the **bare filename** of an uploaded file, a prior-job output path (`JobName/...`), or inline structure text; they do NOT take an email-prefixed S3 key (see `tamarind-submit-and-poll` for the full file-param rule).
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
+Source of truth is `tamarind --json tools --function binder-design` plus `tamarind --json schema TOOL`. The catalog drifts; treat everything below as a grounded snapshot and re-query when a field stops validating. File-typed parameters (`pdbFile`, `targetFile`, `foldConditioningTargetFile`, ...) take the **bare filename** returned by `tamarind --json files upload PATH`, a prior-job output path (`JobName/...`), or inline structure text; they do NOT take an email-prefixed object key (see `tamarind-submit-and-poll` for the full file-parameter rule).
 
 Every tool here is gated on a first required selector field (`task` / `mode` / `binderType`). Almost every other field is conditional on that selector, so read each param's `tasks` / `binderTypes` list in the schema before assuming a field applies.
 
@@ -42,7 +44,7 @@ The mature backbone generator; sequence is filled in downstream by ProteinMPNN. 
 - **Fold Conditioning**: `foldConditioningTargetFile`, `foldConditioningBinderFile` (both `.pdb`), optional `targetSSFile` / `targetAdjFile` (`.pt`).
 - **Custom Contigs**: `contigs` (raw RFdiffusion notation, e.g. `"22-22/0 A1-150"`).
 - Cross-task knobs: `numDesigns`, `verify` (default true: MPNN + AlphaFold scoring), `noiseScaleCa` / `noiseScaleFrame` (0-1, lower = more designable), `potentials` (comma-separated potential string), `model` (`default` | `Complex_beta_ckpt`).
-- `verifySequences` is in the schema but tagged `exclude: [api, pipelines, batch]` (a website-only next-step field). Do NOT send it over the API.
+- `verifySequences` is a website-only next-step field. Do not include it in CLI settings.
 
 Output: per-design backbone `.pdb`; with `verify` on, a scores table with ProteinMPNN + AlphaFold metrics (pLDDT, pAE, etc.).
 
@@ -96,16 +98,16 @@ Gotchas: `skipRefolding: true` skips the slow Boltz-2 refold and ranks the ORIGI
 Binder outputs are non-deterministic (seed / model / MSA), so read the metric keys and reason about ranking, not exact values.
 
 - **Job row `Score`** (JSON on completed jobs): interface metrics for the design family (pLDDT/pTM for the monomer fold; ipTM, ipSAE, pDockQ for the interface). Higher pLDDT/pTM/ipTM/ipSAE/pDockQ is more confident.
-- **Results zip** (`POST /result` -> presigned URL -> GET): the per-design structures plus the tool's metrics CSV and logs. Enumerate exact filenames with `listJobFiles(jobName)` before downloading; do not hardcode names, which vary by tool and version.
+- **Results bundle:** the per-design structures plus the tool's metrics CSV and logs. Download it with `tamarind --no-json results JOB_NAME --download DIRECTORY` and inspect the extracted filenames; do not hardcode names, which vary by tool and version.
 - **`WeightedHours`** on the row is the billing unit (weighted hours, GPU tools cost more per wall-hour than CPU tools).
 
-Use `scripts/summarize_binder_metrics.py <results-dir>` to rank designs by the auto-detected interface metric and report the max / 10th-best / fraction-above-cutoff.
+Use the absolute helper path documented in the parent skill, `python3 "$SKILL_DIR/scripts/summarize_binder_metrics.py" <results-dir>`, to rank designs by the auto-detected interface metric and report the max / 10th-best / fraction-above-cutoff. Resolve `SKILL_DIR` to the directory containing the parent `SKILL.md`.
 
 ---
 
 ## Catalog: every other binder generator (one line each)
 
-Reach for one of these when a workflow specifically names it; `getJobSchema` it first since these drift.
+Reach for one of these when a workflow specifically names it; run `tamarind --json schema TOOL` first because these drift.
 
 - **`mosaic-hallucinate`** (Mosaic Hallucination): SOTA gradient-based single-shot de novo protein/peptide binder design; optimizes a sequence directly on a composite Boltz-2 (ipTM/PAE/contacts) + ProteinMPNN loss, replacing the separate backbone-generate / inverse-fold / filter stages. A strong de novo alternative against a target sequence or structure.
 - **`idr`** (IDR Binder Design): de novo protein binders against an INTRINSICALLY DISORDERED target (IDR/IDP) from the target SEQUENCE alone, no folded structure needed (RFdiffusion + ProteinMPNN + AlphaFold2 initial-guess); complement to `bindcraft`'s folded-target scope.

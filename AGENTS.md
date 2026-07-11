@@ -1,42 +1,61 @@
-# Tamarind Bio agent skills
+# Tamarind Bio agent plugin
 
-This repo packages Tamarind Bio's biology platform (structure prediction, protein and antibody design, docking, binding affinity, and more) as agent skills. Hundreds of open-source tools run on Tamarind's managed GPUs behind one job API; these skills let an agent drive that API directly. One API key, the whole toolbox, no local GPU.
+This repository packages Tamarind Bio workflows as Codex and Claude Code skills. Keep the plugin a thin orchestration layer over the independently released `tamarind` CLI.
 
-## Start here
+## Architecture rules
 
-**`plugins/tamarind/skills/tamarind-api-setup`** first. It covers getting a `TAMARIND_API_KEY`, exporting it, a first-call self-check, and the two ways to call Tamarind (REST and the optional MCP server). Every other skill assumes setup is done and the key is in the environment.
+- Do not vendor or recreate HTTP, authentication, retry, polling, file-transfer, or API-shape logic in the plugin.
+- Invoke the `tamarind` executable as a subprocess. Do not import private modules from the `tamarind-cli` Python package.
+- Keep CLI success parsing narrow and version-aware. The supported 0.1 range is `tamarind-cli>=0.1.4,<0.2`.
+- Put global options before subcommands: `tamarind --json jobs`, not `tamarind jobs --json`.
+- Treat nonzero-command stderr as text. JSON mode currently guarantees structured success output, not structured errors.
+- Inspect `JobStatus` or `batchStatus`; process exit 0 alone does not prove a job succeeded.
+- Use `submit` followed by bounded `wait --timeout`; do not teach unbounded `submit --wait` or `results --wait` flows.
+- Never retry an ambiguous submission. Query its durable job name first.
+- Confirm material scope and weighted-hour spend before `submit` or `batch` unless the user already authorized that exact run.
+- Download with `tamarind --no-json results ... --download ...` to avoid echoing presigned URLs.
+- Keep local scripts only for deterministic scientific preprocessing or post-processing of downloaded artifacts.
 
-Then **`plugins/tamarind/skills/tamarind-submit-and-poll`** is the base job lifecycle (validate, submit, poll to terminal, download) that every workflow builds on.
+## Skill design
 
-## Conventions
-
-- The API key lives in the `TAMARIND_API_KEY` environment variable (sent as the `x-api-key` REST header). Never hardcode it.
-- Tool names, schemas, and the catalog change frequently. Discover live (`GET /tools` or MCP `getAvailableTools` + `getJobSchema`) rather than trusting a hardcoded list. The canonical live sources are `app.tamarind.bio/llms.txt`, `app.tamarind.bio/openapi.yaml`, and `docs.tamarind.bio`.
-- Each skill ships a thin REST client (`scripts/tamarind_client.py`, stdlib + `requests`) that bakes in the non-obvious API shapes. Probe the deps first, install from `scripts/requirements.txt` only if the import fails.
-- Bio jobs run minutes to hours. Submit and poll non-blocking (Codex: foreground with `yield_time_ms`; Claude Code: `run_in_background`). Jobs are addressable by name, so you can re-attach later from any process.
+- Frontmatter contains only `name` and `description`.
+- Put trigger and exclusion rules in `description`; keep the body procedural and concise.
+- Discover tools and schemas live with `tamarind --json tools` and `tamarind --json schema`.
+- Validate every payload with `tamarind --json validate` before any submission.
+- Use the domain skill for scientific choices and `tamarind-submit-and-poll` for the lifecycle contract.
+- Keep mutable catalogs and detailed examples in `references/`; do not hardcode them as authoritative.
+- `agents/openai.yaml` strings are quoted, short descriptions are 25-64 characters, and default prompts explicitly name `$skill-name`.
 
 ## Layout
 
-```
+```text
 plugins/tamarind/
-  .codex-plugin/plugin.json         Codex manifest (interface block)
-  .claude-plugin/plugin.json        Claude manifest (flat displayName)
+  .codex-plugin/plugin.json
+  .claude-plugin/plugin.json
   skills/
-    _shared/                        single source for the vendored client + helpers
-    tamarind-api-setup/             setup + first-call self-check
-    tamarind-tool-discovery/        find which tool fits a goal, live
-    tamarind-submit-and-poll/       the base submit/poll/download lifecycle
-    tamarind-results-analysis/      read back a finished job, metrics, scoring, chaining
-    tamarind-structure-prediction/  fold or co-fold from sequence
-    tamarind-antibody/              antibody / nanobody / VHH engineering
-    tamarind-binder-design/         de novo protein, peptide, small-molecule binders
-    tamarind-inverse-folding/       sequence design for a fixed backbone, PLMs
-    tamarind-docking/               ligand docking, screening, affinity scoring
-    tamarind-developability/        manufacturability and clinic-readiness filters
-    tamarind-finetune/              fine-tune on your data then run inference
-    tamarind-more-tools/            enzyme, ADMET, MD, nucleic acids, cryo-EM, search
-    tamarind-batch/                 run ONE tool across MANY inputs
-    tamarind-pipeline/              chain MULTIPLE tools into one workflow
+    tamarind-api-setup/
+    tamarind-tool-discovery/
+    tamarind-submit-and-poll/
+    tamarind-results-analysis/
+    tamarind-structure-prediction/
+    tamarind-antibody/
+    tamarind-binder-design/
+    tamarind-inverse-folding/
+    tamarind-docking/
+    tamarind-developability/
+    tamarind-finetune/
+    tamarind-more-tools/
+    tamarind-batch/
+    tamarind-pipeline/
 ```
 
-The `skills/` tree is format-agnostic: both Codex and Claude Code read the same directory. The manifests point at the directory (`skills/`), so new skill subdirectories are auto-discovered with no per-skill manifest edits. Codex-only per-skill cards live at `skills/<skill>/agents/openai.yaml` (Claude ignores them).
+## Verification
+
+Before handing off changes:
+
+1. Run repository tests.
+2. Validate `plugins/tamarind` with the plugin validator.
+3. Validate every skill with `quick_validate.py`.
+4. Compile and test each retained Python helper.
+5. Run CLI help-contract tests.
+6. If credentials are already available, run only the authenticated no-spend smoke path: auth status, tool search, schema, and validate. Never submit a compute job as a smoke test.

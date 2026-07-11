@@ -1,6 +1,8 @@
 # Tamarind structure-prediction tools
 
-Per-tool detail for the folders this skill covers. `getJobSchema(<tool>)` is the authority for required fields, options, bounds, and version-gating; this file captures when-to-pick and the gotchas the schema does not spell out. Schemas evolve, so re-fetch if a payload stops validating. Filter the live catalog with `getAvailableTools(function="structure-prediction")`.
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
+Per-tool detail for the tools this skill covers. `tamarind --json schema TOOL` is the authority for required fields, options, bounds, and version-gating; this file captures when-to-pick and the gotchas the schema does not spell out. Schemas evolve, so re-query if a payload stops validating. Filter the live catalog with `tamarind --json tools --function structure-prediction`.
 
 A note that applies to every file-typed param below (`templateFiles`, `a3mFiles`, `yamlFile`, `initialGuess`): reference an uploaded file by its **bare filename** (e.g. `template.cif`), never an email-prefixed S3 key. Upload first, then pass the returned bare name. A raw string in a file param is treated as inline file CONTENT, not a reference. See `tamarind-submit-and-poll/references/api_reference.md`.
 
@@ -16,7 +18,7 @@ Pick boltz when:
 - For antibody-antigen interfaces specifically, `protenix` reports stronger results.
 - `chai` is the sibling AF3 reproduction with the same complex scope but no affinity head; run it for a consensus second opinion or its glycan support.
 
-Schema highlights (from `getJobSchema`):
+Schema highlights (confirm with `tamarind --json schema boltz`):
 - Required: `inputFormat` (`"sequence"` | `"list"` | `"molecules"` | `"yaml"`; the UI exposes `sequence` and `yaml`). For `inputFormat="sequence"`, `sequence` is required (`:` separates chains). For `yaml`, `yamlFile` (`.yaml`/`.yml`) is required.
 - Ligands: `addLigands:true`, then `ligands` (list; each entry a bare CCD code or a SMILES string, `:`-separated to put multiple in one prediction). DNA/RNA via `addDNA`/`addRNA` + `dna`/`rna`, or as `proteins`/`dnas`/`rnas` lists in `list` mode.
 - Affinity: `predictAffinity:true` (needs `version:"2.2.1"`). `binderChain` optionally overrides which chain affinity is scored for; it defaults to the ligand's chain, and chains are assigned in input order (2 proteins + 1 ligand makes the ligand chain C).
@@ -26,9 +28,9 @@ Schema highlights (from `getJobSchema`):
 - `version` (default `2.2.1`; also `1.0.0`, `0.4.0`), `outputType` (`pdb` | `mmcif`), `runIpsae` (default true; IPSAE interface metrics for protein-protein complexes).
 
 Gotchas:
-- `chooseBest` is pipeline-only (`exclude:["api","batch","tools"]`); do not pass it over the API.
+- `chooseBest` is pipeline-only; do not include it in CLI settings.
 - A precomputed a3m is matched to a chain by its QUERY SEQUENCE (the a3m's first sequence must equal that chain's sequence), not by filename; you still map files to chains explicitly with `a3mMapping`. MSA generation is skipped for any chain you supply an a3m for.
-- `useBoltzServer` and `predictProteinAffinity` (protein-protein affinity on the hosted server) are gated behind a feature flag and are not generally available to external API users. Do not rely on them; for small-molecule affinity use `predictAffinity` on the standard tool.
+- `useBoltzServer` and `predictProteinAffinity` (protein-protein affinity on the hosted server) are feature-gated and are not generally returned for ordinary accounts. Do not rely on them; for small-molecule affinity use `predictAffinity` on the standard tool.
 
 Output: predicted structures (PDB or mmCIF per `outputType`), per-model confidence (pLDDT/pTM/ipTM), a `-scores.csv` (all models) plus a best-model CSV, IPSAE metrics when `runIpsae`, and an affinity score when `predictAffinity` is on. Multi-sample jobs rank models by confidence.
 
@@ -53,7 +55,7 @@ Schema highlights:
 - `modelType` (`auto` default -> `alphafold2_ptm` for monomer, `alphafold2_multimer_v3` for complex; also explicit AF2 multimer versions, `deepfold_v1`), `randomSeed`, `recycleEarlyStopTolerance`, `ipsaeScoring`.
 
 Gotchas:
-- `chooseBest` is pipeline-only (`exclude:["api","batch","tools"]`); do not pass it over the API.
+- `chooseBest` is pipeline-only; do not include it in CLI settings.
 - Templates are only applied when the template input is non-empty; an empty template set is skipped silently.
 
 Output: ranked PDB models (rank_001 = best), per-residue pLDDT, PAE arrays/plots, pTM/ipTM, MSA coverage plots, a scores CSV.
@@ -149,7 +151,7 @@ Precomputed-MSA note: boltz/chai accept uploaded `.a3m` alignments (`a3mFiles`) 
 
 ## Wider catalog (confirm params live)
 
-One line each; `getAvailableTools(function="structure-prediction")` to enumerate, `getJobSchema(<tool>)` for params.
+One line each; use `tamarind --json tools --function structure-prediction` to enumerate and `tamarind --json schema TOOL` for parameters.
 
 AF3-class / general complex cofolding (consensus alternatives):
 - `openfold` (OpenFold3): AF3 reproduction for protein/nucleic-acid/small-molecule complexes.
@@ -171,7 +173,7 @@ Conformational ensembles / multiple states (AlphaFold derivatives, distribution 
 - `af-traj` (AF-Traj): alternate conformations via subsampled-MSA AlphaFold2.
 - `afcluster` (AF Cluster): multiple conformations by clustering the MSA into sub-alignments; surfaces fold-switching.
 - `af2rave` (AF2Rave): diverse structures via reduced-MSA AlphaFold2 plus enhanced sampling.
-- `bioemu` (BioEmu): emulate the equilibrium conformational ensemble (Boltzmann-weighted) of a protein. Its primary function facet is `molecular-dynamics` (it is dual-tagged), so filter `getAvailableTools(function="molecular-dynamics")` if it does not surface under structure-prediction; monomer-only.
+- `bioemu` (BioEmu): emulate the equilibrium conformational ensemble (Boltzmann-weighted) of a protein. Its primary function facet is `molecular-dynamics` (it is dual-tagged), so run `tamarind --json tools --function molecular-dynamics` if it does not surface under structure-prediction; monomer-only.
 - `afsample` (AFSample2): heavy-sampling AlphaFold for higher-accuracy multimer prediction on a hard complex.
 - `af-unmasked` (AF Unmasked): structure prediction seeded from multimeric templates / a partial complex.
 

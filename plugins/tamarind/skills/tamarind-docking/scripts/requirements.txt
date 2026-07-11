@@ -1,9 +1,0 @@
-# Dependencies for the Tamarind analysis scripts.
-# Probe first (python3 -c "import requests") and only install if it fails.
-requests>=2.28
-# Structure-parsing helpers in _common.py (load_chain, residue_plddt, atom_coords)
-# also need gemmi + numpy. Probe (python3 -c "import gemmi, numpy") and install
-# these only if it fails; a host that already has them never pays the install.
-gemmi==0.7.5
-numpy==1.26.4; python_version < "3.11"
-numpy==2.4.6; python_version >= "3.11"

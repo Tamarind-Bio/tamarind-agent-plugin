@@ -1,13 +1,15 @@
 # Molecular dynamics + free energy
 
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
 Simulate how a biomolecule moves (MD) and compute how tightly a ligand binds (free energy). Spans classical all-atom MD, membrane MD, enhanced sampling, generative MD surrogates, and the alchemical / endpoint free-energy methods (RBFE, MM/GBSA, MM/PBSA) used to rank ligand affinities.
 
 Discover live, then read the schema:
 
-```
-getAvailableTools(function="molecular-dynamics")
-getAvailableTools(function="binding-affinity")   # the free-energy / affinity tools
-getJobSchema(jobType="openmm")                   # exact params + types before you submit
+```bash
+tamarind --json tools --function molecular-dynamics
+tamarind --json tools --function binding-affinity
+tamarind --json schema openmm
 ```
 
 Pick by outcome:
@@ -16,7 +18,7 @@ Pick by outcome:
 - A binding free energy (not a trajectory): `openfe` / `rbfe` (alchemical RBFE, rigorous) or `gbsa` / `g-mmpbsa` (endpoint, cheaper, approximate).
 - Quick structure cleanup: `openmm-relax`. Enhanced sampling: `openmm-temperature-replica` (REMD), `openmm-metadynamics` (CV-biased), or `af2rave` (reduced-MSA AF2 + AI-augmented MD for Boltzmann-ranked metastable states). A fast ensemble surrogate WITHOUT real MD: `bioemu` / `mdgen`.
 
-File params (`pdbFile`, `proteinFile`, `ligandFile`, `proteinPDB`, `ligandsSDF`) take a BARE filename, uploaded first. `validateJob` checks file existence, so an unuploaded filename returns `valid:false` while the rest of the settings resolved fine.
+File params (`pdbFile`, `proteinFile`, `ligandFile`, `proteinPDB`, `ligandsSDF`) take a bare filename uploaded first. `tamarind --json validate` checks file existence, so an unuploaded filename can return `valid:false` while the rest of the settings resolved correctly.
 
 ## Anchor tools
 
@@ -27,7 +29,7 @@ File params (`pdbFile`, `proteinFile`, `ligandFile`, `proteinPDB`, `ligandsSDF`)
 
 ### openmm (OpenMM MD): classical MD on GPU
 - `systemType` (`protein` / `protein-ligand`); `pdbFile` (.pdb, **all non-protein atoms are stripped** from this PDB, so pass a ligand separately as `ligandFile` SDF in protein-ligand mode); `ligandCharge` (required, the ligand's total formal charge, -3..3) in protein-ligand mode; `equilibrationTime` / `productionTime` (ns).
-- **GOTCHA (submit-blocker): several numeric-looking params are STRING-typed in the schema**: `minimizationSteps` (`"10000"`), `timestep` (`"2"`/`"4"`), `temperature` (`"298"`), `pressure` (`"1"`), `equilTrajFreq`, `prodTrajFreq`. Pass them as quoted strings, NOT bare numbers, or the submit is rejected. `validateJob` catches this.
+- **GOTCHA (submit-blocker): several numeric-looking params are STRING-typed in the schema**: `minimizationSteps` (`"10000"`), `timestep` (`"2"`/`"4"`), `temperature` (`"298"`), `pressure` (`"1"`), `equilTrajFreq`, `prodTrajFreq`. Pass them as quoted strings, NOT bare numbers, or the submit is rejected. `tamarind --json validate openmm --input FILE --name JOB_NAME` catches this.
 - Runtime / cost scales roughly with atom count times total ns; large systems or long `productionTime` are the cost drivers. Surface those before submitting.
 
 ### openfe (OpenFE) and rbfe (Relative Binding Free Energy)

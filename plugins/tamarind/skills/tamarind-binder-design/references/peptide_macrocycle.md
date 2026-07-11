@@ -1,6 +1,8 @@
 # Peptide and macrocycle binders
 
-The peptide/macrocycle family on Tamarind: linear peptide binders, head-to-tail cyclized macrocycles, and the sequence/structure tooling around them. Source of truth is live `getJobSchema(<tool>)`; payloads below are grounded snapshots, re-fetch if one stops validating. File params take a **bare uploaded filename** (not an email-prefixed key).
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
+The peptide/macrocycle family on Tamarind covers linear peptide binders, head-to-tail cyclized macrocycles, and the sequence/structure tooling around them. Source of truth is `tamarind --json schema TOOL`; payloads below are grounded snapshots, so re-query if one stops validating. File parameters take the **bare filename** returned by `tamarind --json files upload PATH`, not an email-prefixed key.
 
 ## Pick by what you have and the shape you want
 
@@ -37,7 +39,7 @@ Validated payload:
 
 ## afcycdesign (AfCycDesign): de novo cyclic peptides (binder or free scaffold)
 
-Hallucinates head-to-tail cyclic-peptide backbones by inverting AlphaFold with a cyclic-offset positional encoding, redesigning a starting structure into a cyclized peptide. Designs cyclic-peptide binders against a target protein as well as target-free novel cyclic scaffolds; confirm the exposed fields with `getJobSchema`.
+Hallucinates head-to-tail cyclic-peptide backbones by inverting AlphaFold with a cyclic-offset positional encoding, redesigning a starting structure into a cyclized peptide. Designs cyclic-peptide binders against a target protein as well as target-free novel cyclic scaffolds; confirm the exposed fields with `tamarind --json schema af-cyc-design`.
 
 - `pdbFile` (required, `.pdb`): starting structure to cyclize/redesign.
 - `chain` (required, single chain ID, e.g. `"A"`): the chain to design.
@@ -107,4 +109,4 @@ A typical macrocyclic-binder campaign chains generation -> validation:
 2. **Diversify sequences** for a chosen backbone with `cyclicmpnn` if you want more than the designed sequence per backbone.
 3. **Validate** the structure of a designed cyclic sequence with a cyclic-peptide structure predictor (in `tamarind-structure-prediction`), and screen developability (peptide property tools live under the developability/utility skills).
 
-Chain by reference, not by re-upload: pass a prior job's output by the `JobName/path/to/file.ext` path form into the next tool's file param, or use `listJobFiles(jobName)` to get an `s3Path`. See `tamarind-submit-and-poll` and the binder `examples.md` for the chaining mechanics.
+Chain by reference when the downstream schema accepts it: pass a prior job's output in the `JobName/path/to/file.ext` form into the next tool's file parameter. If the exact output path is uncertain, download the completed upstream result with `tamarind --no-json results JOB_NAME --download DIRECTORY`, inspect the extracted bundle, and use the documented relative path. See `tamarind-submit-and-poll` and the binder `examples.md` for the mechanics.

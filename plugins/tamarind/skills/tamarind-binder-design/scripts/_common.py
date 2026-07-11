@@ -5,7 +5,37 @@ These read a downloaded results directory or a job's Score field. Structure pars
 uses gemmi (probe-first: import only fails if the optional deps are missing). Keep
 this file side-effect-free so any per-skill script can import it.
 """
-import csv, json
+import csv
+import json
+import math
+
+
+def is_finite_number(value):
+    """True only for ordinary finite JSON-style numbers (booleans excluded)."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    return isinstance(value, float) and math.isfinite(value)
+
+
+def normalize_non_finite(value):
+    """Recursively replace NaN and +/-Infinity with ``None``.
+
+    Python's JSON decoder accepts these non-standard constants by default, and
+    CSV float coercion accepts their spellings. Scientific result tables use
+    them for missing measurements, so expose them as missing rather than letting
+    them enter rankings or invalid JSON output.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: normalize_non_finite(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [normalize_non_finite(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(normalize_non_finite(item) for item in value)
+    return value
 
 
 def load_chain(path, chain_id=None):
@@ -64,11 +94,13 @@ def read_score_field(row, key=None):
     if raw is None:
         return None
     score = json.loads(raw) if isinstance(raw, str) else raw
+    score = normalize_non_finite(score)
     return score.get(key) if key is not None else score
 
 
 def _maybe_float(v):
     try:
-        return float(v)
+        value = float(v)
+        return value if math.isfinite(value) else None
     except (TypeError, ValueError):
         return v

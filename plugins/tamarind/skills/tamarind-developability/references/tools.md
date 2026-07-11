@@ -1,11 +1,13 @@
 # Tamarind Bio: developability / stability / immunogenicity tool map
 
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
 The catalog drifts. Treat this as a starting map, not a frozen list: filter live with
-`getAvailableTools(function="developability")` (narrower facets exist as `function` tags:
+`tamarind --json tools --function developability` (narrower facets exist as function tags:
 `thermostability`, `aggregation`, `solubility`, `immunogenicity`, `humanization`,
 `point-mutations`, `mutation-scoring`, `protein-language-models`), read each candidate's
-`description`, then `getJobSchema(<name>)` for the exact params. Pass the lowercase tool
-`name` (e.g. `aggrescan3d`), not the displayName.
+`description`, then run `tamarind --json schema NAME` for the exact parameters. Pass the
+lowercase tool `name` (e.g. `aggrescan3d`), not the display name.
 
 ## Picking the right developability tool
 
@@ -154,8 +156,8 @@ Mind the param names: `polyxpert` uses `heavyChain` / `lightChain`, NOT the
 ### thermompnn / thermompnn-d
 - **`chains` is a LIST** (`["A"]`), required unless `allChains: true`. Indexing `[0]` silently
   scopes to one chain on a multi-chain input.
-- **`verify`** (auto-fold designs with AlphaFold) is `exclude:["api","pipelines","batch"]` -
-  UI-only premium, silently dropped over the API. Leave it out.
+- **`verify`** (auto-fold designs with AlphaFold) is UI-only and ignored by CLI submission.
+  Leave it out.
 - Reconstruct a mutated sequence from the CSV columns (`wildtype` + `position` + mutant), not
   by re-parsing the PDB, to survive gap-filled / non-contiguous numbering.
 - `thermompnn-d` `model`: `epistatic` runs inference on every single mutation (slower, captures

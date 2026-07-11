@@ -3,13 +3,13 @@
   "owner": { "name": "Tamarind Bio", "url": "https://github.com/Tamarind-Bio/tamarind-agent-plugin" },
   "metadata": {
     "description": "Tamarind Bio biology tools as ready-to-call agent skills: structure prediction, docking, binder design and screening, fine-tuning.",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "tamarind",
       "source": "./plugins/tamarind",
-      "description": "Run Tamarind Bio biology tools from your agent via the Tamarind API.",
+      "description": "Run Tamarind Bio biology tools from your agent through the Tamarind CLI.",
       "category": "science"
     }
   ]

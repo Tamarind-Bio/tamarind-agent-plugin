@@ -1,10 +1,10 @@
 # Selecting the right Tamarind tool
 
-The catalog has many tools per task. Picking well is a reasoning problem, not a string match. These are the principles, with worked examples. The live `getJobSchema` is always the final authority on what a tool actually takes and produces.
+The catalog has many tools per task. Picking well is a reasoning problem, not a string match. These are the principles, with worked examples. The live `tamarind --json schema TOOL` result is always the final authority on what a tool actually takes and produces.
 
 ## 1. Match INTENT, not the tool name
 
-Anchor on the user's actual problem: the **input they have**, the **output they need**, and their **constraints** (speed, "no MSA", a known pocket vs a blind search, a target structure vs sequence-only). Filter the catalog by `function` (and `modality`), then read each candidate's `description` and match it to that problem. The `description` and `tags` are the public "what it's for" signal; let them, plus `getJobSchema`, drive the pick.
+Anchor on the user's actual problem: the **input they have**, the **output they need**, and their **constraints** (speed, "no MSA", a known pocket vs a blind search, a target structure vs sequence-only). Filter the catalog by `function` (and `modality`), then read each candidate's `description` and match it to that problem. Let those fields plus `tamarind --json schema TOOL` drive the pick.
 
 A keyword search over tool names systematically mis-ranks, because the tool whose title most literally echoes the request wording is frequently not the established choice. Lead with the goal, not the noun the user happened to use.
 
@@ -48,7 +48,7 @@ Any design or generative step produces candidates that need checking. Never end 
 - **Docked pose** → check the pose's confidence / affinity score and that it sits in the intended pocket.
 - **Antibody design** → developability (e.g. a TAP-style profiler), humanness, and a structure prediction of the designed Fv.
 
-The chain "design → fold/score → filter" is the shape of almost every real workflow; recommend it as a unit. (`tamarind-pipeline` chains these server-side; `tamarind-results-analysis` reads the metrics back.)
+The chain "design → fold/score → filter" is the shape of almost every real workflow; recommend it as a unit. (`tamarind-pipeline` orchestrates these as explicit, resumable CLI stages; `tamarind-results-analysis` reads the metrics back.)
 
 ## One clarifying question when the pick depends on an unspecified sub-class
 
@@ -60,6 +60,6 @@ If the top 1-2 picks would CHANGE based on a sub-class the user didn't specify, 
 
 ## Calibration and honesty
 
-- If you don't know whether a tool or parameter exists, call `getAvailableTools` / `getJobSchema`, and don't guess or invent a restriction to rationalize a gap.
+- If you don't know whether a tool or parameter exists, query `tamarind --json tools` and `tamarind --json schema TOOL`; do not guess or invent a restriction to rationalize a gap.
 - Don't fabricate platform facts (pricing, quotas, limits, hidden parameters). If a candidate's attributes aren't in the schema or docs and the choice genuinely turns on them (a benchmark number, a compute cost, a license), say what you'd need to verify rather than bluffing.
 - Describe capabilities in scientific terms (structure prediction, binder design, docking, scoring, annotation), not by reciting internal tool function names.
