@@ -210,6 +210,13 @@ def test_prerelease_readme_gates_install_and_matches_ci_cli_pin() -> None:
     assert len(readme_pins) == 1
 
 
+def test_prodigy_reference_uses_prodigy_schema() -> None:
+    tools = (SKILLS / "tamarind-docking/references/tools.md").read_text()
+    prodigy = tools.split("## prodigy (PRODIGY)", 1)[1].split("\n---", 1)[0]
+    assert "`tamarind --json schema prodigy`" in prodigy
+    assert "schema binding-ddg" not in prodigy
+
+
 def test_cli_02_terminal_failure_exit_is_documented() -> None:
     setup = (SKILLS / "tamarind-api-setup" / "SKILL.md").read_text()
     contract = (

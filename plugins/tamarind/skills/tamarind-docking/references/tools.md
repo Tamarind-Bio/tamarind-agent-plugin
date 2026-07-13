@@ -98,7 +98,7 @@ Pick prodigy when:
 - For antibody-antigen complexes and a learned model rather than a contact heuristic, use `dsmbind`.
 - To score docking/interface QUALITY rather than affinity, use `dockq`, `pdockq`, `ipsae`, or `spatial-ppi`.
 
-Schema highlights (confirm with `tamarind --json schema binding-ddg`):
+Schema highlights (confirm with `tamarind --json schema prodigy`):
 - `proteinFile` (required, `.pdb`): the protein COMPLEX structure to predict dG for (both partners in one PDB). Bare filename.
 
 Gotchas:
