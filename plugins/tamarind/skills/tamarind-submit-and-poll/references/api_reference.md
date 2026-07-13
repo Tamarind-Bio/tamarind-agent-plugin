@@ -40,14 +40,15 @@ Validation returns `valid` and may return `normalized`. Submit the original sett
 
 ```bash
 tamarind --json submit TOOL --input settings.yaml --name JOB_NAME
-tamarind --json status JOB_NAME | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+SKILL_DIR="/absolute/path/to/the/tamarind-submit-and-poll-skill"
+python3 "$SKILL_DIR/scripts/safe_status.py" JOB_NAME
 # Only when the filtered probe carries JobStatus, not batchStatus:
 tamarind --json wait JOB_NAME --timeout 3600 --poll-interval 15
 tamarind --json logs JOB_NAME --max-lines 200
 tamarind --no-json results JOB_NAME --download /absolute/output
 ```
 
-Use the exact filtered status probe from the parent `SKILL.md`: if it carries `batchStatus`, schedule bounded one-shot probes instead of calling CLI 0.1.4's waiter. For a single job, `wait` may exit 0 for a terminal failure, so inspect `JobStatus`. Use `--no-json` for downloads because CLI 0.1 otherwise includes the presigned URL in output.
+Use the exact safe status helper from the parent `SKILL.md`: if it carries `batchStatus`, schedule bounded one-shot probes instead of calling CLI 0.1.4's waiter. For a single job, `wait` may exit 0 for a terminal failure, so inspect `JobStatus`. Use `--no-json` for downloads because CLI 0.1 otherwise includes the presigned URL in output.
 
 ## Files
 

@@ -192,7 +192,8 @@ inputs (poll the batch PARENT's `batchStatus`, not subjob `JobStatus` - see `tam
 # Put one settings object per candidate in dev-batch.yaml. Validate every row or
 # distinct conditional shape before multiplying the run.
 tamarind --json batch tap --input dev-batch.yaml --name dev-batch
-tamarind --json status dev-batch | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+SKILL_DIR="/absolute/path/to/the/tamarind-developability-skill"
+python3 "$SKILL_DIR/scripts/safe_status.py" dev-batch
 tamarind --json jobs --batch dev-batch --include-subjobs --all
 ```
 

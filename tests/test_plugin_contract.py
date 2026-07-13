@@ -142,25 +142,16 @@ def test_cli_014_batch_guidance_does_not_use_single_job_waiter() -> None:
     assert recovery.index("batchStatus") < recovery.index("tamarind --json wait JOB_NAME")
 
 
-def test_cli_014_status_guidance_redacts_presigned_urls_and_classifies_before_wait() -> None:
-    offenders = []
-    for path in ROOT.rglob("*.md"):
-        for line_no, line in enumerate(path.read_text().splitlines(), 1):
-            if "tamarind --json status" in line and not all(
-                token in line
-                for token in (
-                    "blocked=",
-                    "scrub=",
-                    '"resulturl"',
-                    '"uploadurl"',
-                    '"headurl"',
-                )
-            ):
-                offenders.append(f"{path.relative_to(ROOT)}:{line_no}")
-    assert not offenders, offenders
+def test_cli_014_status_guidance_uses_safe_helper_before_wait() -> None:
+    markdown = "\n".join(path.read_text() for path in ROOT.rglob("*.md"))
+    assert "tamarind --json status" not in markdown
+    assert markdown.count('python3 "$SKILL_DIR/scripts/safe_status.py"') >= 10
 
     lifecycle = (SKILLS / "tamarind-submit-and-poll" / "SKILL.md").read_text()
-    assert lifecycle.index("blocked=") < lifecycle.index("tamarind --json wait JOB_NAME")
+    assert lifecycle.index("safe_status.py") < lifecycle.index(
+        "tamarind --json wait JOB_NAME"
+    )
+    assert "preserving native nonzero exit codes and stderr" in lifecycle
     assert "batchStatus" in lifecycle
 
 

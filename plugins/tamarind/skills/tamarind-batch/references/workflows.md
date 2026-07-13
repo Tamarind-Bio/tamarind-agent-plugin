@@ -16,7 +16,8 @@ For a small batch, validate every row. For a large homogeneous batch, validate a
 
 ```bash
 tamarind --json batch TOOL --input batch.yaml --name BATCH_NAME
-tamarind --json status BATCH_NAME | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+SKILL_DIR="/absolute/path/to/the/tamarind-batch-skill"
+python3 "$SKILL_DIR/scripts/safe_status.py" BATCH_NAME
 tamarind --json jobs --batch BATCH_NAME --include-subjobs --all
 ```
 

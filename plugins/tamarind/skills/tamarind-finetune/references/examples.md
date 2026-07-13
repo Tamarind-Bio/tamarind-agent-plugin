@@ -18,7 +18,8 @@ Check data columns, units, splits, leakage, base model, epochs/steps, and datase
 ```bash
 tamarind --json submit FINETUNE_TOOL --input train.yaml --name model-train-v1
 tamarind --json wait model-train-v1 --timeout 28800 --poll-interval 30
-tamarind --json status model-train-v1 | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+SKILL_DIR="/absolute/path/to/the/tamarind-finetune-skill"
+python3 "$SKILL_DIR/scripts/safe_status.py" model-train-v1
 ```
 
 Require a successful terminal status.

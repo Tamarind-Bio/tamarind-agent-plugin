@@ -10,10 +10,13 @@ Treat the durable job name as the recovery key. Never start a replacement job me
 ## Recover remote state
 
 ```bash
-tamarind --json status JOB_NAME | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+SKILL_DIR="/absolute/path/to/the/tamarind-results-analysis-skill"
+python3 "$SKILL_DIR/scripts/safe_status.py" JOB_NAME
 tamarind --json jobs --status Running --limit 50
 tamarind --json jobs --batch BATCH_NAME --include-subjobs
 ```
+
+Resolve `SKILL_DIR` to the directory containing this `SKILL.md`. The helper invokes the official CLI, removes credential-bearing URL fields only after a successful JSON response, and preserves the CLI's original nonzero exit code and stderr.
 
 Branch on the first status document. If it carries `batchStatus`, it is a batch parent: on CLI 0.1.4, schedule bounded one-shot `status` checks through the agent host and stop on `Complete`, `AggregationFailed`, or `Stopped`; do not call the single-job waiter. If it carries an active `JobStatus`, use a bounded wait:
 

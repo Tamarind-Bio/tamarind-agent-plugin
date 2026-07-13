@@ -46,7 +46,8 @@ tamarind --json submit TOOL --input settings.yaml --name durable-name
 Persist `durable-name`. In another task or process:
 
 ```bash
-tamarind --json status durable-name | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+SKILL_DIR="/absolute/path/to/the/tamarind-submit-and-poll-skill"
+python3 "$SKILL_DIR/scripts/safe_status.py" durable-name
 # Use wait only if the filtered probe carries JobStatus, not batchStatus.
 tamarind --json wait durable-name --timeout 1800 --poll-interval 15
 ```
@@ -56,7 +57,8 @@ Do not create a new job merely because the first local process ended.
 ## Diagnose a terminal failure
 
 ```bash
-tamarind --json status durable-name | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+SKILL_DIR="/absolute/path/to/the/tamarind-submit-and-poll-skill"
+python3 "$SKILL_DIR/scripts/safe_status.py" durable-name
 tamarind --json logs durable-name --max-lines 200
 ```
 

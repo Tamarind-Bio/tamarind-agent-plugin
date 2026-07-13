@@ -3,7 +3,8 @@
 ## Recover one single job
 
 ```bash
-tamarind --json status my-job | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+SKILL_DIR="/absolute/path/to/the/tamarind-results-analysis-skill"
+python3 "$SKILL_DIR/scripts/safe_status.py" my-job
 tamarind --json wait my-job --timeout 1800 --poll-interval 15
 ```
 

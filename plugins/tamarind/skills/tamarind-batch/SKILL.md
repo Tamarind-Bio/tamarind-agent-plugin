@@ -29,8 +29,11 @@ Check duplicate job names, input count, file availability, per-input sampling, a
 
 ```bash
 tamarind --json batch TOOL --input batch.yaml --name BATCH_NAME
-tamarind --json status BATCH_NAME | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+SKILL_DIR="/absolute/path/to/the/tamarind-batch-skill"
+python3 "$SKILL_DIR/scripts/safe_status.py" BATCH_NAME
 ```
+
+Resolve `SKILL_DIR` to the directory containing this `SKILL.md`. The helper invokes the official CLI, removes credential-bearing URL fields only after a successful JSON response, and preserves the CLI's original nonzero exit code and stderr.
 
 Do not retry an ambiguous batch submit. Query `BATCH_NAME` first. CLI 0.1.4's `wait` command reads single-job `JobStatus` and cannot reliably terminate on a batch parent's `batchStatus`, so do not use it for batch parents. Schedule bounded, one-shot `status` checks through the agent host at a sensible cadence (normally 20-60 seconds), with a clear elapsed-time deadline. Stop on batch `Complete`, `AggregationFailed`, or `Stopped`; never implement an unbounded shell loop. A deadline means "report still running and reattach later," not "resubmit."
 

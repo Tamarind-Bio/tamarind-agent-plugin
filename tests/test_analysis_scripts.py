@@ -361,6 +361,13 @@ def test_copied_analysis_helpers_remain_identical() -> None:
             skills / "tamarind-results-analysis/scripts/_common.py",
             skills / "tamarind-structure-prediction/scripts/_common.py",
         ],
+        [
+            skills / "tamarind-batch/scripts/safe_status.py",
+            skills / "tamarind-developability/scripts/safe_status.py",
+            skills / "tamarind-finetune/scripts/safe_status.py",
+            skills / "tamarind-results-analysis/scripts/safe_status.py",
+            skills / "tamarind-submit-and-poll/scripts/safe_status.py",
+        ],
     ]
     for group in groups:
         contents = {path.read_bytes() for path in group}

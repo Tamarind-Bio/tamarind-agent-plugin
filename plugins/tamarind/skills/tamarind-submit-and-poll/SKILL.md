@@ -61,13 +61,16 @@ Job-name idempotency is not documented, so an automatic retry may create or coll
 
 ## 6. Classify the returned row, then wait with a bound
 
-Some nominally single-tool settings fan out into a batch parent. Probe the durable name once before choosing a waiter. CLI 0.1.4 can expose a completed parent's presigned `resultUrl` in raw status JSON, so filter credential-bearing URL fields inside the local pipe before output returns to the agent:
+Some nominally single-tool settings fan out into a batch parent. Probe the durable name once before choosing a waiter. CLI 0.1.4 can expose a completed parent's presigned `resultUrl` in raw status JSON, so use the local compatibility helper to remove credential-bearing URL fields before output returns to the agent:
 
 ```bash
-tamarind --json status JOB_NAME | python3 -c 'import json,sys; blocked={"resulturl","downloadurl","presignedurl","uploadurl","headurl"}; scrub=lambda v: [scrub(x) for x in v] if isinstance(v,list) else {k:scrub(x) for k,x in v.items() if k.lower() not in blocked} if isinstance(v,dict) else v; print(json.dumps(scrub(json.load(sys.stdin))))'
+SKILL_DIR="/absolute/path/to/the/tamarind-submit-and-poll-skill"
+python3 "$SKILL_DIR/scripts/safe_status.py" JOB_NAME
 ```
 
-If the filtered document carries `batchStatus`, do not call CLI 0.1.4's single-job waiter. Schedule the same bounded, filtered one-shot status probe through the agent host and stop on batch `Complete`, `AggregationFailed`, or `Stopped`. If it carries active `JobStatus`, run the wait in the agent runtime's foreground/session mechanism, never shell `&` or `nohup`:
+Resolve `SKILL_DIR` to the directory containing this `SKILL.md`. This helper still executes the official `tamarind` CLI; it is not an API client. It parses and redacts stdout only after exit 0, while preserving native nonzero exit codes and stderr.
+
+If the filtered document carries `batchStatus`, do not call CLI 0.1.4's single-job waiter. Schedule the same bounded, safe one-shot status helper through the agent host and stop on batch `Complete`, `AggregationFailed`, or `Stopped`. If it carries active `JobStatus`, run the wait in the agent runtime's foreground/session mechanism, never shell `&` or `nohup`:
 
 ```bash
 tamarind --json wait JOB_NAME --timeout 3600 --poll-interval 15
