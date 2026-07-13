@@ -138,10 +138,34 @@ def test_confidence_does_not_label_unknown_applicability_as_weak_interface() -> 
 
     result = module.summarize(models)
 
-    assert result["selection_metric"] == "ptm"
+    assert result["selection_metric"] == "iptm"
     assert result["low_confidence_interfaces"] == []
     assert result["interface_unchecked"] == [
         {"label": "unknown-complex", "rank": 1, "iptm": 0.2}
+    ]
+
+
+def test_confidence_csv_only_iptm_ranks_but_requires_interface_verification(
+    tmp_path: Path,
+) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    scores = tmp_path / "scores.csv"
+    scores.write_text("model,iptm\nlow,0.2\nhigh,0.9\n")
+
+    models = module.load_models(str(scores))
+    result = module.summarize(models)
+
+    assert [model["interface_applicable"] for model in models] == [None, None]
+    assert result["selection_metric"] == "iptm"
+    assert [model["label"] for model in result["ranked"]] == ["high", "low"]
+    assert result["low_confidence_interfaces"] == []
+    assert result["interface_unchecked"] == [
+        {"label": "high", "rank": 1, "iptm": 0.9},
+        {"label": "low", "rank": 2, "iptm": 0.2},
     ]
 
 

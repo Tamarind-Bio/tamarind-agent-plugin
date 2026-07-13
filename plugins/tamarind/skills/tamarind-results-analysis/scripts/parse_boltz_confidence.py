@@ -307,8 +307,12 @@ def _selection_metric(models):
     if not models:
         return None
     for key in RANK_PRIORITY:
-        if key in INTERFACE_METRICS and not all(
-            model.get("interface_applicable") is True for model in models
+        # A confirmed monomer makes interface metrics inapplicable. Unknown
+        # applicability (for example a scores-only CSV with no mappable
+        # structure) may still be a complex, so allow its finite interface
+        # metric to rank while surfacing it in ``interface_unchecked``.
+        if key in INTERFACE_METRICS and any(
+            model.get("interface_applicable") is False for model in models
         ):
             continue
         if all(_common.is_finite_number(model.get(key)) for model in models):
