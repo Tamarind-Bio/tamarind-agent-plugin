@@ -9,11 +9,17 @@ import pytest
 
 
 CLI = os.environ.get("TAMARIND_CLI") or shutil.which("tamarind")
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
     assert CLI
     return subprocess.run([CLI, *args], text=True, capture_output=True, check=False)
+
+
+def _plain(text: str) -> str:
+    """Remove terminal styling before asserting semantic help content."""
+    return ANSI_ESCAPE.sub("", text)
 
 
 @pytest.mark.skipif(not CLI, reason="tamarind CLI is not installed")
@@ -26,8 +32,9 @@ def test_supported_cli_version_and_root_options() -> None:
 
     help_result = _run("--help")
     assert help_result.returncode == 0
+    help_text = _plain(help_result.stdout)
     for token in ("--json", "--no-json", "--profile", "auth", "validate", "submit", "wait"):
-        assert token in help_result.stdout
+        assert token in help_text
 
 
 @pytest.mark.skipif(not CLI, reason="tamarind CLI is not installed")
@@ -44,5 +51,6 @@ def test_supported_cli_version_and_root_options() -> None:
 def test_documented_cli_flags_exist(args: tuple[str, ...], tokens: tuple[str, ...]) -> None:
     result = _run(*args)
     assert result.returncode == 0, result.stderr
+    help_text = _plain(result.stdout)
     for token in tokens:
-        assert token in result.stdout
+        assert token in help_text
