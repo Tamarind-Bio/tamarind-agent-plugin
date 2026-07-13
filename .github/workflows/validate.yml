@@ -24,7 +24,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
       - name: Install oldest or latest supported CLI
         run: python -m pip install '${{ matrix.cli_spec }}' pytest PyYAML
       - name: Run plugin and CLI contract tests
