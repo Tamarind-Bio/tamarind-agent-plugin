@@ -184,8 +184,7 @@ def test_batch_examples_document_bare_subjob_suffixes() -> None:
 
 
 def test_batch_submission_examples_require_final_row_prevalidation() -> None:
-    batch = SKILLS / "tamarind-batch"
-    markdown = "\n".join(path.read_text() for path in batch.rglob("*.md"))
+    markdown = "\n".join(path.read_text() for path in SKILLS.rglob("*.md"))
     commands = [
         line for line in markdown.splitlines()
         if line.startswith("tamarind --json batch ")

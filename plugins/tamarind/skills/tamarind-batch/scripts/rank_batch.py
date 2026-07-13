@@ -170,9 +170,14 @@ def _infer_ascending(metric):
     words = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", words)
     normalized = re.sub(r"[^a-z0-9]+", "_", words.lower()).strip("_")
     tokens = set(normalized.split("_"))
+    acronym_lower_better = (
+        re.search(r"(?:^|_)(?:i_?)?p_?ae(?:_|$)", normalized)
+        or re.search(r"(?:^|_)(?:delta_?g|dd?_?g)(?:_|$)", normalized)
+    )
     return bool(
         tokens.intersection({"affinity", "energy", "pae", "rmsd", "ddg", "ic50", "kd", "ki"})
         or normalized in {"delta_g", "binding_energy", "binding_affinity"}
+        or acronym_lower_better
     )
 
 

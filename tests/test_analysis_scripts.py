@@ -543,9 +543,24 @@ def test_rank_batch_parses_json_score_strings(tmp_path: Path) -> None:
     "metric",
     [
         "pae",
+        "pAE",
+        "i_pAE",
+        "ipAE",
+        "pAEValue",
+        "interface_pAE",
+        "i_pAEScore",
         "bindingAffinity",
         "bindingEnergy",
         "deltaG",
+        "dG",
+        "ddG",
+        "binding_ddG",
+        "dGValue",
+        "DGValue",
+        "dG_score",
+        "deltaGValue",
+        "ddGValue",
+        "ddG_score",
         "affinityPredValue",
         "RMSDValue",
         "predictedKd",
@@ -573,6 +588,25 @@ def test_rank_batch_infers_lower_better_metric_direction(metric: str) -> None:
     overridden = module.summarize(batch, ascending=False)
     assert overridden["direction_source"] == "explicit"
     assert [row["name"] for row in overridden["ranked"]] == ["worse", "better"]
+
+
+@pytest.mark.parametrize("metric", ["ipTM", "confidence", "pLDDT"])
+def test_rank_batch_keeps_higher_better_metrics_descending(metric: str) -> None:
+    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    module = _load(script)
+    batch = {
+        "batch_status": "Complete",
+        "statuses": {"Complete": 2},
+        "subjobs": [
+            {"name": "better", "status": "Complete", "score": {metric: 0.9}},
+            {"name": "worse", "status": "Complete", "score": {metric: 0.2}},
+        ],
+    }
+
+    result = module.summarize(batch)
+
+    assert result["ascending"] is False
+    assert [row["name"] for row in result["ranked"]] == ["better", "worse"]
 
 
 def test_rank_batch_accepts_native_cli_jobs_envelope(tmp_path: Path) -> None:

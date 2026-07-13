@@ -191,7 +191,7 @@ inputs (poll the batch PARENT's `batchStatus`, not subjob `JobStatus` - see `tam
 ```bash
 # Put one settings object per candidate in dev-batch.yaml. Validate every row or
 # distinct conditional shape before multiplying the run.
-tamarind --json batch tap --input dev-batch.yaml --name dev-batch
+tamarind --json batch tap --input dev-batch.yaml --name dev-batch --prevalidate
 tamarind --json wait dev-batch --timeout 3600 --poll-interval 15
 tamarind --json jobs --batch dev-batch --include-subjobs --all
 ```
