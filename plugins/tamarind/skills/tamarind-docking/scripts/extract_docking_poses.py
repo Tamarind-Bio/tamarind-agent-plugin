@@ -40,6 +40,7 @@ import sys
 # Vina/gnina/smina log lines like:  "   1     -7.088      0.000      0.000"
 # (mode/rank, affinity kcal/mol, then RMSD columns). Capture rank + affinity.
 _AFFINITY_LINE = re.compile(r"^\s*(\d+)\s+(-?\d+\.\d+)")
+_MODEL_NUMBER = re.compile(r"^MODEL\s+(\d+)\b")
 # DiffDock filenames: rank3_confidence-1.23.sdf / rank1.sdf. The score's sign is
 # part of the number (rank1_confidence-1.42.sdf), so only an underscore may act
 # as a separator before it; a hyphen there is the value's minus sign, not a
@@ -134,6 +135,39 @@ def _split_models(path):
     if not blocks:                 # no delimiters: treat the whole file as one pose
         blocks = [text]
     return [(b, ext) for b in blocks]
+
+
+def _validate_affinity_alignment(blocks, affinity_rows, path):
+    """Prove that positional pose/score pairing is complete and correctly ordered."""
+    if len(blocks) != len(affinity_rows):
+        raise SystemExit(
+            f"pose/score count mismatch for {path}: "
+            f"{len(blocks)} pose block(s), {len(affinity_rows)} score row(s)"
+        )
+
+    score_ranks = [row["source_rank"] for row in affinity_rows]
+    expected_ranks = list(range(1, len(affinity_rows) + 1))
+    if score_ranks != expected_ranks:
+        raise SystemExit(
+            f"pose/score rank mismatch for {path}: "
+            f"expected score ranks {expected_ranks}, found {score_ranks}"
+        )
+
+    model_numbers = []
+    for block, ext in blocks:
+        if ext not in (".pdb", ".pdbqt") or not block.startswith("MODEL"):
+            continue
+        match = _MODEL_NUMBER.match(block)
+        if match is None:
+            raise SystemExit(f"malformed MODEL number in pose file {path}")
+        model_numbers.append(int(match.group(1)))
+
+    if model_numbers:
+        if len(model_numbers) != len(blocks) or model_numbers != score_ranks:
+            raise SystemExit(
+                f"pose/score rank mismatch for {path}: "
+                f"MODEL numbers {model_numbers}, score ranks {score_ranks}"
+            )
 
 
 def _sdf_numeric_properties(block):
@@ -240,12 +274,20 @@ def load_poses(run_dir):
             or _logs_look_like_gnina(logs)
             or os.path.basename(ensemble).lower() == "result.sdf"
         )
+        aligned_affinity_rows = []
+        if aff_rows and not looks_like_gnina:
+            _validate_affinity_alignment(blocks, aff_rows, ensemble)
+            aligned_affinity_rows = aff_rows
         poses = []
         for i, (block, ext) in enumerate(blocks):
-            row = {"source_rank": i + 1, "content": block, "ext": ext}
+            source_rank = (
+                aligned_affinity_rows[i]["source_rank"]
+                if i < len(aligned_affinity_rows) else i + 1
+            )
+            row = {"source_rank": source_rank, "content": block, "ext": ext}
             row.update(sdf_metrics[i])
-            if i < len(aff_rows):
-                row["affinity"] = aff_rows[i]["affinity"]
+            if i < len(aligned_affinity_rows):
+                row["affinity"] = aligned_affinity_rows[i]["affinity"]
             poses.append(row)
 
         if looks_like_gnina:

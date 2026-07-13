@@ -768,6 +768,111 @@ def test_docking_rejects_truncated_multimodel_file_before_pairing_scores(
         module.load_poses(tmp_path)
 
 
+def test_docking_rejects_pose_score_count_mismatch(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.pdbqt").write_text(
+        "MODEL 2\nATOM second\nENDMDL\n"
+    )
+    (tmp_path / "log.txt").write_text(
+        "   1     -8.000      0.000      0.000\n"
+        "   2     -7.000      0.000      0.000\n"
+    )
+
+    with pytest.raises(SystemExit, match="pose/score count mismatch"):
+        module.load_poses(tmp_path)
+
+
+def test_docking_rejects_pose_score_model_rank_mismatch(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.pdbqt").write_text(
+        "MODEL 2\nATOM second\nENDMDL\n"
+        "MODEL 3\nATOM third\nENDMDL\n"
+    )
+    (tmp_path / "log.txt").write_text(
+        "   1     -8.000      0.000      0.000\n"
+        "   2     -7.000      0.000      0.000\n"
+    )
+
+    with pytest.raises(SystemExit, match="pose/score rank mismatch"):
+        module.load_poses(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("filename", "ensemble"),
+    [
+        (
+            "ligand_out.pdbqt",
+            "MODEL 1\nATOM first\nENDMDL\nMODEL 2\nATOM second\nENDMDL\n",
+        ),
+        (
+            "ligand_out.sdf",
+            _sdf_record("pose-one") + _sdf_record("pose-two"),
+        ),
+    ],
+)
+def test_docking_ranks_valid_aligned_vina_ensembles(
+    tmp_path: Path, filename: str, ensemble: str
+) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / filename).write_text(ensemble)
+    (tmp_path / "log.txt").write_text(
+        "   1     -7.000      0.000      0.000\n"
+        "   2     -9.000      0.000      0.000\n"
+    )
+
+    metric, poses = module.load_poses(tmp_path)
+    result = module.summarize(metric, poses)
+
+    assert metric == "affinity"
+    assert [row["source_rank"] for row in result["ranked"]] == [2, 1]
+    assert [row["affinity"] for row in result["ranked"]] == [-9.0, -7.0]
+
+
+def test_docking_rejects_reordered_or_duplicate_score_ranks(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.sdf").write_text(
+        _sdf_record("pose-one") + _sdf_record("pose-two")
+    )
+
+    for score_ranks in ((2, 1), (1, 1)):
+        (tmp_path / "log.txt").write_text(
+            "".join(
+                f"   {rank}     {-8.0 + index:.3f}      0.000      0.000\n"
+                for index, rank in enumerate(score_ranks)
+            )
+        )
+        with pytest.raises(SystemExit, match="pose/score rank mismatch"):
+            module.load_poses(tmp_path)
+
+
+def test_docking_rejects_malformed_model_number(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.pdbqt").write_text(
+        "MODEL one\nATOM first\nENDMDL\n"
+    )
+    (tmp_path / "log.txt").write_text(
+        "   1     -8.000      0.000      0.000\n"
+    )
+
+    with pytest.raises(SystemExit, match="malformed MODEL number"):
+        module.load_poses(tmp_path)
+
+
 def test_gnina_with_incomplete_cnn_scores_preserves_source_rank(tmp_path: Path) -> None:
     script = (
         ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
