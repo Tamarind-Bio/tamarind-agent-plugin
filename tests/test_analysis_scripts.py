@@ -539,21 +539,33 @@ def test_rank_batch_parses_json_score_strings(tmp_path: Path) -> None:
     assert [row["name"] for row in result["ranked"]] == ["a", "b"]
 
 
-def test_rank_batch_infers_lower_better_metric_direction() -> None:
+@pytest.mark.parametrize(
+    "metric",
+    [
+        "pae",
+        "bindingAffinity",
+        "bindingEnergy",
+        "deltaG",
+        "affinityPredValue",
+        "RMSDValue",
+        "predictedKd",
+    ],
+)
+def test_rank_batch_infers_lower_better_metric_direction(metric: str) -> None:
     script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
     batch = {
         "batch_status": "Complete",
         "statuses": {"Complete": 2},
         "subjobs": [
-            {"name": "worse", "status": "Complete", "score": {"pae": 10.0}},
-            {"name": "better", "status": "Complete", "score": {"pae": 2.0}},
+            {"name": "worse", "status": "Complete", "score": {metric: 10.0}},
+            {"name": "better", "status": "Complete", "score": {metric: 2.0}},
         ],
     }
 
     result = module.summarize(batch)
 
-    assert result["selection_metric"] == "pae"
+    assert result["selection_metric"] == metric
     assert result["ascending"] is True
     assert result["direction_source"] == "inferred"
     assert [row["name"] for row in result["ranked"]] == ["better", "worse"]

@@ -163,7 +163,12 @@ def _auto_metric(subjobs):
 
 def _infer_ascending(metric):
     """Infer direction only for conventional lower-better metric names."""
-    normalized = re.sub(r"[^a-z0-9]+", "_", str(metric or "").lower()).strip("_")
+    raw = str(metric or "")
+    # Split both ordinary camelCase (bindingAffinity) and acronym boundaries
+    # (RMSDValue) before lowercasing, then normalize punctuation consistently.
+    words = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", raw)
+    words = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", words)
+    normalized = re.sub(r"[^a-z0-9]+", "_", words.lower()).strip("_")
     tokens = set(normalized.split("_"))
     return bool(
         tokens.intersection({"affinity", "energy", "pae", "rmsd", "ddg", "ic50", "kd", "ki"})
