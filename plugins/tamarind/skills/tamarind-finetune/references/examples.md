@@ -18,7 +18,6 @@ Check data columns, units, splits, leakage, base model, epochs/steps, and datase
 ```bash
 tamarind --json submit FINETUNE_TOOL --input train.yaml --name model-train-v1
 tamarind --json wait model-train-v1 --timeout 28800 --poll-interval 30
-SKILL_DIR="/absolute/path/to/the/tamarind-finetune-skill"
 tamarind --json status model-train-v1
 ```
 

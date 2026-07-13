@@ -23,7 +23,7 @@ Only after the exact run is authorized:
 
 ```bash
 tamarind --json submit boltz --input settings.yaml --name fold-example
-# Run the filtered status probe from the parent SKILL.md first; continue only for JobStatus.
+# Probe durable status first; wait when an active JobStatus or batchStatus is present.
 tamarind --json wait fold-example --timeout 7200 --poll-interval 15
 tamarind --json results fold-example --download /absolute/path/to/results
 ```
@@ -46,9 +46,8 @@ tamarind --json submit TOOL --input settings.yaml --name durable-name
 Persist `durable-name`. In another task or process:
 
 ```bash
-SKILL_DIR="/absolute/path/to/the/tamarind-submit-and-poll-skill"
 tamarind --json status durable-name
-# Use wait only if the filtered probe carries JobStatus, not batchStatus.
+# CLI 0.2 waits on either an active JobStatus or batchStatus.
 tamarind --json wait durable-name --timeout 1800 --poll-interval 15
 ```
 
@@ -57,7 +56,6 @@ Do not create a new job merely because the first local process ended.
 ## Diagnose a terminal failure
 
 ```bash
-SKILL_DIR="/absolute/path/to/the/tamarind-submit-and-poll-skill"
 tamarind --json status durable-name
 tamarind --json logs durable-name --max-lines 200
 ```

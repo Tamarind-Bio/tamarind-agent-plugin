@@ -39,7 +39,7 @@ Follow `tamarind-submit-and-poll`:
 
 ```bash
 tamarind --json submit TOOL --input settings.yaml --name DOCK_NAME
-# Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
+# Probe status first; wait when an active JobStatus or batchStatus is present.
 tamarind --json wait DOCK_NAME --timeout 7200 --poll-interval 15
 tamarind --json results DOCK_NAME --download /absolute/path/to/results
 ```

@@ -37,7 +37,7 @@ Follow `tamarind-submit-and-poll` with a durable job name and bounded wait:
 
 ```bash
 tamarind --json submit TOOL --input settings.yaml --name DESIGN_NAME
-# Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
+# Probe status first; wait when an active JobStatus or batchStatus is present.
 tamarind --json wait DESIGN_NAME --timeout 14400 --poll-interval 20
 tamarind --json results DESIGN_NAME --download /absolute/path/to/results
 ```

@@ -73,7 +73,7 @@ If the document carries an active `JobStatus` or `batchStatus`, run the wait in 
 tamarind --json wait JOB_NAME --timeout 3600 --poll-interval 15
 ```
 
-Exit 7 means the local deadline elapsed; the remote job may still be running. Reattach with the filtered status probe or another bounded single-job `wait`.
+Exit 7 means the local deadline elapsed; the remote job may still be running. Reattach with `status` or another bounded `wait`.
 
 Exit 9 means the job reached an unsuccessful terminal state; the final status remains on stdout. Only a platform success status authorizes result download. For failures:
 

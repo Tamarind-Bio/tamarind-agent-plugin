@@ -32,7 +32,7 @@ Surface base model, epochs/steps, dataset size, and expected weighted-hour spend
 
 ```bash
 tamarind --json submit FINETUNE_TOOL --input train-settings.yaml --name TRAIN_NAME
-# Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
+# Probe status first; wait when an active JobStatus or batchStatus is present.
 tamarind --json wait TRAIN_NAME --timeout 28800 --poll-interval 30
 ```
 
@@ -41,7 +41,7 @@ Require a successful terminal status. Build the inference payload using the exac
 ```bash
 tamarind --json validate INFERENCE_TOOL --input infer-settings.yaml --name INFER_NAME
 tamarind --json submit INFERENCE_TOOL --input infer-settings.yaml --name INFER_NAME
-# Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
+# Probe status first; wait when an active JobStatus or batchStatus is present.
 tamarind --json wait INFER_NAME --timeout 14400 --poll-interval 20
 tamarind --json results INFER_NAME --download /absolute/path/to/results
 ```

@@ -142,6 +142,19 @@ def test_cli_02_batch_guidance_uses_bounded_parent_wait() -> None:
     recovery = (SKILLS / "tamarind-results-analysis" / "SKILL.md").read_text()
     assert "tamarind --json wait JOB_NAME --timeout" in recovery
     assert "batchStatus" in recovery
+    workflow = (
+        SKILLS / "tamarind-submit-and-poll/references/workflows.md"
+    ).read_text()
+    assert "active JobStatus or batchStatus" in workflow
+    assert "not batchStatus" not in workflow
+    all_skill_docs = "\n".join(path.read_text() for path in SKILLS.rglob("*.md"))
+    for stale_phrase in (
+        "use wait only for JobStatus",
+        "filtered status probe",
+        "filtered bounded wait",
+        "filtered download helper",
+    ):
+        assert stale_phrase not in all_skill_docs
 
 
 def test_cli_02_job_output_guidance_uses_cli_contract_directly() -> None:

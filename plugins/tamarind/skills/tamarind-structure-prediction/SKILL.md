@@ -37,11 +37,11 @@ For a production canary, minimize input length and independent sample count, but
 
 ## Run through the canonical lifecycle
 
-Follow `tamarind-submit-and-poll`: confirm scope, submit once, use its filtered bounded wait, inspect `JobStatus`, then use its filtered download helper.
+Follow `tamarind-submit-and-poll`: confirm scope, submit once, use a bounded wait, inspect `JobStatus` or `batchStatus`, then use the CLI's safe download path.
 
 ```bash
 tamarind --json submit TOOL --input settings.yaml --name FOLD_NAME
-# Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
+# Probe status first; wait when an active JobStatus or batchStatus is present.
 tamarind --json wait FOLD_NAME --timeout 7200 --poll-interval 15
 tamarind --json results FOLD_NAME --download /absolute/path/to/results
 ```

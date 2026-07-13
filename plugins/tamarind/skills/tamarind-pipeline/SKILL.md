@@ -28,7 +28,7 @@ For each stage:
 tamarind --json schema TOOL
 tamarind --json validate TOOL --input stage-settings.yaml --name STAGE_JOB
 tamarind --json submit TOOL --input stage-settings.yaml --name STAGE_JOB
-# Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
+# Probe status first; wait when an active JobStatus or batchStatus is present.
 tamarind --json wait STAGE_JOB --timeout 14400 --poll-interval 20
 tamarind --json results STAGE_JOB --download /absolute/path/to/stage-results
 ```
