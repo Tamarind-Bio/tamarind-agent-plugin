@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tamarind CLI Setup"
+  short_description: "Install, authenticate, and verify the Tamarind CLI"
+  default_prompt: "Use $tamarind-api-setup to install and authenticate the Tamarind CLI, then run a no-spend validation check."

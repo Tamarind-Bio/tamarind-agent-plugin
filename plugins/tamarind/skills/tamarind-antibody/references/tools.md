@@ -1,9 +1,11 @@
 # Tamarind Bio: antibody and nanobody tool map
 
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
 The catalog drifts. Treat this as a starting map, not a frozen list: filter live with
-`getAvailableTools(modality="antibody", function=<tag>)`, read each candidate's
-`description`, then `getJobSchema(<name>)` for the exact params. Pass the lowercase tool
-`name` (e.g. `rfantibody`), not the displayName.
+`tamarind --json tools --modality antibody --function TAG`, read each candidate's
+`description`, then run `tamarind --json schema NAME` for the exact parameters. Pass the
+lowercase tool `name` (e.g. `rfantibody`), not the display name.
 
 ## Picking the right tool (the antibody decision)
 
@@ -37,8 +39,9 @@ A tool having "antibody" in its name does not make it the right pick. Common ove
   tool is for when you want antibody CDR detection built in.
 
 When the user names a specific tool, evaluate it AND sanity-check its `tag`-group siblings -
-a faster or more appropriate one often exists. Let `validateJob` confirm a candidate accepts
-your input before committing.
+a faster or more appropriate one often exists. Run
+`tamarind --json validate TOOL --input FILE --name JOB_NAME` to confirm a candidate accepts
+the input before committing.
 
 ## De novo / generative design (`function=antibody-design` / `binder-design`)
 
@@ -164,9 +167,8 @@ These are the things the schema doesn't spell out for the four canonical tools.
 
 ### abmpnn
 
-- **`designedChains` is `exclude: ["api"]`** and **`verifySequences` is
-  `exclude: ["api", "pipelines", "batch"]`** - both are UI-only and silently dropped over the
-  API/MCP. The API shape is `pdbFile` + `designedResidues` (per-chain, space-separated
+- **`designedChains`** and **`verifySequences`** are marked UI-only by the live schema and are
+  ignored by CLI submission. The CLI settings shape is `pdbFile` + `designedResidues` (per-chain, space-separated
   resnums) with `detectCDRs: false`, OR `detectCDRs: true` + `regions`.
 - For a nanobody (single chain) the light-chain CDRs are simply skipped.
 - **Cysteine is omitted by default** (`omitAAs: "C"`) - override only if you intentionally
@@ -174,7 +176,8 @@ These are the things the schema doesn't spell out for the four canonical tools.
 
 ### immunebuilder
 
-- **Sequence-only, no file** - fully runnable via `submitJob` with inline text, validates
+- **Sequence-only, no file** - put the inline text in a YAML/JSON settings file, validate it,
+  then run `tamarind --json submit immunebuilder --input FILE --name JOB_NAME`. Validation is
   fast. `modelType` maps to ABodyBuilder2 / NanoBodyBuilder2 / TCRBuilder2.
 - For `Nanobody`, only `sequence1` is used; `sequence2` is ignored (drop it).
 - Sequences are sanitized to letters only, so stray whitespace/numbers are tolerated.

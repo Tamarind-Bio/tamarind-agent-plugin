@@ -1,4 +1,4 @@
 interface:
   display_name: "Tamarind Tool Discovery"
-  short_description: "Find which Tamarind tool fits a goal, then confirm its schema"
-  default_prompt: "Use $tamarind-tool-discovery to find the right Tamarind tool for this goal: discover live with getAvailableTools, match my intent, and confirm the parameters with getJobSchema."
+  short_description: "Choose a tool from the live Tamarind catalog"
+  default_prompt: "Use $tamarind-tool-discovery to choose a Tamarind tool from the live catalog and confirm its required inputs."

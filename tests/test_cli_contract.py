@@ -1,0 +1,70 @@
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
+
+import pytest
+
+
+CLI = os.environ.get("TAMARIND_CLI") or shutil.which("tamarind")
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+def _run(*args: str) -> subprocess.CompletedProcess[str]:
+    assert CLI
+    return subprocess.run([CLI, *args], text=True, capture_output=True, check=False)
+
+
+def _plain(text: str) -> str:
+    """Remove terminal styling before asserting semantic help content."""
+    return ANSI_ESCAPE.sub("", text)
+
+
+@pytest.mark.skipif(not CLI, reason="tamarind CLI is not installed")
+def test_supported_cli_version_and_root_options() -> None:
+    version = _run("--version")
+    assert version.returncode == 0
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", version.stdout)
+    assert match
+    assert (0, 2, 0) <= tuple(map(int, match.groups())) < (0, 3, 0)
+
+    help_result = _run("--help")
+    assert help_result.returncode == 0
+    help_text = _plain(help_result.stdout)
+    for token in ("--json", "--no-json", "--profile", "auth", "validate", "submit", "wait"):
+        assert token in help_text
+
+
+@pytest.mark.skipif(not CLI, reason="tamarind CLI is not installed")
+@pytest.mark.parametrize(
+    ("args", "tokens"),
+    [
+        (("wait", "--help"), ("--timeout", "--poll-interval")),
+        (("submit", "--help"), ("--input", "--name")),
+        (("results", "--help"), ("--download", "--file", "--show-url")),
+        (("batch", "--help"), ("--input", "--name", "--prevalidate")),
+        (("files", "upload", "--help"), ("--name",)),
+    ],
+)
+def test_documented_cli_flags_exist(args: tuple[str, ...], tokens: tuple[str, ...]) -> None:
+    result = _run(*args)
+    assert result.returncode == 0, result.stderr
+    help_text = _plain(result.stdout)
+    for token in tokens:
+        assert token in help_text
+
+
+@pytest.mark.skipif(not CLI, reason="tamarind CLI is not installed")
+def test_cli_02_results_has_explicit_url_escape_hatch() -> None:
+    result = _run("results", "--help")
+    assert result.returncode == 0
+    assert "--show-url" in _plain(result.stdout)
+
+
+@pytest.mark.skipif(not CLI, reason="tamarind CLI is not installed")
+def test_cli_02_batch_has_final_row_prevalidation() -> None:
+    result = _run("batch", "--help")
+    assert result.returncode == 0
+    assert "--prevalidate" in _plain(result.stdout)

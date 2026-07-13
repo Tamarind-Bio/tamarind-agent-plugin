@@ -1,101 +1,175 @@
-# Tamarind Bio agent skills
+# Tamarind Bio agent plugin
 
-Run [Tamarind Bio](https://www.tamarind.bio)'s biology platform from your AI agent. Predict structures, fold complexes, dock ligands, design and screen binders and antibodies, and fine-tune models, all through one job API. One API key, the whole toolbox, no local GPU.
+Run [Tamarind Bio](https://www.tamarind.bio) from Codex or Claude Code. The plugin adds workflow and scientific guidance for structure prediction, docking, binder and antibody design, developability, fine-tuning, batch jobs, and multi-stage campaigns.
 
-Tamarind bundles hundreds of open-source computational-biology tools (AlphaFold, Boltz, Chai, ESMFold, RFdiffusion, ProteinMPNN, BoltzGen, DiffDock, AutoDock Vina, and many more) behind one uniform submit/poll/download surface on managed GPUs. These skills package that surface so an agent can drive it directly.
+## Architecture
 
-The plugin exposes **both** of Tamarind's surfaces: a bundled REST client (the universal execution floor for submit/poll/download) plus the Tamarind MCP connector (`mcp.tamarind.bio`), auto-wired with your `TAMARIND_API_KEY` on both Claude Code and Codex. The MCP is preferred for discovery and validation (`getAvailableTools`, `getJobSchema`, the free `validateJob` dry-run); REST is the floor and everything works over REST alone if a host lacks MCP support.
+Version 0.2 is CLI-first:
+
+- The independently versioned [`tamarind-cli`](https://github.com/Tamarind-Bio/tamarind-cli) owns authentication, live catalog/schema lookup, validation, API calls, job state, polling, files, and downloads.
+- The plugin owns intent routing, scientific workflow guidance, spend confirmation, recovery rules, and local result analysis.
+- Local helpers only parse downloaded scientific results. They never call Tamarind APIs directly. The plugin no longer vendors a second HTTP client or MCP transport.
+
+This mirrors the CLI-first separation in the [Boltz agent plugin](https://github.com/boltz-bio/boltz-api-skills): one tested machine interface underneath thin, intent-specific skills. It removes the plugin's duplicated transport implementation and makes cross-surface drift testable; it does not make compatibility testing unnecessary.
+
+## Upgrading from 0.1
+
+Version 0.2 changes the plugin's execution boundary. Version 0.1 bundled an MCP connection for discovery and validation and copied a small REST client into multiple skills for job execution. Version 0.2 removes both bundled transports and delegates the complete execution lifecycle to `tamarind-cli`.
+
+Existing users should:
+
+1. Install `tamarind-cli>=0.2,<0.3` before installing this plugin version.
+2. Authenticate with `TAMARIND_API_KEY` or `tamarind auth login`, then verify with `tamarind --json auth status`.
+3. Update or reinstall the plugin and start a new agent task so the new skills are loaded.
+
+The hosted Tamarind MCP service remains a separate integration, but it is no longer configured or required by this plugin. MCP-specific host configuration is not migrated into the CLI; an existing `TAMARIND_API_KEY` environment variable continues to work.
 
 ## Install
 
-The fastest path works the moment the repo is public, with no submission or approval, via [vercel-labs/skills](https://github.com/vercel-labs/skills):
+Install the CLI first. The plugin supports `tamarind-cli>=0.2,<0.3`:
+
+```bash
+uv tool install 'tamarind-cli>=0.2,<0.3'
+# or
+pipx install 'tamarind-cli>=0.2,<0.3'
+```
+
+For an existing tool installation:
+
+```bash
+uv tool upgrade tamarind-cli
+# or
+pipx upgrade tamarind-cli
+tamarind --version
+```
+
+Re-check that the reported version remains in `>=0.2,<0.3`; if it does not, reinstall the supported range explicitly.
+
+Then install the plugin.
+
+### Codex
+
+```bash
+codex plugin marketplace add Tamarind-Bio/tamarind-agent-plugin
+codex plugin add tamarind@tamarind-agent-plugin
+```
+
+For local development, point Codex at a checkout:
+
+```bash
+codex plugin marketplace add /absolute/path/to/tamarind-agent-plugin
+codex plugin add tamarind@tamarind-agent-plugin
+```
+
+Start a new task after installation or update so Codex loads the new skills.
+
+### Claude Code
+
+```bash
+claude plugin marketplace add Tamarind-Bio/tamarind-agent-plugin
+claude plugin install tamarind@tamarind-agent-plugin
+```
+
+### Skills-only install
 
 ```bash
 npx skills add Tamarind-Bio/tamarind-agent-plugin -a codex -a claude-code
 ```
 
-Use `-a codex` or `-a claude-code` to target one agent, or pass both. Add `--skill <name>` to install a specific skill.
+## Authenticate
 
-### Three install channels
-
-1. **`npx skills add` (vercel-labs/skills)**: the zero-gate channel above; installs the shared skill tree into whichever agent's config you target.
-2. **Codex marketplace**: add this repo as a Codex marketplace (it ships `.agents/plugins/marketplace.json`) and install the `tamarind` plugin. You'll be prompted for your API key at install. See [the Codex local-install steps](#codex) below.
-3. **Claude Code marketplace**: add this repo (it ships `.claude-plugin/marketplace.json`) and install the `tamarind` plugin. See [the Claude Code local-install steps](#claude-code) below.
-
-All three read the same `plugins/tamarind/skills/` tree.
-
-### Codex
-
-Add this repo as a Codex marketplace, then install the `tamarind` plugin. Once the repo is public, pass `Tamarind-Bio/tamarind-agent-plugin` (or the Git URL); from a local clone, pass the path to your checkout:
-
-```bash
-codex plugin marketplace add Tamarind-Bio/tamarind-agent-plugin
-# or from a local clone: codex plugin marketplace add /path/to/tamarind-agent-plugin
-codex plugin add tamarind --marketplace tamarind-agent-plugin
-# equivalently: codex plugin add tamarind@tamarind-agent-plugin
-```
-
-Verify it registered:
-
-```bash
-codex plugin marketplace list
-codex plugin list
-```
-
-You'll be prompted for your API key at install (the marketplace manifest at `.agents/plugins/marketplace.json` declares the `tamarind` plugin with `ON_INSTALL` authentication for `TAMARIND_API_KEY`). Verified against `codex-cli 0.142.2`.
-
-### Claude Code
-
-Add this repo as a Claude Code marketplace, then install the `tamarind` plugin. Once the repo is public, pass `Tamarind-Bio/tamarind-agent-plugin` (or the Git URL); from a local clone, pass the path to your checkout:
-
-```bash
-claude plugin marketplace add Tamarind-Bio/tamarind-agent-plugin
-# or from a local clone: claude plugin marketplace add /path/to/tamarind-agent-plugin
-claude plugin install tamarind@tamarind-agent-plugin
-```
-
-Inside the Claude Code TUI the equivalent is `/plugin marketplace add Tamarind-Bio/tamarind-agent-plugin`, then `/plugin` to install `tamarind`. Verify with `claude plugin list`.
-
-The bundled MCP connector (`mcp.tamarind.bio`) auto-wires from your `TAMARIND_API_KEY` (sent as the `x-api-key` header); restart Claude Code after install so it loads.
-
-## API key
-
-Every skill reads your key from the `TAMARIND_API_KEY` environment variable (sent as the `x-api-key` REST header). Get a key from the account / API settings at [app.tamarind.bio](https://app.tamarind.bio), then:
+For agents and CI, prefer the environment variable:
 
 ```bash
 export TAMARIND_API_KEY="your_api_key"
 ```
 
-New accounts get a free allotment of weighted-hours to try tools without a credit card. The `tamarind-api-setup` skill walks through the key + a first-call self-check.
+For an interactive local profile:
+
+```bash
+tamarind auth login
+```
+
+Verify the active profile without printing the secret:
+
+```bash
+tamarind --json auth status
+```
+
+Global CLI flags must precede the subcommand. For example, use `tamarind --json schema TOOL`, not `tamarind schema TOOL --json`.
+
+## Safe no-spend smoke test
+
+These commands exercise authentication, the live catalog, the live schema, and server-side validation without submitting a compute job:
+
+```bash
+tamarind --version
+tamarind --json auth status
+tamarind --json tools --search boltz
+tamarind --json schema boltz
+tamarind --json validate boltz \
+  --name plugin-smoke \
+  --set inputFormat=sequence \
+  --set sequence=GYAGYAGYAGYAGYAGYAGYAGYA
+```
+
+Do not add `submit` to a smoke test. Tamarind jobs can consume weighted hours.
 
 ## Skills
 
 Setup and core:
 
-- **`tamarind-api-setup`**: one-time setup: get a key, export `TAMARIND_API_KEY`, verify it, learn the REST vs MCP surfaces and the canonical live sources.
-- **`tamarind-tool-discovery`**: find WHICH tool fits a goal: discover live (getAvailableTools / listModalities / listTags), match intent over keyword, name a primary plus alternatives.
-- **`tamarind-submit-and-poll`**: run one tool end to end: validate, submit, poll to terminal, download. The base lifecycle every workflow builds on.
-- **`tamarind-results-analysis`**: read back a finished job: interpret confidence metrics, list and download outputs, score against a reference, chain outputs by s3Path.
+- `tamarind-api-setup`: install/version-check the CLI, authenticate, and run a no-spend self-check.
+- `tamarind-tool-discovery`: select a tool from the live CLI catalog and confirm its schema.
+- `tamarind-submit-and-poll`: validate, confirm consequential choices, submit one job, wait with a timeout, inspect terminal status, and download.
+- `tamarind-results-analysis`: recover an existing job by name, inspect status/logs/metrics, download results, and run local analysis.
 
-Domain tools:
+Domain workflows:
 
-- **`tamarind-structure-prediction`**: fold or co-fold from sequence (AlphaFold, Boltz-2, Chai-1, ESMFold2, Protenix, and the wider folding catalog).
-- **`tamarind-antibody`**: antibody / nanobody / VHH engineering: CDR design, ImmuneBuilder structure, numbering, humanization, repertoire search.
-- **`tamarind-binder-design`**: de novo protein, peptide, or small-molecule binder design (BindCraft, RFdiffusion, BoltzGen, the peptide family).
-- **`tamarind-inverse-folding`**: design sequences for a fixed backbone and run protein language models (ProteinMPNN, LigandMPNN, ESM-IF1, ESM-C, embeddings).
-- **`tamarind-docking`**: dock a ligand into a pocket, screen a library, or score binding affinity / interface quality from a structure (Vina, DiffDock, GNINA, PRODIGY).
-- **`tamarind-developability`**: score manufacturability and clinic-readiness as filters: thermostability, aggregation, solubility, viscosity, immunogenicity.
-- **`tamarind-finetune`**: fine-tune a model on your labeled data then run inference with it (plm/esmc, boltz-affinity, progen2, reinvent).
-- **`tamarind-more-tools`**: domains without a dedicated skill: enzyme design, ADMET / quantum chem, MD / free energy, nucleic acids, cryo-EM, search and format utilities.
+- `tamarind-structure-prediction`
+- `tamarind-antibody`
+- `tamarind-binder-design`
+- `tamarind-inverse-folding`
+- `tamarind-docking`
+- `tamarind-developability`
+- `tamarind-finetune`
+- `tamarind-more-tools`
 
 Scale and orchestration:
 
-- **`tamarind-batch`**: run ONE tool across MANY inputs: submit a batch, poll the parent batchStatus, await aggregation, download and rank.
-- **`tamarind-pipeline`**: chain MULTIPLE tools where each output feeds the next, either a declarative server-side pipeline or an imperative campaign loop you drive.
+- `tamarind-batch`: one tool across many inputs.
+- `tamarind-pipeline`: resumable, imperative multi-tool campaigns through CLI stages.
+
+## Agent contract
+
+The skills target the hardened CLI 0.2 agent contract:
+
+- Put global flags before the command: `tamarind --json tools`, not `tamarind tools --json`.
+- Parse result JSON from stdout and structured error JSON from stderr after checking the exit code.
+- Inspect `JobStatus` or `batchStatus`; unsuccessful terminal jobs return dedicated exit 9 with the final status on stdout.
+- Put a deadline on `wait`, including batch parents; exit 7 means the remote job may still be running.
+- Download with `tamarind --json results JOB_NAME --download DIR`; CLI 0.2 does not print a presigned URL unless `--show-url` is explicitly requested.
+- Never retry an ambiguous submit. Query the durable job name first.
+- Confirm material scope/cost before `submit` or `batch`; `validate` is free and does not authorize spending.
+
+## Development
+
+Run the repository contract tests and the official validators:
+
+```bash
+python -m pytest -q
+python /path/to/plugin-creator/scripts/validate_plugin.py plugins/tamarind
+for skill in plugins/tamarind/skills/*; do
+  test -f "$skill/SKILL.md" || continue
+  python /path/to/skill-creator/scripts/quick_validate.py "$skill"
+done
+```
+
+The authenticated smoke test is opt-in and must stop after `validate`.
 
 ## Responsible use
 
-These skills submit prediction, design, and characterization jobs to Tamarind's API for legitimate research. Use them accordingly, and follow Tamarind's terms and your agent platform's usage policies.
+These skills submit prediction, design, and characterization jobs for legitimate research. Review inputs, scope, cost, and outputs before acting on generated scientific results.
 
 ## License
 

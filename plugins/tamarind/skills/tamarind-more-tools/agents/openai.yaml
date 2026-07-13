@@ -1,4 +1,4 @@
 interface:
   display_name: "Tamarind More Tools"
-  short_description: "Discover and run Tamarind's long-tail tools (enzyme, ADMET/QM, MD, nucleic-acid, cryo-EM, search)"
-  default_prompt: "Use $tamarind-more-tools to find the right Tamarind tool for this enzyme, small-molecule, molecular-dynamics, nucleic-acid, cryo-EM, or search task and run it."
+  short_description: "Run enzyme, chemistry, MD, nucleic-acid, and cryo-EM tools"
+  default_prompt: "Use $tamarind-more-tools to find and validate the right Tamarind tool for this long-tail scientific task."

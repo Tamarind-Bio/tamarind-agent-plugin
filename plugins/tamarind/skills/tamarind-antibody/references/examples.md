@@ -1,12 +1,14 @@
 # Tamarind Bio: antibody example payloads
 
-The freshest example for any tool is the `exampleJob` that MCP `getJobSchema(<tool>)`
-returns: a `{jobName, type, settings}` assembled from each param's example/default (file
-params get placeholder names). It is the best starting point, but **run `validateJob` on it
-before submitting** - it is built from per-param examples, not a guaranteed-valid payload.
-The payloads below are a worked fallback for REST callers. Schemas evolve; if one stops
-validating, re-fetch with `getJobSchema(<tool>)`. Sequences here are illustrative; swap your
-own.
+> Operational examples in this reference use the Tamarind CLI. Query live fields with `tamarind --json schema TOOL`, validate settings with `tamarind --json validate TOOL --input FILE --name JOB_NAME`, and download completed outputs with `tamarind --json results JOB_NAME --download DIRECTORY`.
+
+The freshest example for any tool is the `exampleJob` in `tamarind --json schema TOOL`:
+a `{jobName, type, settings}` assembled from each parameter's example/default (file
+parameters get placeholder names). It is a useful starting point, but validate the adapted
+settings before submitting because per-parameter examples are not guaranteed to form a valid
+job together. The payloads below were validated against the live service when this reference
+was authored; treat them as historical snapshots and re-run the CLI schema and validation
+commands whenever a field stops validating. Sequences are illustrative; swap your own.
 
 **File params (`targetFile`, `pdbFile`, `antibodyFile`) need a real file value:** the **bare
 filename** of an uploaded file (`antigen.pdb`, NOT email-prefixed), a prior-job output path
@@ -14,18 +16,21 @@ filename** of an uploaded file (`antigen.pdb`, NOT email-prefixed), a prior-job 
 placeholder is NOT valid as written; replace it. Don't put an amino-acid sequence in a file
 param - a structure goes in a file, a sequence goes in `sequence1` / `sequence2`.
 
-`BASE = "https://app.tamarind.bio/api"`, `HEADERS = {"x-api-key": <key>}`.
-
 ## Self-check (run this first, read-only, no cost)
 
-```python
-import os, requests
-BASE, HEADERS = "https://app.tamarind.bio/api", {"x-api-key": os.environ["TAMARIND_API_KEY"]}
-tools = requests.get(f"{BASE}/tools", headers=HEADERS).json()
-assert any(t["name"] == "immunebuilder" for t in tools), "antibody tools reachable"
+```yaml
+# immunebuilder-selfcheck.yaml
+modelType: Nanobody
+sequence1: EVQLVESGGGVVQPGGSLRLSCAASGFTFNSYGMHWVRQAPGKGLEWVAFIRYDGGNKYYADSVKGRFTISRDNSKNTLYLQMKSLRAEDTAVYYCANLKDSRYSGSYYDYWGQGTLVTVS
 ```
 
-With the MCP, `validateJob(jobName="selfcheck", type="immunebuilder", settings={"modelType":"Nanobody","sequence1":"EVQLVESGGGVVQPGGSLRLSCAASGFTFNSYGMHWVRQAPGKGLEWVAFIRYDGGNKYYADSVKGRFTISRDNSKNTLYLQMKSLRAEDTAVYYCANLKDSRYSGSYYDYWGQGTLVTVS"})` returns `valid: true`.
+```bash
+tamarind --json tools --modality antibody
+tamarind --json schema immunebuilder
+tamarind --json validate immunebuilder --input immunebuilder-selfcheck.yaml --name selfcheck
+```
+
+The validation command should return `valid: true`. It does not submit a job.
 
 ## immunebuilder - antibody Fv (sequence-only, validates fast)
 
@@ -71,7 +76,7 @@ A SINGLE `antigenChain` (not a list). `numBatches: 1` = 1000 designs; scale up a
 pass. For a nanobody set `task: "nanobody"` and drop `lightChain`. IMGT-number the input PDB
 if you hand-pick CDRs via `selectCDRIndices`.
 
-## abmpnn - antibody-aware inverse folding (API shape)
+## abmpnn - antibody-aware inverse folding (CLI settings shape)
 
 ```json
 { "pdbFile": "<uploaded-bare-filename-or-inline-PDB-text>",
@@ -80,8 +85,8 @@ if you hand-pick CDRs via `selectCDRIndices`.
   "numSequences": 8, "temperature": 0.2, "omitAAs": "C" }
 ```
 
-Over the API, do NOT pass `designedChains` (`exclude:["api"]`) or `verifySequences`
-(`exclude:["api","pipelines","batch"]`) - both are silently dropped. Use `designedResidues`
+When the live schema marks them as UI-only, do not include `designedChains` or `verifySequences`
+in CLI settings because both are ignored. Use `designedResidues`
 (per-chain, space-separated resnums) with `detectCDRs: false`, OR `detectCDRs: true` +
 `regions` (a subset of the 14 framework/CDR labels, e.g. `["CDRH1","CDRH2","CDRH3"]`).
 Cysteine is omitted by default.
@@ -89,14 +94,17 @@ Cysteine is omitted by default.
 ## Worked recipe: de novo design then rank
 
 ```bash
-# 1. upload the antigen, design 100 nanobody candidates against the epitope
-python3 scripts/tamarind_job.py upload antigen.pdb
-python3 scripts/tamarind_job.py run rfab-run rfantibody '{"task":"nanobody","framework":"h-NbBCII10","targetFile":"antigen.pdb","antigenChains":["A"],"hotspots":{"A":"305, 456"},"regions":["hcdr1","hcdr2","hcdr3"],"numDesigns":100}'
-# (run = submit + poll to terminal + download rfab-run.zip)
+# Put the exact live-schema settings in rfab.yaml first.
+tamarind --json files upload /absolute/path/antigen.pdb
+tamarind --json validate rfantibody --input rfab.yaml --name rfab-run
+# After explicit confirmation of the 100-design scope:
+tamarind --json submit rfantibody --input rfab.yaml --name rfab-run
+tamarind --json wait rfab-run --timeout 14400 --poll-interval 20
+tamarind --json results rfab-run --download /absolute/path/to/results
 
-# 2. unzip and rank designs by interface confidence
-unzip -q rfab-run.zip -d rfab-run
-python3 scripts/summarize_binder_metrics.py rfab-run
+# Extract the downloaded archive, then rank designs by interface confidence.
+SKILL_DIR="/absolute/path/to/the/tamarind-antibody-skill"
+python3 "$SKILL_DIR/scripts/summarize_binder_metrics.py" /absolute/path/to/extracted-run
 ```
 
 `summarize_binder_metrics.py` ranks by ipSAE / ipTM / pDockQ / pLDDT (whichever the design
@@ -106,13 +114,13 @@ high-scoring design that drifts off the epitope is not the binder you asked for.
 
 ## What fails (and why)
 
-- **A sequence in a file param** (`targetFile`/`pdbFile`) is rejected - `validateJob` returns
+- **A sequence in a file param** (`targetFile`/`pdbFile`) is rejected - CLI validation returns
   a file-type error. A structure goes in a file param; a sequence goes in `sequence1`.
 - **An email-prefixed file key** (`{email}/antigen.pdb`) 400s as not-uploaded - it is treated
   as inline content, not a reference. Use the BARE filename.
-- **Passing `designedChains` / `verifySequences` to abmpnn over the API** is silently dropped
-  (they are `exclude`d for API callers) - use `designedResidues` / `detectCDRs` instead.
-- **Building a submit from `validateJob`'s `normalized` echo** - submit the clean settings you
+- **Including `designedChains` / `verifySequences` in abmpnn CLI settings** has no effect
+  because they are UI-only - use `designedResidues` / `detectCDRs` instead.
+- **Building a submit from the validator's `normalized` echo** - submit the clean settings you
   validated, not the normalized blob (it carries filled-in defaults).
 
 ## Output shapes (describe, don't expect exact values)
@@ -130,5 +138,6 @@ shape, not golden numbers.
 - **Job row `Score`** (JSON string on completed jobs) is tool-family dependent - read the
   keys, don't assume. `WeightedHours` on the row is the billing unit.
 
-To learn a tool's exact output filenames, run one small job and `listJobFiles(jobName)`
-before downloading; filenames vary by tool and version.
+To learn a tool's exact output filenames, download one completed small job with
+`tamarind --json results JOB_NAME --download DIRECTORY` and inspect the extracted bundle;
+filenames vary by tool and version.

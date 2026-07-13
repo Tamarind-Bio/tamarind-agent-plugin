@@ -1,6 +1,8 @@
 # Tamarind Bio finetune tools: schema, when-to-pick, gotchas
 
-Pull the live schema with `getJobSchema("<tool>")` (or `GET /tools`) before submitting; schemas drift. This file captures the non-obvious behaviors and the pick-the-right-pair reasoning. Every pair follows the same handoff: train `<tool>-finetune`, then run `<tool>-inference` with `model` set to the finetune job's name (the exceptions, `reinvent` and any tool that keys differently, are flagged below). See [examples.md](examples.md) for payloads.
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
+Pull the live schema with `tamarind --json schema TOOL` before submitting; schemas drift. This file captures the non-obvious behaviors and the pick-the-right-pair reasoning. Every pair follows the same handoff: train `<tool>-finetune`, then run `<tool>-inference` with `model` set to the finetune job's name (the exceptions, `reinvent` and any tool that keys differently, are flagged below). See [examples.md](examples.md) for payloads.
 
 ## plm-finetune / plm-inference (Finetune Protein Language Model)
 
@@ -43,7 +45,7 @@ Improve protein-ligand binding-affinity prediction on YOUR chemical series by fi
 
 Finetune schema. Required: `trainingDataFile` (.csv or .xlsx), one row per protein-ligand complex with columns `protein` (ONE chain per row), `ligand` (SMILES or a CCD code), `affinity` (measured value, e.g. log10(IC50)). Optional `ligand_type` column (`smiles`/`ccd`) disambiguates a CCD code that also parses as SMILES (CO, NA, NO). Key optional settings: `a3mFiles` (.a3m list, precomputed MSAs, see below), `epochs` (10), `samplesPerEpoch` (500, tune to dataset size), `learningRate` (1e-4).
 
-Inference schema. A SINGLE complex: `sequence` (required; `:` for multimer chainbreaks), `ligands` (required SMILES list), optional `ligandType` (`Auto-detect`/`SMILES`/`CCD`), `a3mFiles` (per-chain MSA list), `binderChain`, plus the injected `model`. Returns a predicted affinity score + binding probability. **`predictAffinity` is `exclude:["api"]`** (always-on for affinity inference), so do NOT send it over the API.
+Inference schema. A SINGLE complex: `sequence` (required; `:` for multimer chainbreaks), `ligands` (required SMILES list), optional `ligandType` (`Auto-detect`/`SMILES`/`CCD`), `a3mFiles` (per-chain MSA list), `binderChain`, plus the injected `model`. Returns a predicted affinity score + binding probability. `predictAffinity` is always on for affinity inference and is UI-only, so do not include it in CLI settings.
 
 Gotchas:
 - **MSAs are PRECOMPUTED ONLY, no MSA worker on the finetune path.** Generate one `.a3m` per unique protein with the Tamarind MSA tool; each a3m's first record is its query sequence and is matched to rows by that sequence (filename/order don't matter). No a3m means single-sequence training (lower accuracy) with a log warning. (See the SKILL "Precomputed MSA" section.)
@@ -70,7 +72,7 @@ Finetune schema. Required: `baseModel` (`hugohrban/progen2-small` [default] / `-
 
 Finetune EnzyGen2 on a specific ENZYME FAMILY for structure-conditioned enzyme design. Niche, JSON-format input.
 
-Finetune schema. Required: `dataFile` (EnzyGen2-format JSON keyed by NCBI taxonomy IDs, with train/valid splits, sequences, C-alpha coords, motif indices; all keys are used for training), `proteinTask` (an NCBI taxonomy ID present in the JSON, e.g. `77133`). Optional: `epochs` (50), `learningRate`, `maxUpdate`, `dropout` (all sweepable). Inference generates enzyme sequences/structures from the finetuned model; confirm how it keys the prior run with `getJobSchema("enzygen2-inference")`.
+Finetune schema. Required: `dataFile` (EnzyGen2-format JSON keyed by NCBI taxonomy IDs, with train/valid splits, sequences, C-alpha coords, motif indices; all keys are used for training), `proteinTask` (an NCBI taxonomy ID present in the JSON, e.g. `77133`). Optional: `epochs` (50), `learningRate`, `maxUpdate`, `dropout` (all sweepable). Inference generates enzyme sequences/structures from the finetuned model; confirm how it keys the prior run with `tamarind --json schema enzygen2-inference`.
 
 ## reinvent-finetune (REINVENT4, small-molecule generative)
 
@@ -90,10 +92,10 @@ Finetune SaProt, a BERT-style structure-aware protein LM whose vocabulary combin
 
 Gotchas:
 - **Needs a 3D structure** to derive the 3Di tokens. If you only have sequence, predict a structure first (e.g. AlphaFold) and tokenize that.
-- Pull `getJobSchema("saprot-finetune")` for the exact structure-file / column settings before submitting.
+- Run `tamarind --json schema saprot-finetune` for the exact structure-file and column settings before submitting.
 
 ## multi-evolve (MULTI-evolve, end-to-end workflow, no model-name handoff)
 
 End-to-end ML-guided directed evolution (Arc Institute, Science 2026). Trains fully-connected neural nets on deep-mutational-scanning or pairwise-combination assay data to predict combinatorial-variant fitness, nominates synergistic multi-mutants that capture epistasis, and emits MULTI-assembly mutagenic oligos for gene synthesis of the nominated variants. With no assay data yet, a protein-LM zero-shot ensemble nominates beneficial single mutants to seed the first round.
 
-**Pick this** to engineer hyperactive variants of enzymes, genome editors, or therapeutics where stacking single beneficial mutations isn't enough and you have (or can collect) ~100-200 measurements per round. NOT for pure zero-shot scoring without the evolution / oligo workflow (use a PLM such as `esm2` / `amplify`), de novo binder design, or structure-based interface ddG. A self-contained workflow, not a finetune/inference pair, so there is no `model` handoff. Confirm input format with `getJobSchema("multi-evolve")`.
+**Pick this** to engineer hyperactive variants of enzymes, genome editors, or therapeutics where stacking single beneficial mutations isn't enough and you have (or can collect) ~100-200 measurements per round. NOT for pure zero-shot scoring without the evolution / oligo workflow (use a PLM such as `esm2` / `amplify`), de novo binder design, or structure-based interface ddG. A self-contained workflow, not a finetune/inference pair, so there is no `model` handoff. Confirm input format with `tamarind --json schema multi-evolve`.

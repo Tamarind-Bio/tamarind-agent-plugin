@@ -46,7 +46,7 @@ DEFAULT_CUTOFF = {"ipsae": 0.7, "iptm": 0.6, "pdockq": 0.23, "plddt": 80.0,
 def _pick(row, aliases):
     for alias in aliases:
         for col, val in row.items():
-            if col.strip().lower() == alias and isinstance(val, float):
+            if col.strip().lower() == alias and _common.is_finite_number(val):
                 return val
     return None
 
@@ -103,8 +103,13 @@ def _resolve_metric(designs, forced):
             raise SystemExit(f"unknown metric {forced}; "
                              f"choose from {list(HIGHER_BETTER)}")
         return forced
+    counts = {
+        key: sum(_common.is_finite_number(d.get(key)) for d in designs)
+        for key in METRIC_PRIORITY
+    }
+    best = max(counts.values(), default=0)
     for key in METRIC_PRIORITY:
-        if any(d.get(key) is not None for d in designs):
+        if counts[key] == best and best > 0:
             return key
     raise SystemExit("no rankable interface metric present in the CSV")
 
@@ -118,8 +123,16 @@ def summarize(designs, metric=None, cutoff=None):
     metric = _resolve_metric(designs, metric)
     if cutoff is None:
         cutoff = DEFAULT_CUTOFF[metric]
+    if not _common.is_finite_number(cutoff):
+        raise SystemExit("cutoff must be a finite number")
 
-    scored = [d for d in designs if d.get(metric) is not None]
+    normalized = [_common.normalize_non_finite(d) for d in designs]
+    scored = [d for d in normalized if _common.is_finite_number(d.get(metric))]
+    unscored = [
+        {**d, "rank": None, "unranked_reason": "missing-metric"}
+        for d in normalized
+        if not _common.is_finite_number(d.get(metric))
+    ]
     ranked = sorted(scored, key=lambda d: d[metric], reverse=True)
     for r, d in enumerate(ranked, 1):
         d["rank"] = r
@@ -133,11 +146,13 @@ def summarize(designs, metric=None, cutoff=None):
         "cutoff": cutoff,
         "n_designs": len(designs),
         "n_scored": len(scored),
+        "n_unscored": len(unscored),
         "max": vals[0] if vals else None,
         "tenth": vals[9] if len(vals) >= 10 else None,
         "n_above_cutoff": len(above),
         "fraction_above_cutoff": round(frac, 4),
         "ranked": ranked,
+        "unranked": unscored,
     }
 
 
@@ -161,6 +176,9 @@ def print_summary(summary, show=10):
               f"{_fmt(d.get('ipsae')):>6} {_fmt(d.get('iptm')):>6} "
               f"{_fmt(d.get('pdockq')):>6} {_fmt(d.get('plddt')):>7} "
               f"{_fmt(d.get('ptm')):>6}")
+    if summary["unranked"]:
+        labels = ", ".join(d["label"] for d in summary["unranked"])
+        print(f"\nUnranked (missing {metric}): {labels}")
 
 
 def main(argv=None):
@@ -177,7 +195,7 @@ def main(argv=None):
 
     summary = summarize(load_designs(a.run_dir), metric=a.metric, cutoff=a.cutoff)
     if a.json:
-        print(json.dumps(summary, indent=2))
+        print(json.dumps(summary, indent=2, allow_nan=False))
     else:
         print_summary(summary, show=a.show)
     return 0

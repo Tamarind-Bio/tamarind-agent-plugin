@@ -1,11 +1,13 @@
 # Enzyme: design, kinetics, function
 
+> Operational examples in this reference use the Tamarind CLI. Query the live catalog and schema before relying on this grounded snapshot.
+
 Enzyme work splits two ways: (1) **design** a new enzyme that keeps a known active-site / catalytic motif, and (2) **predict** an enzyme's function or kinetics for an existing or candidate sequence. Discover live, then read the schema:
 
-```
-getAvailableTools(function="enzyme-design")     # the design tools
-getAvailableTools(modality="enzyme")            # the whole enzyme catalog (design + predict)
-getJobSchema(jobType="enzygen2")                # exact params before you submit
+```bash
+tamarind --json tools --function enzyme-design
+tamarind --json tools --modality enzyme
+tamarind --json schema enzygen2
 ```
 
 Mental model for picking:
@@ -28,7 +30,7 @@ Given a reference enzyme structure and the residue positions of its active site,
 ### catpred (CatPred): kinetic-parameter prediction (kcat / Km / Ki)
 Enzyme sequence + substrate SMILES -> predicted steady-state kinetics. Use it to rank variants by activity or screen substrates against one enzyme.
 - Required: `sequence` (inline text), `smiles` (inline text). No optional knobs.
-- Both inputs are inline strings, so no `uploadFile` step; this is directly runnable via `submitJob`. One pair per job; use `tamarind-batch` to score many pairs.
+- Both inputs are inline strings, so no file upload is needed. Put one pair in a YAML/JSON settings file, validate it, then run `tamarind --json submit catpred --input FILE --name JOB_NAME`; use `tamarind-batch` to score many pairs.
 - `dlkcat` is the lighter kcat-only predecessor (kcat, no Km/Ki).
 
 ### deepfri (DeepFRI): function prediction (GO + EC)
@@ -42,7 +44,7 @@ Sequence or structure -> Gene Ontology terms and Enzyme Commission number, optio
 - `riffdiff` (RiffDiff-ProtFlow): a COMPLETE de novo enzyme-design pipeline from a theozyme (catalytic residues + ligand). It inverts catalytic-residue rotamers into a motif-fragment library, connects fragments with RFdiffusion, then refines designs via LigandMPNN / Rosetta Relax / ESMFold cycles, so it produces finished backbones, not just a fragment library. Inputs: `pdbFile`, `resnums` (chain-prefixed, e.g. `A121 A153`), `ligands`.
 - `rfdiffusion2`: SOTA atom-level enzyme active-site scaffolding, scaffolds unindexed atomic motifs directly (no inverse-rotamer or sequence-index pre-assignment), with an ORI token to control active-site placement (a design tool tagged `enzyme-design` + `motif-scaffolding`).
 - `disco` (DISCO): SOTA multimodal diffusion that co-designs protein sequence + 3D structure conditioned on a bound small molecule, reactive intermediate, DNA, or RNA, with NO template scaffold or pre-specified catalytic residues. The pick for de novo enzyme / ligand-binding design when you have a target ligand but no theozyme. Also designs DNA/RNA-binding proteins (cross-ref [references/nucleic_acid.md](nucleic_acid.md)).
-- `zymctrl` (ZymCTRL): conditionally generate artificial enzyme sequences from an EC number plus a seed FASTA. Inputs: `ecNumber` (e.g. `1.1.1.1`), `numSequences`, and `fastaFile` (`getJobSchema` marks it REQUIRED, despite the platform's own example showing EC-number-only). Confirm with `validateJob`.
+- `zymctrl` (ZymCTRL): conditionally generate artificial enzyme sequences from an EC number plus a seed FASTA. Inputs: `ecNumber` (e.g. `1.1.1.1`), `numSequences`, and `fastaFile` (`tamarind --json schema zymctrl` currently marks it required, despite the platform example showing EC-number-only). Confirm with `tamarind --json validate zymctrl --input FILE --name JOB_NAME`.
 - `dlkcat` (DLKcat): deep-learning kcat-ONLY prediction from `sequence` + `smiles`; the lighter, kcat-only predecessor to `catpred`.
 - `proteus` (ProteusAI): ML-assisted directed evolution: train on experimental fitness data (CSV with a sequence column + a fitness-score column) to propose improved variants. Inputs: `csvFile`, `sequenceColumn`, `fitnessScoreColumn`.
 - `evcouplings` (EVcouplings): function and mutation effects from evolutionary covariation (DCA over an MSA built from the input). Input: `sequence`. Builds its own alignment.

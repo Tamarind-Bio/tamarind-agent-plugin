@@ -1,4 +1,4 @@
 interface:
   display_name: "Tamarind Results Analysis"
-  short_description: "Read back a Tamarind job: status, metrics, files, scoring, and s3Path chaining"
-  default_prompt: "Use $tamarind-results-analysis to read this Tamarind job back: check its status, interpret the confidence metrics, list and download the outputs, score the result if needed, and chain it into the next job by s3Path."
+  short_description: "Recover Tamarind jobs and analyze downloaded results"
+  default_prompt: "Use $tamarind-results-analysis to recover this Tamarind job by name, download its results, and interpret the metrics."

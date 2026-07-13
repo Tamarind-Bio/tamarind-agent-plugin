@@ -1,9 +1,0 @@
-{
-  "tamarind": {
-    "type": "http",
-    "url": "https://mcp.tamarind.bio/mcp",
-    "headers": {
-      "X-API-Key": "${TAMARIND_API_KEY}"
-    }
-  }
-}

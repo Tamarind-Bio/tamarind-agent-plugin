@@ -1,97 +1,50 @@
-# Tamarind Bio: validated example payloads
+# Settings examples
 
-The freshest example for any tool is the `exampleJob` field that MCP `getJobSchema(<tool>)` returns: a `{jobName, type, settings}` built from each param's example/default (org-gated params you can't use are omitted, file params get placeholder names). It is the best starting point, but **run `validateJob` on it before submitting**: it is assembled from per-param examples, not a guaranteed-valid payload, so a tool's `exampleJob` can still need a tweak. The payloads below are a `validateJob`-confirmed fallback for REST callers or when you want a worked example. Tool schemas evolve; if one stops validating, re-fetch with `getJobSchema(<tool>)` / `GET /tools`. Sequences here are illustrative; swap your own.
+These are starting shapes, not schema authority. Run `tamarind --json schema TOOL` and `tamarind --json validate TOOL --input FILE --name NAME` before use.
 
-**File params (`proteinFile`, `pdbFile`, `receptorFile`, `ligandFile`, ...) need a real file value:** the **bare filename** of an uploaded file (`target.pdb`, NOT email-prefixed), a prior-job output **path** (`JobName/out/x.pdb`), or **inline PDB/SDF-format text** (multi-line `ATOM`/`HETATM` records). The `<...>` placeholders below are NOT valid as written; replace them. Do not put an amino-acid sequence in a file param: `validateJob` rejects it with `File ... must be of types: ["pdb"]` (a sequence goes in `sequence`, a structure goes in a file param).
+## Boltz sequence fold
 
-`BASE = "https://app.tamarind.bio/api"`, `HEADERS = {"x-api-key": <key>}`.
-
-## Self-check (run this first to confirm the skill works for you)
-
-Read-only plus dry-run, no submission, no cost. Confirms the discover -> schema -> validate loop end to end:
-
-```python
-import os, requests
-BASE, HEADERS = "https://app.tamarind.bio/api", {"x-api-key": os.environ["TAMARIND_API_KEY"]}
-
-# 1. discovery reachable?
-tools = requests.get(f"{BASE}/tools", headers=HEADERS).json()
-assert isinstance(tools, list) and any(t["name"] == "alphafold" for t in tools), "tools endpoint"
-
-# 2. validate a known-good payload (MCP validateJob; or skip if REST-only) -> expect {"valid": true, ...}
+```yaml
+inputFormat: sequence
+sequence: GYAGYAGYAGYAGYAGYAGYAGYA
+numSamples: 1
+numRecycles: 3
+useMSA: false
 ```
 
-With the MCP server: `validateJob(jobName="selfcheck", type="alphafold", settings={"sequence": "MKTAYIAKQRQISFVKSHFSRQLEERLGLIE"})` returns `valid: true`.
+## ProteinMPNN fixed-backbone design
 
-## Validated input payloads
-
-### AlphaFold, monomer
-```json
-{ "sequence": "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKR",
-  "numModels": "1", "numRecycles": 3 }
-```
-Only `sequence` is required; everything else has a default. `numModels` is a string dropdown (`"1"` to `"5"`).
-
-### AlphaFold, multimer (colon-separated chains)
-```json
-{ "sequence": "MKTAYIAKQRQISFVKSHFSRQLEERLGLIE:DIQMTQSPSSLSASVGDRVTITCRASQSISSYLN" }
-```
-Join chains with `:`. No separate "multimer" flag; chain count drives it.
-
-### Boltz-2, sequence mode
-```json
-{ "inputFormat": "sequence",
-  "sequence": "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALP" }
-```
-`inputFormat` is **required** (`"sequence"` / `"list"` / `"molecules"` / `"yaml"`). Omitting it fails, see "What fails" below.
-
-### DiffDock, protein + SMILES ligand
-```json
-{ "ligandFormat": "SMILES",
-  "ligandSmiles": "CC(=O)Oc1ccccc1C(=O)O",
-  "proteinFile": "<uploaded-bare-filename-or-inline-PDB-text>" }
-```
-`ligandFormat` chooses the conditional field: `"SMILES"` -> `ligandSmiles`; `"sdf/mol2 file"` -> `ligandFile`. `proteinFile` is a file param: pass an uploaded file's bare filename (`target.pdb`, not email-prefixed), a prior-job path (`JobName/...`), or inline PDB text (see file-input rules in `api_reference.md`).
-
-### Autodock Vina, receptor + SMILES ligand (classical docking into a pocket)
-```json
-{ "receptorFile": "receptor.pdb",
-  "ligandFormat": "smiles",
-  "ligandSmiles": "CC(=O)Oc1ccccc1C(=O)O",
-  "boxX": 15.19, "boxY": 53.903, "boxZ": 16.917,
-  "width": 20, "height": 20, "depth": 20 }
-```
-Unlike DiffDock, Autodock Vina docks into a **fixed pocket**, so it requires a bounding box (`boxX/Y/Z` center plus `width/height/depth`, all required) and the receptor in `receptorFile` (not `proteinFile`). Its `ligandFormat` enum is **lowercase** (`"smiles"` / `"sdf"`), different from DiffDock's `"SMILES"` / `"sdf/mol2 file"`, so don't copy DiffDock's value across. `exhaustiveness` (default 8) is optional. `validateJob`-confirmed, and a real dock returned a docked complex plus a binding affinity.
-
-### ProteinMPNN, design residues on a backbone
-```json
-{ "pdbFile": "<uploaded-bare-filename-or-inline-PDB-text>",
-  "designedResidues": { "A": "1 2 3 4 5" },
-  "numSequences": 4, "modelType": "proteinmpnn" }
-```
-Requires `pdbFile` plus `designedResidues` (per-chain, space-separated resnums). `modelType` is one of `proteinmpnn`/`ligandmpnn`/`solublempnn`/`hypermpnn`/`abmpnn`. Note `designedChains` is `exclude:["api"]`; don't send it over the API.
-
-### Batch (same tool, many jobs)
-```json
-{ "batchName": "screen-1", "type": "alphafold",
-  "jobNames": ["s1", "s2"],
-  "settings": [ { "sequence": "MKT..." }, { "sequence": "AVF..." } ] }
+```yaml
+pdbFile: target.pdb
+designedChains: [B]
+numSequences: 8
+temperature: 0.1
+omitAAs: C
 ```
 
-## What fails (and the exact error), confirmed live
+The exact designed-chain/residue fields vary by tool version. Use the live schema.
 
-- **Boltz without `inputFormat`** returns `valid:false`, `Missing required boltz field "inputFormat"`. Always check required fields with `getJobSchema` first; `sequence` alone is not enough for boltz/chai.
-- **Building a submit from `validateJob`'s `normalized` blob.** `normalized` is informational (defaults filled in, sometimes platform-managed fields). Submit the clean `settings` you validated, not the normalized echo.
-- **File param given a bare string that isn't a real path** is treated as INLINE file content (uploaded as `<email>/<jobname>-<param>.<ext>`), not a reference. To point at an existing uploaded file use its **bare filename** (`target.pdb`, do NOT email-prefix it; `{email}/{filename}` is the S3 key and 400s as not-uploaded), or `JobName/...` for a prior job's output. Referencing a path that doesn't exist returns `File ... has not been uploaded`.
+## Known-pocket docking
 
-## Output shapes (describe, don't expect exact values)
+```yaml
+receptorFile: receptor.pdb
+ligand: "CC(=O)Oc1ccccc1C(=O)O"
+centerX: 10.0
+centerY: 12.0
+centerZ: 8.0
+sizeX: 20.0
+sizeY: 20.0
+sizeZ: 20.0
+```
 
-Outputs are non-deterministic (seed/model/MSA), so reason about the *shape*, not golden numbers.
+Field names above are illustrative; different docking tools use different box and ligand fields.
 
-- **Job row `Score`** (JSON string on completed jobs): tool-family dependent.
-  - Folding (alphafold/boltz/chai/esmfold): `plddt`, `ptm`, and for complexes `iptm` plus interface metrics (`ipSAE_*`, `pDockQ_*`). Higher pLDDT/pTM is more confident; iptm/ipSAE gauge interface quality.
-  - Other families carry their own metrics; read the keys, don't assume.
-- **Results zip** (`POST /result` -> presigned URL -> GET): per-tool, typically the structure files (`rank_*.pdb` / `*.cif`), a scores CSV, and logs. Use `listJobFiles(jobName)` (MCP) to enumerate exact filenames before downloading.
-- **`WeightedHours`** on the row is the billing unit (see `usage-statistics`).
+## Input-file rules
 
-To learn a specific tool's exact outputs, run one small job and `listJobFiles` it; don't hardcode filenames, which vary by tool and version.
+Upload first:
+
+```bash
+tamarind --json files upload /absolute/path/target.pdb
+```
+
+Use the returned bare filename. A failed validation that says a named file has not been uploaded is a file-availability failure, not proof that the rest of the payload is malformed.
