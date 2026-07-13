@@ -1,6 +1,6 @@
 # Tamarind CLI contract used by this plugin
 
-The plugin targets `tamarind-cli>=0.1.4,<0.2`. Treat the executable as a subprocess protocol; do not import its Python modules.
+The plugin targets `tamarind-cli>=0.1.4,<0.3`. Treat the executable as a subprocess protocol; do not import its Python modules.
 
 ## Global output contract
 

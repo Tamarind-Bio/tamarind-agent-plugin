@@ -60,7 +60,7 @@ python3 "$SKILL_DIR/scripts/summarize_binder_metrics.py" /absolute/path/to/run -
 python3 "$SKILL_DIR/scripts/rank_batch.py" /absolute/path/to/subjobs.json --metric iptm --json
 ```
 
-Resolve `SKILL_DIR` to the directory containing this `SKILL.md`; do not assume the shell is running from the skill directory. Choose only the helper matching the tool family. These scripts process local artifacts and make no network calls. For batch ranking, prefer saved JSON from `tamarind --json jobs --batch BATCH_NAME --include-subjobs --all` so every ranked row has an authoritative terminal status.
+Resolve `SKILL_DIR` to the directory containing this `SKILL.md`; do not assume the shell is running from the skill directory. Choose only the helper matching the tool family. These scripts process local artifacts and make no network calls. For structure outputs, reject or manually inspect every `geometry_failures` entry and independently validate every `geometry_unchecked` entry before recommending a candidate; the adjacent-C-alpha PDB check is a gross continuity screen, not full structural validation. For batch ranking, prefer saved JSON from `tamarind --json jobs --batch BATCH_NAME --include-subjobs --all` so every ranked row has an authoritative terminal status.
 
 ## Prepare a downstream stage
 

@@ -16,19 +16,19 @@ command -v tamarind
 tamarind --version
 ```
 
-This plugin supports `tamarind-cli>=0.1.4,<0.2`. If the command is missing, prefer an isolated tool install:
+This plugin supports `tamarind-cli>=0.1.4,<0.3`. If the command is missing, prefer an isolated tool install:
 
 ```bash
-uv tool install 'tamarind-cli>=0.1.4,<0.2'
+uv tool install 'tamarind-cli>=0.1.4,<0.3'
 ```
 
 If `uv` is unavailable, use:
 
 ```bash
-pipx install 'tamarind-cli>=0.1.4,<0.2'
+pipx install 'tamarind-cli>=0.1.4,<0.3'
 ```
 
-Upgrade an existing isolated installation with `uv tool upgrade tamarind-cli` or `pipx upgrade tamarind-cli`, then run `tamarind --version` again and require `>=0.1.4,<0.2`. If an upgrade moves outside that supported range, reinstall the explicit range with the same tool. Do not run a remote `curl | sh` installer without the user's explicit approval. Do not mutate the system Python or use `--break-system-packages`.
+Upgrade an existing isolated installation with `uv tool upgrade tamarind-cli` or `pipx upgrade tamarind-cli`, then run `tamarind --version` again and require `>=0.1.4,<0.3`. If an upgrade moves outside that supported range, reinstall the explicit range with the same tool. Do not run a remote `curl | sh` installer without the user's explicit approval. Do not mutate the system Python or use `--break-system-packages`.
 
 In a sandboxed agent, even `uv tool list` or `uv tool upgrade` can create temporary files under uv's cache and `~/.local/share/uv/tools`. Request narrowly scoped write access to those directories, or give the exact command to the user instead of repeatedly retrying a denied install.
 
@@ -43,12 +43,13 @@ tamarind auth login
 Never put a key in chat, logs, source files, or a command-line `--api-key` argument. Verify the active credential:
 
 ```bash
-tamarind --json auth status
+SKILL_DIR="/absolute/path/to/the/tamarind-api-setup-skill"
+python3 "$SKILL_DIR/scripts/safe_auth.py"
 ```
 
-Require both `hasKey: true` and `verified: true`. The command may exit 0 with `verified: false`, so inspect the JSON rather than trusting the process status.
+Resolve `SKILL_DIR` to the directory containing this `SKILL.md`. The helper invokes the official CLI and allowlists only non-credential auth fields, because released CLI 0.1.4 includes a masked key fragment in its raw JSON. It preserves native nonzero exit codes and stderr.
 
-Global flags must precede the subcommand. Use `tamarind --json auth status`, not `tamarind auth status --json`.
+Require both `hasKey: true` and `verified: true`. The helper may exit 0 with `verified: false`, so inspect the JSON rather than trusting the process status. Do not replace it with raw auth JSON or `tamarind auth status --json`.
 
 ## 3. Run a no-spend smoke test
 

@@ -59,9 +59,9 @@ Join chains with `:`. There is no separate "multimer" flag; the chain count driv
 
 ### ESMFold2, fast single-sequence fold
 ```json
-{ "inputFormat": "sequence", "sequence": "MKTIIALSYIFCLVFAD", "model": "esmfold2", "numLoops": 3 }
+{ "inputFormat": "sequence", "sequence": "MKTIIALSYIFCLVFAD", "model": "esmfold2-fast", "numSeeds": 1, "numSamples": 1 }
 ```
-`model` is `esmfold2` (full) or `esmfold2-fast` (no MSA, faster, smaller GPU). Total length across chains is capped at 2000 residues. For a faster MSA-free run on the full model, set `useMSA:false`.
+`model` is `esmfold2` (full) or `esmfold2-fast` (no MSA, faster, smaller GPU). Total length across chains is capped at 2000 residues. For a faster MSA-free run on the full model, set `useMSA:false`. Keep the selected model's tuned loop/diffusion defaults for canaries; legal minima can complete with unusable geometry.
 
 ### Protenix-v2, complex (strong on antibody-antigen interfaces)
 ```json

@@ -22,6 +22,27 @@ def _load(script: Path):
         sys.path.pop(0)
 
 
+def _pdb_atom(
+    serial: int,
+    residue_number: int,
+    x: float | str,
+    *,
+    atom: str = "CA",
+    record: str = "ATOM",
+    residue: str = "ALA",
+    chain: str = "A",
+    insertion: str = " ",
+) -> str:
+    def coord(value: float | str) -> str:
+        return f"{value:>8}" if isinstance(value, str) else f"{value:8.3f}"
+
+    return (
+        f"{record:<6}{serial:5d} {atom:^4} {residue:>3} {chain}"
+        f"{residue_number:4d}{insertion}   {coord(x)}{coord(0.0)}{coord(0.0)}"
+        "  1.00 80.00           C\n"
+    )
+
+
 def test_rank_batch_only_ranks_completed_rows() -> None:
     script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
@@ -56,8 +77,18 @@ def test_confidence_ranking_uses_finite_metric_shared_by_all_models() -> None:
     )
     module = _load(script)
     models = [
-        {"label": "aggregate", "confidence_score": 0.7, "iptm": 0.2},
-        {"label": "missing-aggregate", "confidence_score": None, "iptm": 0.99},
+        {
+            "label": "aggregate",
+            "confidence_score": 0.7,
+            "iptm": 0.2,
+            "interface_applicable": True,
+        },
+        {
+            "label": "missing-aggregate",
+            "confidence_score": None,
+            "iptm": 0.99,
+            "interface_applicable": True,
+        },
     ]
     result = module.summarize(models)
     assert result["selection_metric"] == "iptm"
@@ -105,6 +136,344 @@ def test_confidence_loads_best_only_scores_csv(tmp_path: Path) -> None:
     assert result["ranked"][0]["label"] == "best"
     assert result["ranked"][0]["source_csv"] == scores.name
     assert result["ranked"][0]["rank"] == 1
+
+
+def test_confidence_deduplicates_generic_metrics_and_ignores_monomer_iptm(
+    tmp_path: Path,
+) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    (tmp_path / "metrics.csv").write_text(
+        "model,plddt,ptm,iptm\nraw,0.2,0.1,0.0\n"
+    )
+    (tmp_path / "metrics-processed.csv").write_text(
+        "model,plddt,ptm,iptm\nbest,0.7,0.6,0.0\n"
+    )
+    (tmp_path / "result_0.pdb").write_text(
+        "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 70.00           C\n"
+        "ATOM      2  CA  GLY A   2       3.800   0.000   0.000  1.00 70.00           C\n"
+    )
+
+    models = module.load_models(tmp_path)
+    result = module.summarize(models)
+
+    assert len(models) == 1
+    assert models[0]["source_csv"] == "metrics-processed.csv"
+    assert models[0]["chain_count"] == 1
+    assert models[0]["interface_applicable"] is False
+    assert models[0]["geometry_ok"] is True
+    assert models[0]["ca_pair_count"] == 1
+    assert result["selection_metric"] == "ptm"
+    assert result["low_confidence_interfaces"] == []
+    assert result["geometry_failures"] == []
+
+
+def test_confidence_flags_implausible_adjacent_ca_geometry(tmp_path: Path) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    (tmp_path / "metrics-processed.csv").write_text(
+        "model,plddt,ptm\nbest,0.8,0.7\n"
+    )
+    (tmp_path / "result_0.pdb").write_text(
+        "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 80.00           C\n"
+        "ATOM      2  CA  GLY A   2       1.000   0.000   0.000  1.00 80.00           C\n"
+        "ATOM      3  CA  SER A   3      11.000   0.000   0.000  1.00 80.00           C\n"
+    )
+
+    result = module.summarize(module.load_models(tmp_path))
+
+    model = result["ranked"][0]
+    assert model["geometry_ok"] is False
+    assert model["ca_pair_count"] == 2
+    assert model["implausible_ca_pairs"] == 2
+    assert model["min_ca_distance"] == 1.0
+    assert model["max_ca_distance"] == 10.0
+    assert result["geometry_failures"] == [
+        {
+            "label": "best",
+            "rank": 1,
+            "ca_pair_count": 2,
+            "implausible_ca_pairs": 2,
+            "nonfinite_ca_pairs": 0,
+            "min_ca_distance": 1.0,
+            "max_ca_distance": 10.0,
+        }
+    ]
+
+
+def test_confidence_keeps_raw_only_candidates_beside_processed_candidates(
+    tmp_path: Path,
+) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    processed = tmp_path / "candidate-a"
+    raw_only = tmp_path / "candidate-b"
+    processed.mkdir()
+    raw_only.mkdir()
+    (processed / "metrics-processed.csv").write_text("model,ptm\na,0.8\n")
+    (processed / "metrics.csv").write_text("model,ptm\na-raw,0.1\n")
+    (raw_only / "metrics.csv").write_text("model,ptm\nb,0.9\n")
+
+    csvs = module._find_scores_csv(tmp_path)
+    models = module.load_models(tmp_path)
+
+    assert [Path(path).relative_to(tmp_path).as_posix() for path in csvs] == [
+        "candidate-a/metrics-processed.csv",
+        "candidate-b/metrics.csv",
+    ]
+    assert {model["label"] for model in models} == {
+        "candidate-a:a",
+        "candidate-b:b",
+    }
+
+
+def test_confidence_uses_one_conventional_score_source_per_directory(
+    tmp_path: Path,
+) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    (tmp_path / "scores.csv").write_text("model,ptm\nscore-row,0.8\n")
+    (tmp_path / "confidence.csv").write_text(
+        "model,ptm\nduplicate-confidence-row,0.8\n"
+    )
+
+    csvs = module._find_scores_csv(tmp_path)
+    models = module.load_models(tmp_path)
+
+    assert [Path(path).name for path in csvs] == ["scores.csv"]
+    assert [model["label"] for model in models] == ["score-row"]
+
+
+def test_confidence_flags_nonfinite_ca_coordinates(tmp_path: Path) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    (tmp_path / "metrics.csv").write_text("model,ptm\nbad,0.7\n")
+    (tmp_path / "bad.pdb").write_text(
+        _pdb_atom(1, 1, 0.0) + _pdb_atom(2, 2, "nan")
+    )
+
+    result = module.summarize(module.load_models(tmp_path))
+    model = result["ranked"][0]
+
+    assert model["geometry_ok"] is False
+    assert model["ca_pair_count"] == 1
+    assert model["implausible_ca_pairs"] == 1
+    assert model["nonfinite_ca_pairs"] == 1
+    assert model["min_ca_distance"] is None
+    assert result["geometry_failures"][0]["nonfinite_ca_pairs"] == 1
+
+
+def test_confidence_checks_insertion_code_adjacency(tmp_path: Path) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    (tmp_path / "metrics.csv").write_text("model,ptm\ninserted,0.7\n")
+    (tmp_path / "inserted.pdb").write_text(
+        _pdb_atom(1, 10, 0.0)
+        + _pdb_atom(2, 10, 20.0, insertion="A")
+        + _pdb_atom(3, 11, 23.8)
+    )
+
+    model = module.load_models(tmp_path)[0]
+
+    assert model["geometry_ok"] is False
+    assert model["ca_pair_count"] == 2
+    assert model["implausible_ca_pairs"] == 1
+
+
+def test_confidence_ignores_water_only_hetero_chains(tmp_path: Path) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    (tmp_path / "metrics.csv").write_text("model,ptm,iptm\nwet,0.7,0.9\n")
+    (tmp_path / "wet.pdb").write_text(
+        _pdb_atom(1, 1, 0.0)
+        + _pdb_atom(2, 2, 3.8)
+        + _pdb_atom(
+            3,
+            1,
+            8.0,
+            atom="O",
+            record="HETATM",
+            residue="HOH",
+            chain="B",
+        )
+    )
+
+    model = module.load_models(tmp_path)[0]
+
+    assert model["chain_count"] == 1
+    assert model["interface_applicable"] is False
+
+
+def test_confidence_surfaces_unchecked_cif_geometry(tmp_path: Path) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    (tmp_path / "metrics.csv").write_text("model,ptm\ncif-only,0.7\n")
+    (tmp_path / "result.cif").write_text("data_result\n#\n")
+
+    result = module.summarize(module.load_models(tmp_path))
+
+    assert result["ranked"][0]["geometry_ok"] is None
+    assert result["geometry_failures"] == []
+    assert result["geometry_unchecked"] == [
+        {"label": "cif-only", "rank": 1}
+    ]
+
+
+def test_confidence_does_not_attach_one_pdb_to_multiple_rows(tmp_path: Path) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    (tmp_path / "scores.csv").write_text(
+        "model,ptm\nfirst,0.8\nsecond,0.7\n"
+    )
+    (tmp_path / "only.pdb").write_text(
+        "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 80.00           C\n"
+        "ATOM      2  CA  GLY A   2       1.000   0.000   0.000  1.00 80.00           C\n"
+    )
+
+    models = module.load_models(tmp_path)
+
+    assert [model["geometry_ok"] for model in models] == [None, None]
+    assert [model["chain_count"] for model in models] == [None, None]
+
+
+def test_confidence_maps_explicit_structure_files_not_lexical_order(
+    tmp_path: Path,
+) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    (tmp_path / "scores.csv").write_text(
+        "model,structure_file,ptm\n"
+        "good,result_2.pdb,0.8\n"
+        "bad,result_10.pdb,0.7\n"
+    )
+    (tmp_path / "result_2.pdb").write_text(
+        "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 80.00           C\n"
+        "ATOM      2  CA  GLY A   2       3.800   0.000   0.000  1.00 80.00           C\n"
+    )
+    (tmp_path / "result_10.pdb").write_text(
+        "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 80.00           C\n"
+        "ATOM      2  CA  GLY A   2       1.000   0.000   0.000  1.00 80.00           C\n"
+    )
+
+    models = module.load_models(tmp_path)
+
+    assert [(model["label"], model["geometry_ok"]) for model in models] == [
+        ("good", True),
+        ("bad", False),
+    ]
+
+
+def test_confidence_counts_nonprotein_atom_chains_for_interface_context(
+    tmp_path: Path,
+) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    (tmp_path / "metrics.csv").write_text("model,ptm,iptm\ncomplex,0.6,0.7\n")
+    (tmp_path / "complex.pdb").write_text(
+        "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 80.00           C\n"
+        "ATOM      2  CA  GLY A   2       3.800   0.000   0.000  1.00 80.00           C\n"
+        "ATOM      3  P     A B   1       7.000   0.000   0.000  1.00 80.00           P\n"
+    )
+
+    model = module.load_models(tmp_path)[0]
+
+    assert model["chain_count"] == 2
+    assert model["interface_applicable"] is True
+    assert model["geometry_ok"] is True
+
+
+def test_confidence_mixed_monomer_multimer_set_does_not_rank_on_iptm() -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    models = [
+        {
+            "label": "monomer",
+            "ptm": 0.8,
+            "iptm": 0.0,
+            "interface_applicable": False,
+        },
+        {
+            "label": "multimer",
+            "ptm": 0.7,
+            "iptm": 0.9,
+            "interface_applicable": True,
+        },
+    ]
+
+    result = module.summarize(models)
+
+    assert result["selection_metric"] == "ptm"
+    assert [model["label"] for model in result["ranked"]] == [
+        "monomer",
+        "multimer",
+    ]
+
+
+def test_confidence_labels_multiple_generic_metric_files_by_parent(
+    tmp_path: Path,
+) -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    for name, ptm in (("candidate-a", 0.4), ("candidate-b", 0.7)):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "metrics-processed.csv").write_text(
+            f"sample,plddt,ptm,iptm\n0,0.8,{ptm},0.0\n"
+        )
+        (directory / "result_0.pdb").write_text(
+            "ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 80.00           C\n"
+        )
+
+    models = module.load_models(tmp_path)
+    result = module.summarize(models)
+
+    assert {model["label"] for model in models} == {
+        "candidate-a:0.0",
+        "candidate-b:0.0",
+    }
+    assert [model["label"] for model in result["ranked"]] == [
+        "candidate-b:0.0",
+        "candidate-a:0.0",
+    ]
 
 
 def test_rank_batch_parses_json_score_strings(tmp_path: Path) -> None:
@@ -367,6 +736,10 @@ def test_copied_analysis_helpers_remain_identical() -> None:
             skills / "tamarind-finetune/scripts/safe_status.py",
             skills / "tamarind-results-analysis/scripts/safe_status.py",
             skills / "tamarind-submit-and-poll/scripts/safe_status.py",
+        ],
+        [
+            skills / "tamarind-api-setup/scripts/safe_auth.py",
+            skills / "tamarind-submit-and-poll/scripts/safe_auth.py",
         ],
     ]
     for group in groups:

@@ -1,6 +1,6 @@
 # Batch workflow recipes
 
-CLI 0.1 accepts a list of settings or an object containing `settings`. It does not prevalidate the batch.
+CLI 0.1 accepts a list of settings or an object containing `settings`. CLI 0.1.4's `--prevalidate` checks every final row and aborts before submission when any row is invalid.
 
 ## Validate representative rows
 
@@ -15,7 +15,7 @@ For a small batch, validate every row. For a large homogeneous batch, validate a
 ## Submit and monitor
 
 ```bash
-tamarind --json batch TOOL --input batch.yaml --name BATCH_NAME
+tamarind --json batch TOOL --input batch.yaml --name BATCH_NAME --prevalidate
 SKILL_DIR="/absolute/path/to/the/tamarind-batch-skill"
 python3 "$SKILL_DIR/scripts/safe_status.py" BATCH_NAME
 tamarind --json jobs --batch BATCH_NAME --include-subjobs --all

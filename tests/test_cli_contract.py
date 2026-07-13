@@ -28,7 +28,7 @@ def test_supported_cli_version_and_root_options() -> None:
     assert version.returncode == 0
     match = re.search(r"(\d+)\.(\d+)\.(\d+)", version.stdout)
     assert match
-    assert (0, 1, 4) <= tuple(map(int, match.groups())) < (0, 2, 0)
+    assert (0, 1, 4) <= tuple(map(int, match.groups())) < (0, 3, 0)
 
     help_result = _run("--help")
     assert help_result.returncode == 0
@@ -54,3 +54,16 @@ def test_documented_cli_flags_exist(args: tuple[str, ...], tokens: tuple[str, ..
     help_text = _plain(result.stdout)
     for token in tokens:
         assert token in help_text
+
+
+@pytest.mark.skipif(not CLI, reason="tamarind CLI is not installed")
+def test_cli_02_results_has_explicit_url_escape_hatch() -> None:
+    version = _run("--version")
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", version.stdout)
+    assert match
+    if tuple(map(int, match.groups())) < (0, 2, 0):
+        pytest.skip("--show-url was introduced in CLI 0.2")
+
+    result = _run("results", "--help")
+    assert result.returncode == 0
+    assert "--show-url" in _plain(result.stdout)

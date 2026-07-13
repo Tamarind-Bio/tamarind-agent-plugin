@@ -33,6 +33,8 @@ tamarind --json validate TOOL --input settings.yaml --name FOLD_NAME
 
 Before submitting, surface choices that materially affect runtime, cost, or interpretation: number of samples/models/batches, MSA use, recycles, model/version, templates/restraints, affinity calculation, and output format. Keep live defaults unless the user intentionally changes them.
 
+For a production canary, minimize input length and independent sample count, but keep the selected model's tuned recycling/diffusion defaults. Do not lower quality parameters to their schema minima solely to save smoke-test cost: a job can complete successfully while producing unusable geometry.
+
 ## Run through the canonical lifecycle
 
 Follow `tamarind-submit-and-poll`: confirm scope, submit once, use bounded `wait --timeout`, inspect `JobStatus`, then download with `--no-json`.
@@ -57,6 +59,6 @@ python3 "$SKILL_DIR/scripts/parse_boltz_confidence.py" /absolute/path/to/run --j
 
 Resolve `SKILL_DIR` to the directory containing this `SKILL.md`; do not assume the shell is running from the skill directory.
 
-Report local confidence, global fold confidence, and interface confidence separately. A high pLDDT does not by itself prove a correct complex interface; inspect pTM, ipTM, ipSAE, pDockQ, or tool-specific confidence when present.
+Report local confidence, global fold confidence, and interface confidence separately. A high pLDDT does not by itself prove a correct complex interface; inspect pTM, ipTM, ipSAE, pDockQ, or tool-specific confidence when present. For unambiguously mapped PDB outputs, the helper also checks adjacent protein C-alpha distances. Treat any `geometry_failures` entry as unusable pending inspection. Treat every `geometry_unchecked` entry—including CIF-only or ambiguous multi-model output—as requiring another structure validator or manual inspection before recommendation. This continuity check catches grossly malformed backbones; it is not a substitute for full structural validation.
 
 Read [references/tools.md](references/tools.md) for model-fit caveats and [references/examples.md](references/examples.md) for payload patterns. The live schema overrides stale examples.

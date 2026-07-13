@@ -16,7 +16,7 @@ Confirm every field with `tamarind --json schema TOOL` before validation or subm
 Submit with a CLI-supplied parent name:
 
 ```bash
-tamarind --json batch boltz --input batch.yaml --name fold-screen
+tamarind --json batch boltz --input batch.yaml --name fold-screen --prevalidate
 ```
 
 ## Object with explicit subjob names

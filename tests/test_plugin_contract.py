@@ -155,10 +155,28 @@ def test_cli_014_status_guidance_uses_safe_helper_before_wait() -> None:
     assert "batchStatus" in lifecycle
 
 
+def test_cli_014_auth_guidance_never_prints_masked_key_json() -> None:
+    markdown = "\n".join(path.read_text() for path in SKILLS.rglob("*.md"))
+    assert "tamarind --json auth status" not in markdown
+    assert markdown.count('python3 "$SKILL_DIR/scripts/safe_auth.py"') >= 2
+
+
 def test_batch_examples_document_bare_subjob_suffixes() -> None:
     examples = (SKILLS / "tamarind-batch" / "references" / "examples.md").read_text()
     assert "bare, unique suffixes" in examples
     assert "- fold-screen-a" not in examples
+
+
+def test_batch_submission_examples_use_final_row_prevalidation() -> None:
+    batch = SKILLS / "tamarind-batch"
+    markdown = "\n".join(path.read_text() for path in batch.rglob("*.md"))
+    commands = [
+        line for line in markdown.splitlines()
+        if line.startswith("tamarind --json batch ")
+    ]
+    assert commands
+    assert all("--prevalidate" in command for command in commands)
+    assert "does not prevalidate" not in markdown
 
 
 def test_cli_014_budget_403_is_not_treated_as_bad_credentials() -> None:
@@ -175,3 +193,12 @@ def test_cli_014_budget_403_is_not_treated_as_bad_credentials() -> None:
         assert "budget" in text.lower()
         assert "re-auth" in text.lower() or "credentials" in text.lower()
         assert "resubmit" in text.lower()
+
+
+def test_structure_canaries_keep_quality_defaults_and_fast_example_is_fast() -> None:
+    skill = (SKILLS / "tamarind-structure-prediction" / "SKILL.md").read_text()
+    examples = (
+        SKILLS / "tamarind-structure-prediction" / "references/examples.md"
+    ).read_text()
+    assert "keep the selected model's tuned recycling/diffusion defaults" in skill
+    assert '"model": "esmfold2-fast"' in examples

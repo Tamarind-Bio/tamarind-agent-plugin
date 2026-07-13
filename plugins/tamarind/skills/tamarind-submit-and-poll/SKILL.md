@@ -11,10 +11,11 @@ Use this lifecycle for every single-tool job. The domain skill chooses the scien
 
 ```bash
 tamarind --version
-tamarind --json auth status
+SKILL_DIR="/absolute/path/to/the/tamarind-submit-and-poll-skill"
+python3 "$SKILL_DIR/scripts/safe_auth.py"
 ```
 
-Require CLI `>=0.1.4,<0.2` and `verified: true`. Otherwise use `tamarind-api-setup`.
+Resolve `SKILL_DIR` to the directory containing this `SKILL.md`. The helper invokes the official CLI and removes every credential field, including CLI 0.1.4's masked key fragment. Require CLI `>=0.1.4,<0.3` and `verified: true`; otherwise use `tamarind-api-setup`.
 
 ## 2. Confirm the live schema
 

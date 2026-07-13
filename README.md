@@ -18,7 +18,7 @@ Version 0.2 changes the plugin's execution boundary. Version 0.1 bundled an MCP 
 
 Existing users should:
 
-1. Install or upgrade to `tamarind-cli>=0.1.4,<0.2` using the commands below.
+1. Install or upgrade to `tamarind-cli>=0.1.4,<0.3` using the commands below.
 2. Authenticate with `TAMARIND_API_KEY` or `tamarind auth login`, then verify with `tamarind --json auth status`.
 3. Update or reinstall the plugin and start a new agent task so the new skills are loaded.
 
@@ -26,12 +26,12 @@ The hosted Tamarind MCP service remains a separate integration, but it is no lon
 
 ## Install
 
-Install the CLI first. During the 0.1 series the plugin supports `tamarind-cli>=0.1.4,<0.2`:
+Install the CLI first. The plugin supports `tamarind-cli>=0.1.4,<0.3`:
 
 ```bash
-uv tool install 'tamarind-cli>=0.1.4,<0.2'
+uv tool install 'tamarind-cli>=0.1.4,<0.3'
 # or
-pipx install 'tamarind-cli>=0.1.4,<0.2'
+pipx install 'tamarind-cli>=0.1.4,<0.3'
 ```
 
 For an existing tool installation:
@@ -43,7 +43,7 @@ pipx upgrade tamarind-cli
 tamarind --version
 ```
 
-Re-check that the reported version remains in `>=0.1.4,<0.2`; if it does not, reinstall the supported range explicitly.
+Re-check that the reported version remains in `>=0.1.4,<0.3`; if it does not, reinstall the supported range explicitly.
 
 Then install the plugin.
 
