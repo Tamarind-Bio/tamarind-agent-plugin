@@ -17,7 +17,7 @@ Confirm the live tool schema:
 tamarind --json schema TOOL
 ```
 
-CLI 0.1.4 can prevalidate every final row before it submits the batch. During preparation, validate every distinct conditional shape, and validate every row for small/medium batches:
+CLI 0.2 can prevalidate every final row before it submits the batch. During preparation, validate every distinct conditional shape, and validate every row for small/medium batches:
 
 ```bash
 tamarind --json validate TOOL --input one-settings.yaml --name BATCH-probe-001
@@ -29,13 +29,10 @@ Check duplicate job names, input count, file availability, per-input sampling, a
 
 ```bash
 tamarind --json batch TOOL --input batch.yaml --name BATCH_NAME --prevalidate
-SKILL_DIR="/absolute/path/to/the/tamarind-batch-skill"
-python3 "$SKILL_DIR/scripts/safe_status.py" BATCH_NAME
+tamarind --json wait BATCH_NAME --timeout 3600 --poll-interval 15
 ```
 
-Resolve `SKILL_DIR` to the directory containing this `SKILL.md`. The helper invokes the official CLI, removes credential-bearing URL fields only after a successful JSON response, and preserves the CLI's original nonzero exit code and stderr.
-
-Always retain `--prevalidate` on the final batch command; it aborts before submission when any row is invalid. Do not retry an ambiguous batch submit. Query `BATCH_NAME` first. CLI 0.1.4's `wait` command reads single-job `JobStatus` and cannot reliably terminate on a batch parent's `batchStatus`, so do not use it for batch parents. Schedule bounded, one-shot `status` checks through the agent host at a sensible cadence (normally 20-60 seconds), with a clear elapsed-time deadline. Stop on batch `Complete`, `AggregationFailed`, or `Stopped`; never implement an unbounded shell loop. A deadline means "report still running and reattach later," not "resubmit."
+Always retain `--prevalidate` on the final batch command; it aborts before submission when any row is invalid. Do not retry an ambiguous batch submit. Query `BATCH_NAME` first. Wait on the parent with a finite `--timeout`; inspect `batchStatus` and stop on `Complete`, `AggregationFailed`, or `Stopped`. A deadline means "report still running and reattach later," not "resubmit."
 
 Inspect authoritative subjob rows:
 
@@ -50,13 +47,13 @@ Read the saved JSON and report completed, running, queued, and stopped counts. A
 For a successful aggregated parent:
 
 ```bash
-tamarind --no-json results BATCH_NAME --download /absolute/path/to/results
+tamarind --json results BATCH_NAME --download /absolute/path/to/results
 SKILL_DIR="/absolute/path/to/the/tamarind-batch-skill"
 python3 "$SKILL_DIR/scripts/rank_batch.py" /absolute/path/to/subjobs.json --metric METRIC --json
 ```
 
 Resolve `SKILL_DIR` to the directory containing this `SKILL.md`; do not assume the shell is running from the skill directory. Pass either saved JSON emitted by `tamarind --json jobs --batch BATCH_NAME --include-subjobs --all`, a directory containing that output as `subjobs.json`, or a downloaded batch directory. A downloaded directory alone has no authoritative job statuses, so its rows remain explicitly unranked until status-bearing JSON is supplied.
 
-Use `--ascending` for lower-better metrics such as energy or PAE. The helper ranks completed rows only; incomplete, unknown-status, or unscored rows are returned separately as `unranked`.
+Known lower-better metrics such as affinity, energy, PAE, RMSD, Kd/Ki, and IC50 are inferred automatically. Use `--ascending` or `--descending` to override explicitly. The helper ranks completed rows only; incomplete, unknown-status, or unscored rows are returned separately as `unranked`.
 
 Read [references/workflows.md](references/workflows.md) and [references/examples.md](references/examples.md) for batch-document patterns. The CLI does not currently expose every server-side batch convenience; do not invent unsupported flags.

@@ -120,7 +120,7 @@ PLM and inverse-folding outputs depend on seed / model / temperature, so read th
 - **Masked-LM scan** -> a per-position x AA log-likelihood matrix (CSV/JSON). Higher likelihood for a substitution = more tolerated; rank candidate mutations by the matrix.
 - **Job row `Score`**: tool-specific metrics on a completed job. **`WeightedHours`**: the billing unit (weighted hours; GPU tools cost more per wall-hour than CPU tools, and the 6B/15B models are the slow/expensive end).
 
-Download one completed small job with `tamarind --no-json results JOB_NAME --download DIRECTORY` and inspect the extracted paths; do not hardcode filenames, which vary by tool and version.
+Download one completed small job with `tamarind --json results JOB_NAME --download DIRECTORY` and inspect the extracted paths; do not hardcode filenames, which vary by tool and version.
 
 ---
 

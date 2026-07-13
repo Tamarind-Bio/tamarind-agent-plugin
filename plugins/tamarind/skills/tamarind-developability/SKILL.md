@@ -37,7 +37,7 @@ Follow `tamarind-submit-and-poll` for a single candidate:
 tamarind --json submit TOOL --input settings.yaml --name DEV_NAME
 # Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
 tamarind --json wait DEV_NAME --timeout 7200 --poll-interval 15
-tamarind --no-json results DEV_NAME --download /absolute/path/to/results
+tamarind --json results DEV_NAME --download /absolute/path/to/results
 ```
 
 Report each risk axis separately, including the tool and threshold rationale. Preserve a Pareto set when candidates trade affinity against solubility, stability, or immunogenicity. Computational developability predictions prioritize experiments; they do not replace them.

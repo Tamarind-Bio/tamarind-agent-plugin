@@ -5,7 +5,7 @@ description: Orchestrate multiple dependent Tamarind Bio tools as a resumable CL
 
 # Chain Tamarind jobs through CLI stages
 
-CLI 0.1 does not expose a declarative server-side pipeline command. Use an explicit, resumable campaign: validate, submit, wait, inspect, download, and checkpoint each stage before starting the next.
+CLI 0.2 does not expose a declarative server-side pipeline command. Use an explicit, resumable campaign: validate, submit, wait, inspect, download, and checkpoint each stage before starting the next.
 
 ## Plan the data flow
 
@@ -30,14 +30,14 @@ tamarind --json validate TOOL --input stage-settings.yaml --name STAGE_JOB
 tamarind --json submit TOOL --input stage-settings.yaml --name STAGE_JOB
 # Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
 tamarind --json wait STAGE_JOB --timeout 14400 --poll-interval 20
-tamarind --no-json results STAGE_JOB --download /absolute/path/to/stage-results
+tamarind --json results STAGE_JOB --download /absolute/path/to/stage-results
 ```
 
 Inspect `JobStatus` after wait. On failure, capture `tamarind --json logs STAGE_JOB`, checkpoint the failure, and stop. Do not cancel or resubmit automatically.
 
 ## Transfer artifacts explicitly
 
-CLI 0.1 lacks a general remote result-file listing command. After a successful stage:
+CLI 0.2 lacks a general remote result-file listing command. After a successful stage:
 
 1. Extract and inspect its downloaded bundle.
 2. Select the exact artifact using stage-specific evidence.

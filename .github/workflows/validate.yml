@@ -16,16 +16,19 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.12"]
-        cli_spec:
-          - "tamarind-cli==0.1.4"
-          - "tamarind-cli>=0.1.4,<0.3"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install oldest or latest supported CLI
-        run: python -m pip install '${{ matrix.cli_spec }}' pytest PyYAML
+      # PR #1 requires the CLI 0.2 contract from tamarind-cli#16. Pin the exact
+      # reviewed commit until 0.2.0 is published, then replace this with the
+      # released `tamarind-cli>=0.2,<0.3` range before production deployment.
+      - name: Install the paired CLI 0.2 contract
+        run: >-
+          python -m pip install
+          'tamarind-cli @ git+https://github.com/Tamarind-Bio/tamarind-cli@01dc15502ec8d550292cc647b3bfae243b2952e5'
+          pytest PyYAML
       - name: Run plugin and CLI contract tests
         run: python -m pytest --strict-markers
       - name: Verify installed dependency consistency

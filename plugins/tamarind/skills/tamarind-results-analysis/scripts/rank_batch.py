@@ -19,8 +19,9 @@ carries its own JobStatus + Score (a JSON STRING per _common.read_score_field).
 
 Selection metric: whichever Score key you pass with --metric (the Score dict
 varies by tool); if omitted, the script auto-picks the first numeric Score key
-common to the most completed subjobs and names it. Higher is better by default;
-pass --ascending for lower-better metrics (e.g. an energy / pAE).
+common to the most completed subjobs and names it. Direction is inferred for
+known lower-better metrics (affinity, energy, pAE, RMSD, Kd/Ki/IC50); use
+--ascending or --descending to override explicitly.
 
 Usage:
   python3 rank_batch.py <run-dir-or-json>
@@ -32,6 +33,7 @@ import csv
 import glob
 import json
 import os
+import re
 import sys
 
 import _common
@@ -159,7 +161,17 @@ def _auto_metric(subjobs):
     return max(sorted(counts), key=counts.get)
 
 
-def summarize(batch, metric=None, ascending=False):
+def _infer_ascending(metric):
+    """Infer direction only for conventional lower-better metric names."""
+    normalized = re.sub(r"[^a-z0-9]+", "_", str(metric or "").lower()).strip("_")
+    tokens = set(normalized.split("_"))
+    return bool(
+        tokens.intersection({"affinity", "energy", "pae", "rmsd", "ddg", "ic50", "kd", "ki"})
+        or normalized in {"delta_g", "binding_energy", "binding_affinity"}
+    )
+
+
+def summarize(batch, metric=None, ascending=None):
     """Rank completed subjobs by the chosen Score metric.
 
     Returns {batch_status, statuses, selection_metric, ascending, n_subjobs,
@@ -168,6 +180,9 @@ def summarize(batch, metric=None, ascending=False):
     appears in ``unranked`` with ``rank: null`` and an explicit reason."""
     subjobs = batch["subjobs"]
     metric = metric or _auto_metric(subjobs)
+    direction_source = "explicit" if ascending is not None else "inferred"
+    if ascending is None:
+        ascending = _infer_ascending(metric)
 
     scored, unscored = [], []
     for s in subjobs:
@@ -195,6 +210,7 @@ def summarize(batch, metric=None, ascending=False):
         "statuses": batch["statuses"],
         "selection_metric": metric,
         "ascending": ascending,
+        "direction_source": direction_source,
         "n_subjobs": len(subjobs),
         "n_ranked": len(scored),
         "n_unranked": len(unscored),
@@ -253,14 +269,20 @@ def main(argv=None):
                    help="dir (parent.json + subjobs.json) or a JSON file of batch rows")
     p.add_argument("--metric", default=None,
                    help="Score key to rank by (auto-picked when omitted)")
-    p.add_argument("--ascending", action="store_true",
-                   help="rank low-to-high (for energy / pAE-style metrics)")
+    direction = p.add_mutually_exclusive_group()
+    direction.add_argument("--ascending", action="store_true",
+                           help="rank low-to-high")
+    direction.add_argument("--descending", action="store_true",
+                           help="rank high-to-low")
     p.add_argument("--out", default=None,
                    help="ranked CSV path (default <run-dir>/ranked_batch.csv)")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     a = p.parse_args(argv)
 
-    summary = summarize(load_batch(a.run_dir), metric=a.metric, ascending=a.ascending)
+    requested_direction = True if a.ascending else False if a.descending else None
+    summary = summarize(
+        load_batch(a.run_dir), metric=a.metric, ascending=requested_direction
+    )
     base = a.run_dir if os.path.isdir(a.run_dir) else os.path.dirname(a.run_dir) or "."
     out_path = a.out or os.path.join(base, "ranked_batch.csv")
     written = write_csv(summary, out_path)

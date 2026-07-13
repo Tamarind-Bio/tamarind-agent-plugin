@@ -59,7 +59,14 @@ def test_every_skill_has_minimal_frontmatter_and_ui_metadata() -> None:
 
 
 def test_removed_transport_is_not_reintroduced() -> None:
-    forbidden_names = {"tamarind_client.py", "tamarind_job.py", "requirements.txt"}
+    forbidden_names = {
+        "tamarind_client.py",
+        "tamarind_job.py",
+        "safe_auth.py",
+        "safe_status.py",
+        "safe_transfer.py",
+        "requirements.txt",
+    }
     assert not [path for path in SKILLS.rglob("*") if path.name in forbidden_names]
 
     markdown = "\n".join(path.read_text() for path in ROOT.rglob("*.md"))
@@ -128,37 +135,33 @@ def test_global_cli_flags_precede_subcommands() -> None:
     assert not offenders, offenders
 
 
-def test_cli_014_batch_guidance_does_not_use_single_job_waiter() -> None:
-    all_docs = "\n".join(path.read_text() for path in ROOT.rglob("*.md"))
+def test_cli_02_batch_guidance_uses_bounded_parent_wait() -> None:
     batch_docs = "\n".join(path.read_text() for path in (SKILLS / "tamarind-batch").rglob("*.md"))
-    assert not re.search(
-        r"\btamarind\s+--json\s+wait\s+(?:[^\s]*batch[^\s]*|[A-Z_]*BATCH[A-Z_]*)",
-        all_docs,
-        re.IGNORECASE,
-    )
+    assert "tamarind --json wait BATCH_NAME --timeout" in batch_docs
     assert "batchStatus" in batch_docs
     recovery = (SKILLS / "tamarind-results-analysis" / "SKILL.md").read_text()
-    assert "do not call the single-job waiter" in recovery
-    assert recovery.index("batchStatus") < recovery.index("tamarind --json wait JOB_NAME")
+    assert "tamarind --json wait JOB_NAME --timeout" in recovery
+    assert "batchStatus" in recovery
 
 
-def test_cli_014_status_guidance_uses_safe_helper_before_wait() -> None:
+def test_cli_02_job_output_guidance_uses_cli_contract_directly() -> None:
+    public_docs = [ROOT / "README.md", *SKILLS.rglob("*.md")]
+    markdown = "\n".join(path.read_text() for path in public_docs)
+    assert "tamarind --json status" in markdown
+    assert "tamarind --json wait" in markdown
+    assert "tamarind --json jobs" in markdown
+    assert "tamarind --json files upload" in markdown
+    assert "tamarind --no-json results" not in markdown
+    assert "scripts/safe_" not in markdown
+    assert "--show-url" in markdown
+    assert "Never use `--show-url` in agent logs" in markdown
+
+
+def test_cli_02_auth_guidance_uses_redacted_cli_contract() -> None:
     markdown = "\n".join(path.read_text() for path in ROOT.rglob("*.md"))
-    assert "tamarind --json status" not in markdown
-    assert markdown.count('python3 "$SKILL_DIR/scripts/safe_status.py"') >= 10
-
-    lifecycle = (SKILLS / "tamarind-submit-and-poll" / "SKILL.md").read_text()
-    assert lifecycle.index("safe_status.py") < lifecycle.index(
-        "tamarind --json wait JOB_NAME"
-    )
-    assert "preserving native nonzero exit codes and stderr" in lifecycle
-    assert "batchStatus" in lifecycle
-
-
-def test_cli_014_auth_guidance_never_prints_masked_key_json() -> None:
-    markdown = "\n".join(path.read_text() for path in SKILLS.rglob("*.md"))
-    assert "tamarind --json auth status" not in markdown
-    assert markdown.count('python3 "$SKILL_DIR/scripts/safe_auth.py"') >= 2
+    assert "tamarind --json auth status" in markdown
+    assert "safe_auth.py" not in markdown
+    assert "omits credential fragments" in markdown
 
 
 def test_batch_examples_document_bare_subjob_suffixes() -> None:
@@ -167,7 +170,7 @@ def test_batch_examples_document_bare_subjob_suffixes() -> None:
     assert "- fold-screen-a" not in examples
 
 
-def test_batch_submission_examples_use_final_row_prevalidation() -> None:
+def test_batch_submission_examples_require_final_row_prevalidation() -> None:
     batch = SKILLS / "tamarind-batch"
     markdown = "\n".join(path.read_text() for path in batch.rglob("*.md"))
     commands = [
@@ -176,10 +179,22 @@ def test_batch_submission_examples_use_final_row_prevalidation() -> None:
     ]
     assert commands
     assert all("--prevalidate" in command for command in commands)
-    assert "does not prevalidate" not in markdown
+    assert "CLI 0.2" in markdown
+    assert "every final row" in markdown
 
 
-def test_cli_014_budget_403_is_not_treated_as_bad_credentials() -> None:
+def test_cli_02_terminal_failure_exit_is_documented() -> None:
+    setup = (SKILLS / "tamarind-api-setup" / "SKILL.md").read_text()
+    contract = (
+        SKILLS / "tamarind-submit-and-poll" / "references/api_reference.md"
+    ).read_text()
+    for text in (setup, contract):
+        assert "| 1 |" in text
+        assert "| 9 |" in text
+        assert "remote job" in text.lower()
+
+
+def test_cli_02_budget_and_generic_403_are_not_treated_as_bad_credentials() -> None:
     setup = (SKILLS / "tamarind-api-setup" / "SKILL.md").read_text()
     contract = (
         SKILLS
@@ -188,8 +203,9 @@ def test_cli_014_budget_403_is_not_treated_as_bad_credentials() -> None:
         / "api_reference.md"
     ).read_text()
     for text in (setup, contract):
-        assert "CLI 0.1.4" in text
-        assert "HTTP 403" in text
+        assert "CLI 0.2" in text
+        assert "exit 1" in text
+        assert "exit 8" in text
         assert "budget" in text.lower()
         assert "re-auth" in text.lower() or "credentials" in text.lower()
         assert "resubmit" in text.lower()

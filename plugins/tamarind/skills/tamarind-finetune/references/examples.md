@@ -19,7 +19,7 @@ Check data columns, units, splits, leakage, base model, epochs/steps, and datase
 tamarind --json submit FINETUNE_TOOL --input train.yaml --name model-train-v1
 tamarind --json wait model-train-v1 --timeout 28800 --poll-interval 30
 SKILL_DIR="/absolute/path/to/the/tamarind-finetune-skill"
-python3 "$SKILL_DIR/scripts/safe_status.py" model-train-v1
+tamarind --json status model-train-v1
 ```
 
 Require a successful terminal status.
@@ -39,7 +39,7 @@ After validation and authorization:
 ```bash
 tamarind --json submit INFERENCE_TOOL --input infer.yaml --name model-infer-v1
 tamarind --json wait model-infer-v1 --timeout 14400 --poll-interval 20
-tamarind --no-json results model-infer-v1 --download /absolute/path/to/results
+tamarind --json results model-infer-v1 --download /absolute/path/to/results
 ```
 
 Evaluate on held-out data and compare against the base model.

@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -117,6 +119,30 @@ def test_confidence_does_not_rank_without_finite_common_metric() -> None:
     assert result["ranked"][0]["ptm"] is None
     assert result["ranked"][1]["confidence_score"] is None
     json.dumps(result, allow_nan=False)
+
+
+def test_confidence_does_not_label_unknown_applicability_as_weak_interface() -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+    )
+    module = _load(script)
+    models = [
+        {
+            "label": "unknown-complex",
+            "ptm": 0.8,
+            "iptm": 0.2,
+            "interface_applicable": None,
+        }
+    ]
+
+    result = module.summarize(models)
+
+    assert result["selection_metric"] == "ptm"
+    assert result["low_confidence_interfaces"] == []
+    assert result["interface_unchecked"] == [
+        {"label": "unknown-complex", "rank": 1, "iptm": 0.2}
+    ]
 
 
 def test_confidence_loads_best_only_scores_csv(tmp_path: Path) -> None:
@@ -489,6 +515,30 @@ def test_rank_batch_parses_json_score_strings(tmp_path: Path) -> None:
     assert [row["name"] for row in result["ranked"]] == ["a", "b"]
 
 
+def test_rank_batch_infers_lower_better_metric_direction() -> None:
+    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    module = _load(script)
+    batch = {
+        "batch_status": "Complete",
+        "statuses": {"Complete": 2},
+        "subjobs": [
+            {"name": "worse", "status": "Complete", "score": {"pae": 10.0}},
+            {"name": "better", "status": "Complete", "score": {"pae": 2.0}},
+        ],
+    }
+
+    result = module.summarize(batch)
+
+    assert result["selection_metric"] == "pae"
+    assert result["ascending"] is True
+    assert result["direction_source"] == "inferred"
+    assert [row["name"] for row in result["ranked"]] == ["better", "worse"]
+
+    overridden = module.summarize(batch, ascending=False)
+    assert overridden["direction_source"] == "explicit"
+    assert [row["name"] for row in overridden["ranked"]] == ["worse", "better"]
+
+
 def test_rank_batch_accepts_native_cli_jobs_envelope(tmp_path: Path) -> None:
     script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
@@ -608,6 +658,30 @@ def test_non_finite_values_are_missing_and_never_ranked(tmp_path: Path) -> None:
     json.dumps(binder_result, allow_nan=False)
 
 
+def test_binder_auto_metric_maximizes_candidate_coverage() -> None:
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-binder-design/scripts/summarize_binder_metrics.py"
+    )
+    module = _load(script)
+    designs = [
+        {"label": "a", "ipsae": 0.9, "iptm": 0.7},
+        {"label": "b", "ipsae": None, "iptm": 0.8},
+        {"label": "c", "ipsae": None, "iptm": 0.6},
+    ]
+
+    result = module.summarize(designs)
+
+    assert result["selection_metric"] == "iptm"
+    assert result["n_scored"] == 3
+    assert result["unranked"] == []
+
+    forced = module.summarize(designs, metric="ipsae")
+    assert forced["n_scored"] == 1
+    assert [row["label"] for row in forced["unranked"]] == ["b", "c"]
+    assert all(row["unranked_reason"] == "missing-metric" for row in forced["unranked"])
+
+
 def _sdf_record(name: str, **properties: float) -> str:
     fields = "".join(
         f">  <{key}>\n{value}\n\n" for key, value in properties.items()
@@ -637,6 +711,25 @@ def test_gnina_uses_sdf_cnnscore_not_vina_energy_column(tmp_path: Path) -> None:
     assert metric == "cnnscore"
     assert [row["source_rank"] for row in result["ranked"]] == [2, 1]
     assert [row["cnnscore"] for row in result["ranked"]] == [0.9, 0.2]
+
+
+def test_docking_rejects_truncated_multimodel_file_before_pairing_scores(
+    tmp_path: Path,
+) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.pdbqt").write_text(
+        "MODEL 1\nATOM first\nENDMDL\nMODEL 2\nATOM truncated\n"
+    )
+    (tmp_path / "log.txt").write_text(
+        "   1     -8.000      0.000      0.000\n"
+        "   2     -7.000      0.000      0.000\n"
+    )
+
+    with pytest.raises(SystemExit, match="truncated MODEL without ENDMDL"):
+        module.load_poses(tmp_path)
 
 
 def test_gnina_with_incomplete_cnn_scores_preserves_source_rank(tmp_path: Path) -> None:
@@ -729,17 +822,6 @@ def test_copied_analysis_helpers_remain_identical() -> None:
             skills / "tamarind-binder-design/scripts/_common.py",
             skills / "tamarind-results-analysis/scripts/_common.py",
             skills / "tamarind-structure-prediction/scripts/_common.py",
-        ],
-        [
-            skills / "tamarind-batch/scripts/safe_status.py",
-            skills / "tamarind-developability/scripts/safe_status.py",
-            skills / "tamarind-finetune/scripts/safe_status.py",
-            skills / "tamarind-results-analysis/scripts/safe_status.py",
-            skills / "tamarind-submit-and-poll/scripts/safe_status.py",
-        ],
-        [
-            skills / "tamarind-api-setup/scripts/safe_auth.py",
-            skills / "tamarind-submit-and-poll/scripts/safe_auth.py",
         ],
     ]
     for group in groups:

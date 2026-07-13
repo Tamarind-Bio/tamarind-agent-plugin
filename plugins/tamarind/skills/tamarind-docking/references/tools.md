@@ -33,7 +33,7 @@ Gotchas:
 - The box must be a FOCUSED pocket box (~20-30 Angstroms per side), not the whole protein. A box exceeding the protein bounding box makes the search explode and time out. For whole-protein blind docking use `gnina wholeProtein` or `diffdock`.
 - The schema box center defaults to `0,0,0`, which usually misses the protein. Supply real coordinates (a known ligand centroid, a pocket-residue centroid, or a pocket-detection job's output).
 
-Output: a docked ligand pose in `ligand_out.{pdbqt,sdf,pdb}` plus a `log.txt` with the Vina binding-affinity table (kcal/mol per pose; more negative is better). Download the completed result with `tamarind --no-json results JOB_NAME --download DIRECTORY`.
+Output: a docked ligand pose in `ligand_out.{pdbqt,sdf,pdb}` plus a `log.txt` with the Vina binding-affinity table (kcal/mol per pose; more negative is better). Download the completed result with `tamarind --json results JOB_NAME --download DIRECTORY`.
 
 ---
 

@@ -8,7 +8,7 @@ Version 0.2 is CLI-first:
 
 - The independently versioned [`tamarind-cli`](https://github.com/Tamarind-Bio/tamarind-cli) owns authentication, live catalog/schema lookup, validation, API calls, job state, polling, files, and downloads.
 - The plugin owns intent routing, scientific workflow guidance, spend confirmation, recovery rules, and local result analysis.
-- Local helper scripts only parse downloaded scientific results. The plugin no longer vendors a second HTTP client or MCP transport.
+- Local helpers only parse downloaded scientific results. They never call Tamarind APIs directly. The plugin no longer vendors a second HTTP client or MCP transport.
 
 This mirrors the CLI-first separation in the [Boltz agent plugin](https://github.com/boltz-bio/boltz-api-skills): one tested machine interface underneath thin, intent-specific skills. It removes the plugin's duplicated transport implementation and makes cross-surface drift testable; it does not make compatibility testing unnecessary.
 
@@ -18,7 +18,7 @@ Version 0.2 changes the plugin's execution boundary. Version 0.1 bundled an MCP 
 
 Existing users should:
 
-1. Install or upgrade to `tamarind-cli>=0.1.4,<0.3` using the commands below.
+1. Publish and install `tamarind-cli>=0.2,<0.3` before installing this plugin version.
 2. Authenticate with `TAMARIND_API_KEY` or `tamarind auth login`, then verify with `tamarind --json auth status`.
 3. Update or reinstall the plugin and start a new agent task so the new skills are loaded.
 
@@ -26,12 +26,12 @@ The hosted Tamarind MCP service remains a separate integration, but it is no lon
 
 ## Install
 
-Install the CLI first. The plugin supports `tamarind-cli>=0.1.4,<0.3`:
+Install the CLI first. The plugin supports `tamarind-cli>=0.2,<0.3`:
 
 ```bash
-uv tool install 'tamarind-cli>=0.1.4,<0.3'
+uv tool install 'tamarind-cli>=0.2,<0.3'
 # or
-pipx install 'tamarind-cli>=0.1.4,<0.3'
+pipx install 'tamarind-cli>=0.2,<0.3'
 ```
 
 For an existing tool installation:
@@ -43,7 +43,7 @@ pipx upgrade tamarind-cli
 tamarind --version
 ```
 
-Re-check that the reported version remains in `>=0.1.4,<0.3`; if it does not, reinstall the supported range explicitly.
+Re-check that the reported version remains in `>=0.2,<0.3`; if it does not, reinstall the supported range explicitly.
 
 Then install the plugin.
 
@@ -96,7 +96,7 @@ Verify the active profile without printing the secret:
 tamarind --json auth status
 ```
 
-Global CLI flags must precede the subcommand. Use `tamarind --json jobs`, not `tamarind jobs --json`.
+Global CLI flags must precede the subcommand. For example, use `tamarind --json schema TOOL`, not `tamarind schema TOOL --json`.
 
 ## Safe no-spend smoke test
 
@@ -142,14 +142,13 @@ Scale and orchestration:
 
 ## Agent contract
 
-The skills intentionally account for current CLI 0.1 behavior:
+The skills target the hardened CLI 0.2 agent contract:
 
 - Put global flags before the command: `tamarind --json tools`, not `tamarind tools --json`.
-- Treat stdout as JSON only on success; parse nonzero-command stderr as text.
-- Inspect `JobStatus` or `batchStatus`; a terminal failed/stopped job may still produce process exit 0.
-- On CLI 0.1.4, monitor batch parents with bounded one-shot `status` checks because `wait` does not reliably follow `batchStatus`.
-- Use standalone `wait --timeout`, not unbounded `submit --wait` or `results --wait`.
-- Download with `--no-json` so presigned URLs are not echoed into agent logs.
+- Parse result JSON from stdout and structured error JSON from stderr after checking the exit code.
+- Inspect `JobStatus` or `batchStatus`; unsuccessful terminal jobs return dedicated exit 9 with the final status on stdout.
+- Put a deadline on `wait`, including batch parents; exit 7 means the remote job may still be running.
+- Download with `tamarind --json results JOB_NAME --download DIR`; CLI 0.2 does not print a presigned URL unless `--show-url` is explicitly requested.
 - Never retry an ambiguous submit. Query the durable job name first.
 - Confirm material scope/cost before `submit` or `batch`; `validate` is free and does not authorize spending.
 

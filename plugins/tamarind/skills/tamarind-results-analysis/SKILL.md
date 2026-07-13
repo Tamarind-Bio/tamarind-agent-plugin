@@ -10,21 +10,18 @@ Treat the durable job name as the recovery key. Never start a replacement job me
 ## Recover remote state
 
 ```bash
-SKILL_DIR="/absolute/path/to/the/tamarind-results-analysis-skill"
-python3 "$SKILL_DIR/scripts/safe_status.py" JOB_NAME
+tamarind --json status JOB_NAME
 tamarind --json jobs --status Running --limit 50
-tamarind --json jobs --batch BATCH_NAME --include-subjobs
+tamarind --json jobs --batch BATCH_NAME --include-subjobs --all
 ```
 
-Resolve `SKILL_DIR` to the directory containing this `SKILL.md`. The helper invokes the official CLI, removes credential-bearing URL fields only after a successful JSON response, and preserves the CLI's original nonzero exit code and stderr.
-
-Branch on the first status document. If it carries `batchStatus`, it is a batch parent: on CLI 0.1.4, schedule bounded one-shot `status` checks through the agent host and stop on `Complete`, `AggregationFailed`, or `Stopped`; do not call the single-job waiter. If it carries an active `JobStatus`, use a bounded wait:
+Branch on the first status document. If it carries an active `JobStatus` or `batchStatus`, use a bounded wait:
 
 ```bash
 tamarind --json wait JOB_NAME --timeout 1800 --poll-interval 15
 ```
 
-Exit 7 is a local timeout, not a remote failure. On process exit 0, still inspect `JobStatus`. For a stopped or failed job or batch:
+Exit 7 is a local timeout, not a remote failure. Exit 9 means an unsuccessful terminal job or batch and leaves final status on stdout. For a stopped or failed job or batch:
 
 ```bash
 tamarind --json logs JOB_NAME --max-lines 200
@@ -43,10 +40,10 @@ Do not compare unrelated metrics on one scale. Explain whether higher or lower i
 Only download a successful terminal job:
 
 ```bash
-tamarind --no-json results JOB_NAME --download /absolute/path/to/results
+tamarind --json results JOB_NAME --download /absolute/path/to/results
 ```
 
-Use `--no-json` so the presigned result URL is not echoed into agent logs. Verify the bundle exists; extract it before running directory-based helpers.
+CLI 0.2 suppresses presigned URLs from normal download output and sanitizes transfer failures. Verify the bundle exists; extract it before running directory-based helpers. Never use `--show-url` in agent logs.
 
 ## Run local scientific analysis
 
@@ -64,7 +61,7 @@ Resolve `SKILL_DIR` to the directory containing this `SKILL.md`; do not assume t
 
 ## Prepare a downstream stage
 
-CLI 0.1 does not expose a general result-file listing command. Prefer this explicit path:
+CLI 0.2 does not expose a general result-file listing command. Prefer this explicit path:
 
 1. Download and extract the successful result.
 2. Select the exact artifact by inspecting the bundle, not by assuming a filename.

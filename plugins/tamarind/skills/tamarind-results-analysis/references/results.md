@@ -28,9 +28,9 @@ When present, `WeightedHours` reports platform usage. Include it in the result s
 Download with:
 
 ```bash
-tamarind --no-json results JOB_NAME --download /absolute/path/to/results
+tamarind --json results JOB_NAME --download /absolute/path/to/results
 ```
 
-CLI 0.1 does not provide a general result-file listing command. Extract the bundle, inspect exact filenames, and upload a selected artifact for a downstream stage rather than guessing a remote path.
+CLI 0.2 does not provide a general result-file listing command. Extract the bundle, inspect exact filenames, and upload a selected artifact for a downstream stage rather than guessing a remote path.
 
 Computational confidence and scores prioritize candidates; they are not experimental validation.

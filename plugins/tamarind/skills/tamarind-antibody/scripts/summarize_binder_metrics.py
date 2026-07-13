@@ -103,8 +103,13 @@ def _resolve_metric(designs, forced):
             raise SystemExit(f"unknown metric {forced}; "
                              f"choose from {list(HIGHER_BETTER)}")
         return forced
+    counts = {
+        key: sum(_common.is_finite_number(d.get(key)) for d in designs)
+        for key in METRIC_PRIORITY
+    }
+    best = max(counts.values(), default=0)
     for key in METRIC_PRIORITY:
-        if any(_common.is_finite_number(d.get(key)) for d in designs):
+        if counts[key] == best and best > 0:
             return key
     raise SystemExit("no rankable interface metric present in the CSV")
 
@@ -123,6 +128,11 @@ def summarize(designs, metric=None, cutoff=None):
 
     normalized = [_common.normalize_non_finite(d) for d in designs]
     scored = [d for d in normalized if _common.is_finite_number(d.get(metric))]
+    unscored = [
+        {**d, "rank": None, "unranked_reason": "missing-metric"}
+        for d in normalized
+        if not _common.is_finite_number(d.get(metric))
+    ]
     ranked = sorted(scored, key=lambda d: d[metric], reverse=True)
     for r, d in enumerate(ranked, 1):
         d["rank"] = r
@@ -136,11 +146,13 @@ def summarize(designs, metric=None, cutoff=None):
         "cutoff": cutoff,
         "n_designs": len(designs),
         "n_scored": len(scored),
+        "n_unscored": len(unscored),
         "max": vals[0] if vals else None,
         "tenth": vals[9] if len(vals) >= 10 else None,
         "n_above_cutoff": len(above),
         "fraction_above_cutoff": round(frac, 4),
         "ranked": ranked,
+        "unranked": unscored,
     }
 
 
@@ -164,6 +176,9 @@ def print_summary(summary, show=10):
               f"{_fmt(d.get('ipsae')):>6} {_fmt(d.get('iptm')):>6} "
               f"{_fmt(d.get('pdockq')):>6} {_fmt(d.get('plddt')):>7} "
               f"{_fmt(d.get('ptm')):>6}")
+    if summary["unranked"]:
+        labels = ", ".join(d["label"] for d in summary["unranked"])
+        print(f"\nUnranked (missing {metric}): {labels}")
 
 
 def main(argv=None):

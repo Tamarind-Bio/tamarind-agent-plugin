@@ -16,19 +16,19 @@ command -v tamarind
 tamarind --version
 ```
 
-This plugin supports `tamarind-cli>=0.1.4,<0.3`. If the command is missing, prefer an isolated tool install:
+This plugin supports `tamarind-cli>=0.2,<0.3`. If the command is missing, prefer an isolated tool install:
 
 ```bash
-uv tool install 'tamarind-cli>=0.1.4,<0.3'
+uv tool install 'tamarind-cli>=0.2,<0.3'
 ```
 
 If `uv` is unavailable, use:
 
 ```bash
-pipx install 'tamarind-cli>=0.1.4,<0.3'
+pipx install 'tamarind-cli>=0.2,<0.3'
 ```
 
-Upgrade an existing isolated installation with `uv tool upgrade tamarind-cli` or `pipx upgrade tamarind-cli`, then run `tamarind --version` again and require `>=0.1.4,<0.3`. If an upgrade moves outside that supported range, reinstall the explicit range with the same tool. Do not run a remote `curl | sh` installer without the user's explicit approval. Do not mutate the system Python or use `--break-system-packages`.
+Upgrade an existing isolated installation with `uv tool upgrade tamarind-cli` or `pipx upgrade tamarind-cli`, then run `tamarind --version` again and require `>=0.2,<0.3`. If an upgrade moves outside that supported range, reinstall the explicit range with the same tool. Do not run a remote `curl | sh` installer without the user's explicit approval. Do not mutate the system Python or use `--break-system-packages`.
 
 In a sandboxed agent, even `uv tool list` or `uv tool upgrade` can create temporary files under uv's cache and `~/.local/share/uv/tools`. Request narrowly scoped write access to those directories, or give the exact command to the user instead of repeatedly retrying a denied install.
 
@@ -43,13 +43,10 @@ tamarind auth login
 Never put a key in chat, logs, source files, or a command-line `--api-key` argument. Verify the active credential:
 
 ```bash
-SKILL_DIR="/absolute/path/to/the/tamarind-api-setup-skill"
-python3 "$SKILL_DIR/scripts/safe_auth.py"
+tamarind --json auth status
 ```
 
-Resolve `SKILL_DIR` to the directory containing this `SKILL.md`. The helper invokes the official CLI and allowlists only non-credential auth fields, because released CLI 0.1.4 includes a masked key fragment in its raw JSON. It preserves native nonzero exit codes and stderr.
-
-Require both `hasKey: true` and `verified: true`. The helper may exit 0 with `verified: false`, so inspect the JSON rather than trusting the process status. Do not replace it with raw auth JSON or `tamarind auth status --json`.
+Require both `hasKey: true` and `verified: true`. CLI 0.2 omits credential fragments and configured endpoints from this response. The command may exit 0 with `verified: false`, so inspect the JSON rather than trusting process status alone.
 
 ## 3. Run a no-spend smoke test
 
@@ -68,20 +65,22 @@ Success requires a tool result, a schema, and `valid: true`. Do not call `submit
 
 ## 4. Handle errors by contract
 
-CLI 0.1 emits JSON for successful commands, but errors and usage failures are plain text on stderr. Branch on the exit code and read stderr as text:
+CLI 0.2 emits result JSON on stdout and structured error JSON on stderr. Branch on the exit code before parsing the appropriate stream:
 
 | Exit | Meaning | Action |
 |---|---|---|
 | 0 | Command completed | Inspect returned fields such as `verified` or job status |
+| 1 | Generic client/API failure | Stop, inspect the sanitized error, and recover by durable name if submission may be ambiguous |
 | 2 | Usage or safety confirmation | Fix argument placement or provide an explicitly authorized `--yes` |
-| 3 | Authentication, or any HTTP 403 on CLI 0.1.4 | Inspect stderr first. Re-authenticate only for credential failures; a message about budget, quota, credits, or weighted hours is a spend-limit failure and must not trigger re-authentication or resubmission |
+| 3 | Authentication | Re-authenticate only for a typed credential failure |
 | 4 | Not found | Re-check the tool, job, file, or profile name |
 | 5 | Validation | Fix settings against the live schema |
 | 6 | Rate limit | Back off; do not duplicate a submission |
 | 7 | Wait timeout | Reattach with `status` or another bounded `wait` |
-| 8 | Budget or quota (newer compatible CLI) | Stop and surface the limit; do not retry or resubmit |
+| 8 | Budget or quota | Stop and surface the limit; do not retry or resubmit |
+| 9 | Remote job failed | Inspect final status/logs; do not download or resubmit automatically |
 
-CLI 0.1.4 maps every HTTP 403 to exit 3. Newer compatible CLI releases distinguish budget/quota failures as exit 8. Therefore branch on both the exit code and the error message; never assume that a 403 means the key is bad. Treat network/transfer tracebacks as failures even if they are not wrapped in structured JSON.
+Generic access-policy HTTP 403 responses remain generic exit 1; explicit authentication failures are exit 3 and explicit budget/quota exhaustion is exit 8. Do not turn a generic or budget failure into an automatic re-authentication or resubmission.
 
 ## Profiles and endpoints
 

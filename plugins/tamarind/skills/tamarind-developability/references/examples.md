@@ -1,6 +1,6 @@
 # Tamarind Bio: developability example payloads
 
-> Operational examples in this reference use the Tamarind CLI. Query live fields with `tamarind --json schema TOOL`, validate settings with `tamarind --json validate TOOL --input FILE --name JOB_NAME`, and download completed outputs with `tamarind --no-json results JOB_NAME --download DIRECTORY`.
+> Operational examples in this reference use the Tamarind CLI. Query live fields with `tamarind --json schema TOOL`, validate settings with `tamarind --json validate TOOL --input FILE --name JOB_NAME`, and download completed outputs with `tamarind --json results JOB_NAME --download DIRECTORY`.
 
 The freshest example for any tool is the `exampleJob` in `tamarind --json schema TOOL`:
 a `{jobName, type, settings}` assembled from each parameter's example/default (file
@@ -192,12 +192,11 @@ inputs (poll the batch PARENT's `batchStatus`, not subjob `JobStatus` - see `tam
 # Put one settings object per candidate in dev-batch.yaml. Validate every row or
 # distinct conditional shape before multiplying the run.
 tamarind --json batch tap --input dev-batch.yaml --name dev-batch
-SKILL_DIR="/absolute/path/to/the/tamarind-developability-skill"
-python3 "$SKILL_DIR/scripts/safe_status.py" dev-batch
+tamarind --json wait dev-batch --timeout 3600 --poll-interval 15
 tamarind --json jobs --batch dev-batch --include-subjobs --all
 ```
 
-On CLI 0.1.4, repeat the one-shot parent `status` check through the agent host at a bounded cadence and inspect `batchStatus`; do not call the single-job waiter for a batch parent.
+Inspect the terminal parent `batchStatus`, then inspect every subjob row. Exit 7 means the local wait deadline elapsed; reattach later rather than resubmitting.
 
 For a structure-based filter (e.g. `aggrescan3d` / `thermompnn` across a set of folded
 candidates), upload each structure first, then reference the bare filename in each subjob's
@@ -243,5 +242,5 @@ the folded structure (for sequence tools that fold first, like TAP):
 
 Job-row `Score` (JSON string on completed jobs) is tool-family dependent; `WeightedHours` is
 the billing unit. To inspect a tool's exact output filenames, download one completed small job
-with `tamarind --no-json results JOB_NAME --download DIRECTORY` and inspect the extracted
+with `tamarind --json results JOB_NAME --download DIRECTORY` and inspect the extracted
 bundle; filenames vary by tool and version.

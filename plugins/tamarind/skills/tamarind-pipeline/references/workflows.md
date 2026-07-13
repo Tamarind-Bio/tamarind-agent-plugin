@@ -1,6 +1,6 @@
 # Resumable campaign patterns
 
-CLI 0.1 runs pipelines as explicit stages. Each stage has a durable job name, bounded wait, local result directory, and checkpoint entry.
+CLI 0.2 runs pipelines as explicit stages. Each stage has a durable job name, bounded wait, local result directory, and checkpoint entry.
 
 ## Design to fold to score
 

@@ -27,7 +27,7 @@ After the user confirms material candidate count and scope:
 ```bash
 tamarind --json submit TOOL --input design.yaml --name target-design-v1
 tamarind --json wait target-design-v1 --timeout 14400 --poll-interval 20
-tamarind --no-json results target-design-v1 --download /absolute/path/to/results
+tamarind --json results target-design-v1 --download /absolute/path/to/results
 ```
 
 Extract the bundle and rank it:
@@ -39,6 +39,6 @@ python3 "$SKILL_DIR/scripts/summarize_binder_metrics.py" /absolute/path/to/extra
 
 ## Design-to-fold handoff
 
-For generated sequences, create a fold batch whose per-job settings use the downstream tool's `sequence` field. For generated structures, download and inspect exact artifact paths, upload selected files, and use the returned filenames. CLI 0.1 does not provide a general result-file list or `fromJob` batch shortcut, so do not guess remote paths.
+For generated sequences, create a fold batch whose per-job settings use the downstream tool's `sequence` field. For generated structures, download and inspect exact artifact paths, upload selected files, and use the returned filenames. CLI 0.2 does not provide a general result-file list or `fromJob` batch shortcut, so do not guess remote paths.
 
 Submit original validated settings, not normalized validation output.

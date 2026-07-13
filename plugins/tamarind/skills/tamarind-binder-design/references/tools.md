@@ -98,7 +98,7 @@ Gotchas: `skipRefolding: true` skips the slow Boltz-2 refold and ranks the ORIGI
 Binder outputs are non-deterministic (seed / model / MSA), so read the metric keys and reason about ranking, not exact values.
 
 - **Job row `Score`** (JSON on completed jobs): interface metrics for the design family (pLDDT/pTM for the monomer fold; ipTM, ipSAE, pDockQ for the interface). Higher pLDDT/pTM/ipTM/ipSAE/pDockQ is more confident.
-- **Results bundle:** the per-design structures plus the tool's metrics CSV and logs. Download it with `tamarind --no-json results JOB_NAME --download DIRECTORY` and inspect the extracted filenames; do not hardcode names, which vary by tool and version.
+- **Results bundle:** the per-design structures plus the tool's metrics CSV and logs. Download it with `tamarind --json results JOB_NAME --download DIRECTORY` and inspect the extracted filenames; do not hardcode names, which vary by tool and version.
 - **`WeightedHours`** on the row is the billing unit (weighted hours, GPU tools cost more per wall-hour than CPU tools).
 
 Use the absolute helper path documented in the parent skill, `python3 "$SKILL_DIR/scripts/summarize_binder_metrics.py" <results-dir>`, to rank designs by the auto-detected interface metric and report the max / 10th-best / fraction-above-cutoff. Resolve `SKILL_DIR` to the directory containing the parent `SKILL.md`.

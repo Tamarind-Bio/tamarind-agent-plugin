@@ -43,7 +43,7 @@ tamarind --json validate INFERENCE_TOOL --input infer-settings.yaml --name INFER
 tamarind --json submit INFERENCE_TOOL --input infer-settings.yaml --name INFER_NAME
 # Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
 tamarind --json wait INFER_NAME --timeout 14400 --poll-interval 20
-tamarind --no-json results INFER_NAME --download /absolute/path/to/results
+tamarind --json results INFER_NAME --download /absolute/path/to/results
 ```
 
 Do not bypass failed validation. Evaluate on held-out data and compare against the stock/base model before using predictions downstream.

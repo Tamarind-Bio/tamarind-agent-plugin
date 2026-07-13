@@ -1,6 +1,6 @@
 # Tamarind Bio: antibody example payloads
 
-> Operational examples in this reference use the Tamarind CLI. Query live fields with `tamarind --json schema TOOL`, validate settings with `tamarind --json validate TOOL --input FILE --name JOB_NAME`, and download completed outputs with `tamarind --no-json results JOB_NAME --download DIRECTORY`.
+> Operational examples in this reference use the Tamarind CLI. Query live fields with `tamarind --json schema TOOL`, validate settings with `tamarind --json validate TOOL --input FILE --name JOB_NAME`, and download completed outputs with `tamarind --json results JOB_NAME --download DIRECTORY`.
 
 The freshest example for any tool is the `exampleJob` in `tamarind --json schema TOOL`:
 a `{jobName, type, settings}` assembled from each parameter's example/default (file
@@ -100,7 +100,7 @@ tamarind --json validate rfantibody --input rfab.yaml --name rfab-run
 # After explicit confirmation of the 100-design scope:
 tamarind --json submit rfantibody --input rfab.yaml --name rfab-run
 tamarind --json wait rfab-run --timeout 14400 --poll-interval 20
-tamarind --no-json results rfab-run --download /absolute/path/to/results
+tamarind --json results rfab-run --download /absolute/path/to/results
 
 # Extract the downloaded archive, then rank designs by interface confidence.
 SKILL_DIR="/absolute/path/to/the/tamarind-antibody-skill"
@@ -139,5 +139,5 @@ shape, not golden numbers.
   keys, don't assume. `WeightedHours` on the row is the billing unit.
 
 To learn a tool's exact output filenames, download one completed small job with
-`tamarind --no-json results JOB_NAME --download DIRECTORY` and inspect the extracted bundle;
+`tamarind --json results JOB_NAME --download DIRECTORY` and inspect the extracted bundle;
 filenames vary by tool and version.

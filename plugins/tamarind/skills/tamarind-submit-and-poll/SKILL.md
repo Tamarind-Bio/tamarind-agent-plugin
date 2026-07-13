@@ -11,11 +11,10 @@ Use this lifecycle for every single-tool job. The domain skill chooses the scien
 
 ```bash
 tamarind --version
-SKILL_DIR="/absolute/path/to/the/tamarind-submit-and-poll-skill"
-python3 "$SKILL_DIR/scripts/safe_auth.py"
+tamarind --json auth status
 ```
 
-Resolve `SKILL_DIR` to the directory containing this `SKILL.md`. The helper invokes the official CLI and removes every credential field, including CLI 0.1.4's masked key fragment. Require CLI `>=0.1.4,<0.3` and `verified: true`; otherwise use `tamarind-api-setup`.
+Require CLI `>=0.2,<0.3`, `hasKey: true`, and `verified: true`; otherwise use `tamarind-api-setup`.
 
 ## 2. Confirm the live schema
 
@@ -56,22 +55,19 @@ If the user has not already authorized the exact scope, obtain confirmation befo
 tamarind --json submit TOOL --input settings.yaml --name JOB_NAME
 ```
 
-Record `JOB_NAME` immediately. Do not use `--wait`; it is unbounded in CLI 0.1. If the command times out or the response is ambiguous, do not retry. First run the filtered status probe in step 6.
+Record `JOB_NAME` immediately. If the command times out or the response is ambiguous, do not retry. First query durable status in step 6.
 
 Job-name idempotency is not documented, so an automatic retry may create or collide with duplicate work.
 
 ## 6. Classify the returned row, then wait with a bound
 
-Some nominally single-tool settings fan out into a batch parent. Probe the durable name once before choosing a waiter. CLI 0.1.4 can expose a completed parent's presigned `resultUrl` in raw status JSON, so use the local compatibility helper to remove credential-bearing URL fields before output returns to the agent:
+Some nominally single-tool settings fan out into a batch parent. Probe the durable name once before choosing a waiter:
 
 ```bash
-SKILL_DIR="/absolute/path/to/the/tamarind-submit-and-poll-skill"
-python3 "$SKILL_DIR/scripts/safe_status.py" JOB_NAME
+tamarind --json status JOB_NAME
 ```
 
-Resolve `SKILL_DIR` to the directory containing this `SKILL.md`. This helper still executes the official `tamarind` CLI; it is not an API client. It parses and redacts stdout only after exit 0, while preserving native nonzero exit codes and stderr.
-
-If the filtered document carries `batchStatus`, do not call CLI 0.1.4's single-job waiter. Schedule the same bounded, safe one-shot status helper through the agent host and stop on batch `Complete`, `AggregationFailed`, or `Stopped`. If it carries active `JobStatus`, run the wait in the agent runtime's foreground/session mechanism, never shell `&` or `nohup`:
+If the document carries an active `JobStatus` or `batchStatus`, run the wait in the agent runtime's foreground/session mechanism, never shell `&` or `nohup`:
 
 ```bash
 tamarind --json wait JOB_NAME --timeout 3600 --poll-interval 15
@@ -79,7 +75,7 @@ tamarind --json wait JOB_NAME --timeout 3600 --poll-interval 15
 
 Exit 7 means the local deadline elapsed; the remote job may still be running. Reattach with the filtered status probe or another bounded single-job `wait`.
 
-After exit 0, inspect `JobStatus`. CLI 0.1 can return process exit 0 for terminal `Stopped`, `Failed`, `Cancelled`, or `Error`; only the platform success status authorizes result download. For failures:
+Exit 9 means the job reached an unsuccessful terminal state; the final status remains on stdout. Only a platform success status authorizes result download. For failures:
 
 ```bash
 tamarind --json logs JOB_NAME --max-lines 200
@@ -89,13 +85,13 @@ Do not resubmit automatically.
 
 ## 7. Download without exposing the presigned URL
 
-Use an absolute output directory and human output mode:
+Use an absolute output directory:
 
 ```bash
-tamarind --no-json results JOB_NAME --download /absolute/path/to/results
+tamarind --json results JOB_NAME --download /absolute/path/to/results
 ```
 
-CLI 0.1 includes the presigned URL in JSON download output, so `--no-json` is intentional. Treat transfer tracebacks as failures and verify the downloaded file exists before analysis.
+CLI 0.2 omits the presigned URL from download output and sanitizes transfer failures. Treat a nonzero exit as a failed transfer and verify the downloaded file exists before analysis. Never use `--show-url` in agent logs.
 
 ## Output report
 

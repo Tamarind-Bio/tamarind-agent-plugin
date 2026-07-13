@@ -1,6 +1,6 @@
 # Tamarind CLI contract used by this plugin
 
-The plugin targets `tamarind-cli>=0.1.4,<0.3`. Treat the executable as a subprocess protocol; do not import its Python modules.
+The plugin targets `tamarind-cli>=0.2,<0.3`. Treat the executable as a subprocess protocol; do not import its Python modules.
 
 ## Global output contract
 
@@ -11,20 +11,22 @@ tamarind --json COMMAND
 tamarind --no-json COMMAND
 ```
 
-Successful non-TTY commands default to JSON. Errors and Typer usage failures are text on stderr, so branch on the exit code before parsing stdout.
+Successful non-TTY commands default to JSON. Errors and Typer usage failures are structured JSON on stderr, so branch on the exit code before parsing the appropriate stream.
 
 | Exit | Meaning |
 |---|---|
 | 0 | Command completed; inspect payload fields |
+| 1 | Generic client or API failure |
 | 2 | Usage or destructive-action confirmation |
 | 3 | Authentication |
 | 4 | Resource not found |
 | 5 | Validation |
 | 6 | Rate limit |
 | 7 | Local wait timeout |
-| 8 | Budget or quota in newer compatible CLI releases |
+| 8 | Budget or quota |
+| 9 | Remote job reached an unsuccessful terminal state |
 
-CLI 0.1.4 reports every HTTP 403 as exit 3. Inspect stderr before changing credentials: messages about budget, quota, credits, or weighted hours are spend-limit failures, not authentication failures. Stop and surface those failures without retrying or resubmitting.
+Explicit authentication failures are exit 3, explicit budget/quota exhaustion is exit 8, and generic access-policy failures remain exit 1. Stop and surface non-auth failures without re-authenticating, retrying, or resubmitting.
 
 ## Discovery and validation
 
@@ -40,15 +42,13 @@ Validation returns `valid` and may return `normalized`. Submit the original sett
 
 ```bash
 tamarind --json submit TOOL --input settings.yaml --name JOB_NAME
-SKILL_DIR="/absolute/path/to/the/tamarind-submit-and-poll-skill"
-python3 "$SKILL_DIR/scripts/safe_status.py" JOB_NAME
-# Only when the filtered probe carries JobStatus, not batchStatus:
+tamarind --json status JOB_NAME
 tamarind --json wait JOB_NAME --timeout 3600 --poll-interval 15
 tamarind --json logs JOB_NAME --max-lines 200
-tamarind --no-json results JOB_NAME --download /absolute/output
+tamarind --json results JOB_NAME --download /absolute/output
 ```
 
-Use the exact safe status helper from the parent `SKILL.md`: if it carries `batchStatus`, schedule bounded one-shot probes instead of calling CLI 0.1.4's waiter. For a single job, `wait` may exit 0 for a terminal failure, so inspect `JobStatus`. Use `--no-json` for downloads because CLI 0.1 otherwise includes the presigned URL in output.
+Use a finite wait timeout for both jobs and batch parents. Exit 7 means still active at the local deadline; exit 9 means an unsuccessful terminal status. CLI 0.2 keeps presigned URLs out of normal result/status output and sanitizes transfer failures.
 
 ## Files
 

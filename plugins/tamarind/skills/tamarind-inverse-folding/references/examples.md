@@ -17,7 +17,7 @@ After explicit scope confirmation:
 ```bash
 tamarind --json submit proteinmpnn --input design.yaml --name mpnn-design-v1
 tamarind --json wait mpnn-design-v1 --timeout 7200 --poll-interval 15
-tamarind --no-json results mpnn-design-v1 --download /absolute/path/to/results
+tamarind --json results mpnn-design-v1 --download /absolute/path/to/results
 ```
 
 ## Sequence-only PLM task
@@ -34,4 +34,4 @@ Model size, task, sequence length, and generation/sample count are consequential
 
 Parse the output, select a diverse subset, and fold each sequence through a structure tool. Put sequences in the downstream `sequence` field, not a template or structure-file field. Use `tamarind-batch` for the independent folds.
 
-CLI 0.1 does not expose `fromJob` or a general remote file-list command; download, inspect, and explicitly marshal artifacts between stages.
+CLI 0.2 does not expose `fromJob` or a general remote file-list command; download, inspect, and explicitly marshal artifacts between stages.

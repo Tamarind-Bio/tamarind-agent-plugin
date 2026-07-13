@@ -7,7 +7,7 @@ tamarind --json schema TOOL
 tamarind --json validate TOOL --input stage.yaml --name CAMPAIGN-stage
 tamarind --json submit TOOL --input stage.yaml --name CAMPAIGN-stage
 tamarind --json wait CAMPAIGN-stage --timeout 14400 --poll-interval 20
-tamarind --no-json results CAMPAIGN-stage --download /absolute/path/to/stage-results
+tamarind --json results CAMPAIGN-stage --download /absolute/path/to/stage-results
 ```
 
 After extraction, choose the exact downstream artifact, upload it, and validate the next stage:

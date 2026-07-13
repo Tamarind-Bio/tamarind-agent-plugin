@@ -3,8 +3,7 @@
 ## Recover one single job
 
 ```bash
-SKILL_DIR="/absolute/path/to/the/tamarind-results-analysis-skill"
-python3 "$SKILL_DIR/scripts/safe_status.py" my-job
+tamarind --json status my-job
 tamarind --json wait my-job --timeout 1800 --poll-interval 15
 ```
 
@@ -14,12 +13,12 @@ Inspect `JobStatus` even when the command exits 0. If it is stopped or failed:
 tamarind --json logs my-job --max-lines 200
 ```
 
-If the initial `status` response carries `batchStatus` instead, it is a batch parent. On CLI 0.1.4, use bounded one-shot `status` checks scheduled by the agent host and do not call `wait` for that parent.
+If the initial `status` response carries `batchStatus` instead, it is a batch parent. CLI 0.2 waits on either a single job or a batch parent and returns the final typed row; keep the deadline bounded.
 
 ## Download a successful result
 
 ```bash
-tamarind --no-json results my-job --download /absolute/path/to/results
+tamarind --json results my-job --download /absolute/path/to/results
 ```
 
 Extract the downloaded archive before using directory-based analysis scripts.

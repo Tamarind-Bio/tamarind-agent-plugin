@@ -108,13 +108,25 @@ def _split_models(path):
         cur, in_model = [], False
         for line in text.splitlines(keepends=True):
             if line.startswith("MODEL"):
+                if in_model:
+                    raise SystemExit(
+                        f"malformed multi-model pose file {path}: MODEL before ENDMDL"
+                    )
                 cur, in_model = [line], True
             elif line.startswith("ENDMDL"):
+                if not in_model:
+                    raise SystemExit(
+                        f"malformed multi-model pose file {path}: ENDMDL without MODEL"
+                    )
                 cur.append(line)
                 blocks.append("".join(cur))
                 cur, in_model = [], False
             elif in_model:
                 cur.append(line)
+        if in_model:
+            raise SystemExit(
+                f"malformed multi-model pose file {path}: truncated MODEL without ENDMDL"
+            )
     elif ext == ".sdf":
         for rec in text.split("$$$$"):
             if rec.strip():

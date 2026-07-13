@@ -336,11 +336,16 @@ def summarize(models, iptm_cutoff=0.6):
             model["rank"] = r
 
     low = []
+    interface_unchecked = []
     for m in ranked:
-        if m.get("interface_applicable") is False:
-            continue
         present = {k: m[k] for k in INTERFACE_METRICS
                    if _common.is_finite_number(m.get(k))}
+        if m.get("interface_applicable") is not True:
+            if present and m.get("interface_applicable") is None:
+                interface_unchecked.append(
+                    {"label": m["label"], "rank": m["rank"], **present}
+                )
+            continue
         weak = any(_common.is_finite_number(m.get(k)) and m[k] < iptm_cutoff
                    for k in TM_INTERFACE_METRICS)
         weak = weak or (_common.is_finite_number(m.get("pdockq"))
@@ -374,6 +379,7 @@ def summarize(models, iptm_cutoff=0.6):
         "n_ranked": len(ranked) if metric is not None else 0,
         "ranked": ranked,
         "low_confidence_interfaces": low,
+        "interface_unchecked": interface_unchecked,
         "geometry_failures": geometry_failures,
         "geometry_unchecked": geometry_unchecked,
     }
@@ -410,6 +416,9 @@ def print_summary(summary):
     elif any(_common.is_finite_number(m.get(k)) for m in summary["ranked"]
              for k in INTERFACE_METRICS):
         print("\nNo low-confidence interfaces flagged.")
+    if summary["interface_unchecked"]:
+        labels = ", ".join(model["label"] for model in summary["interface_unchecked"])
+        print(f"\nInterface applicability unchecked (no unambiguous complex mapping): {labels}")
     failures = summary["geometry_failures"]
     if failures:
         print(

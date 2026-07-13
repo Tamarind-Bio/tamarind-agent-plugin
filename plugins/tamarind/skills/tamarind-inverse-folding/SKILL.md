@@ -37,7 +37,7 @@ Follow `tamarind-submit-and-poll`:
 tamarind --json submit TOOL --input settings.yaml --name SEQ_NAME
 # Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
 tamarind --json wait SEQ_NAME --timeout 7200 --poll-interval 15
-tamarind --no-json results SEQ_NAME --download /absolute/path/to/results
+tamarind --json results SEQ_NAME --download /absolute/path/to/results
 ```
 
 Inverse-folded sequences require structural validation. Refold a diverse subset with `tamarind-structure-prediction`, then inspect backbone recovery and interface/confidence metrics. Do not route a designed sequence through a template/file field when the downstream schema expects `sequence`.

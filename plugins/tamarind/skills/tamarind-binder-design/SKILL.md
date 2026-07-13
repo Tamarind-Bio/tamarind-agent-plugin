@@ -39,7 +39,7 @@ Follow `tamarind-submit-and-poll` with a durable job name and bounded wait:
 tamarind --json submit TOOL --input settings.yaml --name DESIGN_NAME
 # Run tamarind-submit-and-poll's filtered status probe; use wait only for JobStatus.
 tamarind --json wait DESIGN_NAME --timeout 14400 --poll-interval 20
-tamarind --no-json results DESIGN_NAME --download /absolute/path/to/results
+tamarind --json results DESIGN_NAME --download /absolute/path/to/results
 ```
 
 Rank extracted designs with:
