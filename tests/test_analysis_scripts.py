@@ -564,6 +564,54 @@ def test_rank_batch_parses_json_score_strings(tmp_path: Path) -> None:
         "affinityPredValue",
         "RMSDValue",
         "predictedKd",
+        "Kd",
+        "Ki",
+        "IC50",
+        "predictedKi",
+        "predictedIC50",
+        "expKd",
+        "expKi",
+        "expIC50",
+        "appKd",
+        "appKi",
+        "appIC50",
+        "topKd",
+        "topKi",
+        "topIC50",
+        "deepKd",
+        "deepKi",
+        "deepIC50",
+        "groupKd",
+        "mapKi",
+        "stepIC50",
+        "sweepKd",
+        "interpKi",
+        "tempIC50",
+        "compKd",
+        "prepKd",
+        "samplePrepKi",
+        "followupIC50",
+        "followUpKd",
+        "subgroupKi",
+        "dupIC50",
+        "tripKd",
+        "heatmapKi",
+        "ATPKd",
+        "ADPKi",
+        "GTPIC50",
+        "CTPKd",
+        "UTPKi",
+        "AMPIC50",
+        "cAMPKd",
+        "cGMPKi",
+        "NADPIC50",
+        "RNPKd",
+        "effluxPumpKi",
+        "ligandTrapIC50",
+        "rampKd",
+        "clampKi",
+        "ChIPIC50",
+        "coIPKd",
     ],
 )
 def test_rank_batch_infers_lower_better_metric_direction(metric: str) -> None:
@@ -590,7 +638,43 @@ def test_rank_batch_infers_lower_better_metric_direction(metric: str) -> None:
     assert [row["name"] for row in overridden["ranked"]] == ["worse", "better"]
 
 
-@pytest.mark.parametrize("metric", ["ipTM", "confidence", "pLDDT"])
+@pytest.mark.parametrize(
+    "metric",
+    [
+        "ipTM",
+        "confidence",
+        "pLDDT",
+        "pKd",
+        "pKi",
+        "pIC50",
+        "pKdValue",
+        "pKi_score",
+        "pIC50PredValue",
+        "predictedPKd",
+        "predictedpKd",
+        "estimatedpKi",
+        "apparentpIC50",
+        "measuredpKd",
+        "observedpKi",
+        "fittedpIC50",
+        "assaypKd",
+        "meanpKi",
+        "medianpIC50",
+        "avgpKd",
+        "averagepKi",
+        "reportedpIC50",
+        "predpKd",
+        "calcpKi",
+        "measpIC50",
+        "obspKd",
+        "fitpKi",
+        "modelpIC50",
+        "computedpKd",
+        "simulatedpKd",
+        "inferredpKi",
+        "consensuspIC50",
+    ],
+)
 def test_rank_batch_keeps_higher_better_metrics_descending(metric: str) -> None:
     script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
@@ -607,6 +691,30 @@ def test_rank_batch_keeps_higher_better_metrics_descending(metric: str) -> None:
 
     assert result["ascending"] is False
     assert [row["name"] for row in result["ranked"]] == ["better", "worse"]
+
+
+def test_rank_batch_requires_explicit_direction_for_ambiguous_glued_p_scale() -> None:
+    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    module = _load(script)
+    metric = "novelpKd"
+    batch = {
+        "batch_status": "Complete",
+        "statuses": {"Complete": 2},
+        "subjobs": [
+            {"name": "high", "status": "Complete", "score": {metric: 9.0}},
+            {"name": "low", "status": "Complete", "score": {metric: 2.0}},
+        ],
+    }
+
+    inferred = module.summarize(batch)
+    explicit = module.summarize(batch, ascending=False)
+
+    assert inferred["ascending"] is True
+    assert inferred["direction_source"] == "inferred"
+    assert [row["name"] for row in inferred["ranked"]] == ["low", "high"]
+    assert explicit["ascending"] is False
+    assert explicit["direction_source"] == "explicit"
+    assert [row["name"] for row in explicit["ranked"]] == ["high", "low"]
 
 
 def test_rank_batch_accepts_native_cli_jobs_envelope(tmp_path: Path) -> None:

@@ -166,10 +166,25 @@ def _infer_ascending(metric):
     raw = str(metric or "")
     # Split both ordinary camelCase (bindingAffinity) and acronym boundaries
     # (RMSDValue) before lowercasing, then normalize punctuation consistently.
-    words = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", raw)
+    words = re.sub(r"(?<!^)(IC50)(?=$|[A-Z_])", r"_\1", raw)
+    words = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", words)
     words = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", words)
     normalized = re.sub(r"[^a-z0-9]+", "_", words.lower()).strip("_")
     tokens = set(normalized.split("_"))
+    # Negative-log affinity scales invert the underlying concentration:
+    # higher pKd/pKi/pIC50 is stronger, unlike lower-better Kd/Ki/IC50.
+    p_scale = (
+        re.search(r"(?:^|_)p_(?:kd|ki|ic50)(?:_|$)", normalized)
+        or re.search(
+            r"(?:^|_)(?:predicted|estimated|calculated|experimental|apparent|"
+            r"binding|affinity|modeled|modelled|measured|observed|fitted|assay|"
+            r"mean|median|avg|average|reported|pred|calc|meas|obs|fit|model|"
+            r"computed|simulated|inferred|consensus)p_(?:kd|ki|ic50)(?:_|$)",
+            normalized,
+        )
+    )
+    if p_scale:
+        return False
     acronym_lower_better = (
         re.search(r"(?:^|_)(?:i_?)?p_?ae(?:_|$)", normalized)
         or re.search(r"(?:^|_)(?:delta_?g|dd?_?g)(?:_|$)", normalized)
