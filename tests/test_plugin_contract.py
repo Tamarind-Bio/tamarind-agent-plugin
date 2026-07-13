@@ -195,6 +195,21 @@ def test_batch_submission_examples_require_final_row_prevalidation() -> None:
     assert "every final row" in markdown
 
 
+def test_prerelease_readme_gates_install_and_matches_ci_cli_pin() -> None:
+    readme = (ROOT / "README.md").read_text()
+    workflow = (ROOT / ".github/workflows/validate.yml").read_text()
+    assert "Do not install or release\n> plugin 0.2 until CLI 0.2.0 is published" in readme
+
+    pin_pattern = re.compile(
+        r"tamarind-cli @ git\+https://github\.com/Tamarind-Bio/"
+        r"tamarind-cli@([0-9a-f]{40})"
+    )
+    readme_pins = set(pin_pattern.findall(readme))
+    workflow_pins = set(pin_pattern.findall(workflow))
+    assert readme_pins == workflow_pins
+    assert len(readme_pins) == 1
+
+
 def test_cli_02_terminal_failure_exit_is_documented() -> None:
     setup = (SKILLS / "tamarind-api-setup" / "SKILL.md").read_text()
     contract = (

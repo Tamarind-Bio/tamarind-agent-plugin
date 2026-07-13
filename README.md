@@ -26,6 +26,20 @@ The hosted Tamarind MCP service remains a separate integration, but it is no lon
 
 ## Install
 
+> **Release gate:** CLI 0.2.0 is not published yet. Do not install or release
+> plugin 0.2 until CLI 0.2.0 is published. The normal range-based commands below
+> are for use after publication and intentionally fail before that dependency is
+> available.
+
+For pre-release testing of this PR only, install the exact reviewed CLI #16
+commit used by plugin CI:
+
+```bash
+uv tool install 'tamarind-cli @ git+https://github.com/Tamarind-Bio/tamarind-cli@d3a2c92f2e97de7e62360e816bd12e45097f7612'
+# or
+pipx install 'tamarind-cli @ git+https://github.com/Tamarind-Bio/tamarind-cli@d3a2c92f2e97de7e62360e816bd12e45097f7612'
+```
+
 Install the CLI first. The plugin supports `tamarind-cli>=0.2,<0.3`:
 
 ```bash
