@@ -18,27 +18,13 @@ Version 0.2 changes the plugin's execution boundary. Version 0.1 bundled an MCP 
 
 Existing users should:
 
-1. Publish and install `tamarind-cli>=0.2,<0.3` before installing this plugin version.
+1. Install `tamarind-cli>=0.2,<0.3` before installing this plugin version.
 2. Authenticate with `TAMARIND_API_KEY` or `tamarind auth login`, then verify with `tamarind --json auth status`.
 3. Update or reinstall the plugin and start a new agent task so the new skills are loaded.
 
 The hosted Tamarind MCP service remains a separate integration, but it is no longer configured or required by this plugin. MCP-specific host configuration is not migrated into the CLI; an existing `TAMARIND_API_KEY` environment variable continues to work.
 
 ## Install
-
-> **Release gate:** CLI 0.2.0 is not published yet. Do not install or release
-> plugin 0.2 until CLI 0.2.0 is published. The normal range-based commands below
-> are for use after publication and intentionally fail before that dependency is
-> available.
-
-For pre-release testing of this PR only, install the exact reviewed CLI #16
-commit used by plugin CI:
-
-```bash
-uv tool install 'tamarind-cli @ git+https://github.com/Tamarind-Bio/tamarind-cli@d3a2c92f2e97de7e62360e816bd12e45097f7612'
-# or
-pipx install 'tamarind-cli @ git+https://github.com/Tamarind-Bio/tamarind-cli@d3a2c92f2e97de7e62360e816bd12e45097f7612'
-```
 
 Install the CLI first. The plugin supports `tamarind-cli>=0.2,<0.3`:
 

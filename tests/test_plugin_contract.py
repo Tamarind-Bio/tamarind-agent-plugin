@@ -195,19 +195,16 @@ def test_batch_submission_examples_require_final_row_prevalidation() -> None:
     assert "every final row" in markdown
 
 
-def test_prerelease_readme_gates_install_and_matches_ci_cli_pin() -> None:
+def test_release_docs_and_ci_use_supported_cli_range() -> None:
     readme = (ROOT / "README.md").read_text()
     workflow = (ROOT / ".github/workflows/validate.yml").read_text()
-    assert "Do not install or release\n> plugin 0.2 until CLI 0.2.0 is published" in readme
-
-    pin_pattern = re.compile(
-        r"tamarind-cli @ git\+https://github\.com/Tamarind-Bio/"
-        r"tamarind-cli@([0-9a-f]{40})"
-    )
-    readme_pins = set(pin_pattern.findall(readme))
-    workflow_pins = set(pin_pattern.findall(workflow))
-    assert readme_pins == workflow_pins
-    assert len(readme_pins) == 1
+    supported_range = "tamarind-cli>=0.2,<0.3"
+    assert supported_range in readme
+    assert supported_range in workflow
+    assert "git+https://github.com/Tamarind-Bio/tamarind-cli" not in readme
+    assert "git+https://github.com/Tamarind-Bio/tamarind-cli" not in workflow
+    assert "Release gate" not in readme
+    assert "CLI 0.2.0 is not published yet" not in readme
 
 
 def test_prodigy_reference_uses_prodigy_schema() -> None:
