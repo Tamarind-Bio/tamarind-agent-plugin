@@ -40,7 +40,8 @@ import sys
 # Vina/gnina/smina log lines like:  "   1     -7.088      0.000      0.000"
 # (mode/rank, affinity kcal/mol, then RMSD columns). Capture rank + affinity.
 _AFFINITY_LINE = re.compile(r"^\s*(\d+)\s+(-?\d+\.\d+)")
-_MODEL_NUMBER = re.compile(r"^MODEL\s+(\d+)\b")
+_MODEL_NUMBER = re.compile(r"^MODEL[ \t]+(\d+)[ \t]*(?:\r?\n|$)")
+_ATOM_RECORD = re.compile(r"^(?:ATOM|HETATM)\b")
 # DiffDock filenames: rank3_confidence-1.23.sdf / rank1.sdf. The score's sign is
 # part of the number (rank1_confidence-1.42.sdf), so only an underscore may act
 # as a separator before it; a hyphen there is the value's minus sign, not a
@@ -104,6 +105,8 @@ def _split_models(path):
     ext = os.path.splitext(path)[1].lower()
     with open(path) as fh:
         text = fh.read()
+    if not text.strip():
+        raise SystemExit(f"empty pose file {path}")
     blocks = []
     if ext in (".pdb", ".pdbqt"):
         cur, in_model = [], False
@@ -129,11 +132,19 @@ def _split_models(path):
                 f"malformed multi-model pose file {path}: truncated MODEL without ENDMDL"
             )
     elif ext == ".sdf":
+        if not text.rstrip().endswith("$$$$"):
+            raise SystemExit(f"malformed SDF pose file {path}: missing $$$$ terminator")
         for rec in text.split("$$$$"):
             if rec.strip():
                 blocks.append(rec.lstrip("\n") + "$$$$\n")
-    if not blocks:                 # no delimiters: treat the whole file as one pose
+        if not blocks:
+            raise SystemExit(f"malformed SDF pose file {path}: no pose records")
+    if not blocks:                 # no MODEL delimiters: one PDB/PDBQT/MOL2 pose
         blocks = [text]
+    if ext in (".pdb", ".pdbqt"):
+        for block in blocks:
+            if not any(_ATOM_RECORD.match(line) for line in block.splitlines()):
+                raise SystemExit(f"pose block in {path} contains no atom records")
     return [(b, ext) for b in blocks]
 
 
@@ -216,6 +227,13 @@ def _ensemble_file(run_dir):
             seen.append(p)
     if not seen:
         return None
+    parents = {os.path.dirname(os.path.realpath(path)) for path in seen}
+    stems = {os.path.splitext(os.path.basename(path))[0].lower() for path in seen}
+    if len(parents) != 1 or len(stems) != 1:
+        raise SystemExit(
+            "multiple docking ensemble candidates found; provide one run directory: "
+            + ", ".join(seen)
+        )
     seen.sort(key=lambda p: _ENSEMBLE_EXT_PREF.index(os.path.splitext(p)[1].lower())
               if os.path.splitext(p)[1].lower() in _ENSEMBLE_EXT_PREF else 99)
     return seen[0]
@@ -224,7 +242,12 @@ def _ensemble_file(run_dir):
 def _parse_diffdock_poses(run_dir):
     """DiffDock writes one file per pose with rank + confidence in the name."""
     poses = []
-    for path in _find(run_dir, "*rank*.sdf", "*rank*.pdb", "*rank*.mol2"):
+    paths = []
+    for pattern in ("*rank*.sdf", "*rank*.pdb", "*rank*.mol2"):
+        for path in _find(run_dir, pattern):
+            if path not in paths:
+                paths.append(path)
+    for path in paths:
         base = os.path.basename(path)
         m = _RANK_CONF.search(base)
         if m:
@@ -237,6 +260,28 @@ def _parse_diffdock_poses(run_dir):
         if m:
             poses.append({"source_rank": int(m.group(1)),
                           "confidence": None, "file": path})
+    if poses:
+        parents = {
+            os.path.dirname(os.path.realpath(pose["file"])) for pose in poses
+        }
+        extensions = {
+            os.path.splitext(pose["file"])[1].lower() for pose in poses
+        }
+        ranks = sorted(pose["source_rank"] for pose in poses)
+        expected_ranks = list(range(1, len(poses) + 1))
+        if len(parents) != 1:
+            raise SystemExit(
+                "DiffDock poses span multiple directories; provide one run directory"
+            )
+        if len(extensions) != 1:
+            raise SystemExit(
+                "DiffDock poses use mixed file extensions; provide one complete run"
+            )
+        if ranks != expected_ranks:
+            raise SystemExit(
+                f"incomplete or duplicate DiffDock ranks: "
+                f"expected {expected_ranks}, found {ranks}"
+            )
     return poses
 
 
@@ -258,24 +303,46 @@ def load_poses(run_dir):
 
     # Vina / gnina / smina: split the single multi-model ensemble into poses and
     # pair model i with affinity row i (the log table is in model order).
-    logs = _find(run_dir, "log.txt", "*log*.txt", "*.log")
-    aff_rows = []
-    for log_path in logs:
-        aff_rows = _parse_affinity_log(log_path)
-        if aff_rows:
-            break
+    logs = []
+    for pattern in ("log.txt", "*log*.txt", "*.log"):
+        for path in _find(run_dir, pattern):
+            if path not in logs:
+                logs.append(path)
     ensemble = _ensemble_file(run_dir)
     if ensemble:
+        ensemble_dir = os.path.dirname(os.path.realpath(ensemble))
+        local_logs = [
+            path for path in logs
+            if os.path.dirname(os.path.realpath(path)) == ensemble_dir
+        ]
+        local_affinity_logs = [
+            (path, rows) for path in local_logs
+            if (rows := _parse_affinity_log(path))
+        ]
+        remote_affinity_logs = [
+            path for path in logs if path not in local_logs and _parse_affinity_log(path)
+        ]
         blocks = _split_models(ensemble)
         sdf_metrics = [_sdf_numeric_properties(block) if ext == ".sdf" else {}
                        for block, ext in blocks]
         looks_like_gnina = (
             any(metrics for metrics in sdf_metrics)
-            or _logs_look_like_gnina(logs)
+            or _logs_look_like_gnina(local_logs)
             or os.path.basename(ensemble).lower() == "result.sdf"
         )
         aligned_affinity_rows = []
-        if aff_rows and not looks_like_gnina:
+        if not looks_like_gnina and len(local_affinity_logs) > 1:
+            raise SystemExit(
+                f"multiple affinity logs found beside {ensemble}: "
+                + ", ".join(path for path, _ in local_affinity_logs)
+            )
+        if not looks_like_gnina and not local_affinity_logs and remote_affinity_logs:
+            raise SystemExit(
+                f"affinity log is not colocated with pose ensemble {ensemble}; "
+                "provide one downloaded run directory"
+            )
+        if not looks_like_gnina and local_affinity_logs:
+            _, aff_rows = local_affinity_logs[0]
             _validate_affinity_alignment(blocks, aff_rows, ensemble)
             aligned_affinity_rows = aff_rows
         poses = []

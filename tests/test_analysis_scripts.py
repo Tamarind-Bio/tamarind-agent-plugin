@@ -873,6 +873,171 @@ def test_docking_rejects_malformed_model_number(tmp_path: Path) -> None:
         module.load_poses(tmp_path)
 
 
+def test_docking_rejects_decimal_model_number(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.pdbqt").write_text(
+        "MODEL 1.5\nATOM first\nENDMDL\n"
+    )
+    (tmp_path / "log.txt").write_text(
+        "   1     -8.000      0.000      0.000\n"
+    )
+
+    with pytest.raises(SystemExit, match="malformed MODEL number"):
+        module.load_poses(tmp_path)
+
+
+def test_docking_rejects_empty_pose_file(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.pdbqt").write_text("")
+    (tmp_path / "log.txt").write_text(
+        "   1     -8.000      0.000      0.000\n"
+    )
+
+    with pytest.raises(SystemExit, match="empty pose file"):
+        module.load_poses(tmp_path)
+
+
+def test_docking_rejects_unterminated_sdf_record(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.sdf").write_text("pose-one\n  test\n")
+    (tmp_path / "log.txt").write_text(
+        "   1     -8.000      0.000      0.000\n"
+    )
+
+    with pytest.raises(SystemExit, match="missing \\$\\$\\$\\$ terminator"):
+        module.load_poses(tmp_path)
+
+
+def test_docking_rejects_sdf_without_pose_records(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.sdf").write_text("$$$$\n")
+
+    with pytest.raises(SystemExit, match="no pose records"):
+        module.load_poses(tmp_path)
+
+
+def test_docking_rejects_pdbqt_without_atom_records(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.pdbqt").write_text(
+        "MODEL 1\nREMARK no coordinates\nENDMDL\n"
+    )
+
+    with pytest.raises(SystemExit, match="contains no atom records"):
+        module.load_poses(tmp_path)
+
+
+def test_docking_rejects_cross_directory_affinity_pairing(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    pose_dir = tmp_path / "pose-run"
+    log_dir = tmp_path / "score-run"
+    pose_dir.mkdir()
+    log_dir.mkdir()
+    (pose_dir / "ligand_out.pdbqt").write_text(
+        "MODEL 1\nATOM first\nENDMDL\n"
+    )
+    (log_dir / "log.txt").write_text(
+        "   1     -8.000      0.000      0.000\n"
+    )
+
+    with pytest.raises(SystemExit, match="affinity log is not colocated"):
+        module.load_poses(tmp_path)
+
+
+def test_docking_rejects_multiple_ensemble_directories(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    for name in ("run-a", "run-b"):
+        run_dir = tmp_path / name
+        run_dir.mkdir()
+        (run_dir / "ligand_out.pdbqt").write_text(
+            "MODEL 1\nATOM first\nENDMDL\n"
+        )
+
+    with pytest.raises(SystemExit, match="multiple docking ensemble candidates"):
+        module.load_poses(tmp_path)
+
+
+def test_docking_rejects_multiple_local_affinity_logs(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "ligand_out.pdbqt").write_text(
+        "MODEL 1\nATOM first\nENDMDL\n"
+    )
+    score_row = "   1     -8.000      0.000      0.000\n"
+    (tmp_path / "log.txt").write_text(score_row)
+    (tmp_path / "alternate.log").write_text(score_row)
+
+    with pytest.raises(SystemExit, match="multiple affinity logs found"):
+        module.load_poses(tmp_path)
+
+
+def test_docking_rejects_diffdock_poses_from_multiple_directories(
+    tmp_path: Path,
+) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    for directory, rank in (("run-a", 1), ("run-b", 2)):
+        run_dir = tmp_path / directory
+        run_dir.mkdir()
+        (run_dir / f"rank{rank}_confidence0.8.sdf").write_text("pose\n$$$$\n")
+
+    with pytest.raises(SystemExit, match="span multiple directories"):
+        module.load_poses(tmp_path)
+
+
+def test_docking_rejects_mixed_diffdock_extensions(tmp_path: Path) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    (tmp_path / "rank1_confidence0.8.sdf").write_text("pose\n$$$$\n")
+    (tmp_path / "rank2_confidence0.7.pdb").write_text("ATOM pose\n")
+
+    with pytest.raises(SystemExit, match="mixed file extensions"):
+        module.load_poses(tmp_path)
+
+
+@pytest.mark.parametrize("ranks", [(1, 3), (1, 1)])
+def test_docking_rejects_incomplete_or_duplicate_diffdock_ranks(
+    tmp_path: Path, ranks: tuple[int, int]
+) -> None:
+    script = (
+        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+    )
+    module = _load(script)
+    for index, rank in enumerate(ranks):
+        (tmp_path / f"sample{index}_rank{rank}_confidence0.8.sdf").write_text(
+            "pose\n$$$$\n"
+        )
+
+    with pytest.raises(SystemExit, match="incomplete or duplicate DiffDock ranks"):
+        module.load_poses(tmp_path)
+
+
 def test_gnina_with_incomplete_cnn_scores_preserves_source_rank(tmp_path: Path) -> None:
     script = (
         ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
