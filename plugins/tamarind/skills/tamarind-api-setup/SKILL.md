@@ -16,19 +16,19 @@ command -v tamarind
 tamarind --version
 ```
 
-This plugin supports `tamarind-cli>=0.2,<0.3`. If the command is missing, prefer an isolated tool install:
+This plugin requires `tamarind-cli>=0.2.0`. If the command is missing, install the latest release as an isolated tool:
 
 ```bash
-uv tool install 'tamarind-cli>=0.2,<0.3'
+uv tool install tamarind-cli
 ```
 
 If `uv` is unavailable, use:
 
 ```bash
-pipx install 'tamarind-cli>=0.2,<0.3'
+pipx install tamarind-cli
 ```
 
-Upgrade an existing isolated installation with `uv tool upgrade tamarind-cli` or `pipx upgrade tamarind-cli`, then run `tamarind --version` again and require `>=0.2,<0.3`. If an upgrade moves outside that supported range, reinstall the explicit range with the same tool. Do not run a remote `curl | sh` installer without the user's explicit approval. Do not mutate the system Python or use `--break-system-packages`.
+Upgrade an existing isolated installation with `uv tool upgrade tamarind-cli` or `pipx upgrade tamarind-cli`, then run `tamarind --version` again and require 0.2.0 or newer. If it is still older, repair or reinstall the tool with the same installer. Do not run a remote `curl | sh` installer without the user's explicit approval. Do not mutate the system Python or use `--break-system-packages`.
 
 In a sandboxed agent, even `uv tool list` or `uv tool upgrade` can create temporary files under uv's cache and `~/.local/share/uv/tools`. Request narrowly scoped write access to those directories, or give the exact command to the user instead of repeatedly retrying a denied install.
 

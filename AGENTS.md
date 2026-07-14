@@ -6,7 +6,7 @@ This repository packages Tamarind Bio workflows as Codex and Claude Code skills.
 
 - Do not vendor or recreate HTTP, authentication, retry, polling, file-transfer, or API-shape logic in the plugin.
 - Invoke the `tamarind` executable as a subprocess. Do not import private modules from the `tamarind-cli` Python package.
-- Keep CLI output parsing narrow and version-aware. The supported range is `tamarind-cli>=0.2,<0.3`.
+- Keep CLI output parsing narrow and version-aware. Require `tamarind-cli>=0.2.0`, and test every plugin change against the latest published CLI.
 - Put global options before subcommands: `tamarind --json jobs`, not `tamarind jobs --json`.
 - Treat JSON stdout and structured JSON stderr as the CLI protocol; branch on typed exit codes, not message substrings.
 - Inspect `JobStatus` or `batchStatus`; process exit 0 alone does not prove a job succeeded.

@@ -4,34 +4,22 @@ Run [Tamarind Bio](https://www.tamarind.bio) from Codex or Claude Code. The plug
 
 ## Architecture
 
-Version 0.2 is CLI-first:
+The plugin is CLI-first:
 
 - The independently versioned [`tamarind-cli`](https://github.com/Tamarind-Bio/tamarind-cli) owns authentication, live catalog/schema lookup, validation, API calls, job state, polling, files, and downloads.
 - The plugin owns intent routing, scientific workflow guidance, spend confirmation, recovery rules, and local result analysis.
-- Local helpers only parse downloaded scientific results. They never call Tamarind APIs directly. The plugin no longer vendors a second HTTP client or MCP transport.
+- Local helpers only parse downloaded scientific results. They never call Tamarind APIs directly. The plugin does not vendor a second HTTP client or MCP transport.
 
-This mirrors the CLI-first separation in the [Boltz agent plugin](https://github.com/boltz-bio/boltz-api-skills): one tested machine interface underneath thin, intent-specific skills. It removes the plugin's duplicated transport implementation and makes cross-surface drift testable; it does not make compatibility testing unnecessary.
-
-## Upgrading from 0.1
-
-Version 0.2 changes the plugin's execution boundary. Version 0.1 bundled an MCP connection for discovery and validation and copied a small REST client into multiple skills for job execution. Version 0.2 removes both bundled transports and delegates the complete execution lifecycle to `tamarind-cli`.
-
-Existing users should:
-
-1. Install `tamarind-cli>=0.2,<0.3` before installing this plugin version.
-2. Authenticate with `TAMARIND_API_KEY` or `tamarind auth login`, then verify with `tamarind --json auth status`.
-3. Update or reinstall the plugin and start a new agent task so the new skills are loaded.
-
-The hosted Tamarind MCP service remains a separate integration, but it is no longer configured or required by this plugin. MCP-specific host configuration is not migrated into the CLI; an existing `TAMARIND_API_KEY` environment variable continues to work.
+This mirrors the CLI-first separation in the [Boltz agent plugin](https://github.com/boltz-bio/boltz-api-skills): one tested machine interface underneath thin, intent-specific skills. Keeping one transport makes cross-surface drift testable; it does not make compatibility testing unnecessary.
 
 ## Install
 
-Install the CLI first. The plugin supports `tamarind-cli>=0.2,<0.3`:
+Install the latest Tamarind CLI. The plugin requires version 0.2.0 or newer:
 
 ```bash
-uv tool install 'tamarind-cli>=0.2,<0.3'
+uv tool install tamarind-cli
 # or
-pipx install 'tamarind-cli>=0.2,<0.3'
+pipx install tamarind-cli
 ```
 
 For an existing tool installation:
@@ -43,7 +31,7 @@ pipx upgrade tamarind-cli
 tamarind --version
 ```
 
-Re-check that the reported version remains in `>=0.2,<0.3`; if it does not, reinstall the supported range explicitly.
+Verify that the reported version is 0.2.0 or newer. Plugin CI tests every change against the latest published CLI.
 
 Then install the plugin.
 
@@ -142,7 +130,7 @@ Scale and orchestration:
 
 ## Agent contract
 
-The skills target the hardened CLI 0.2 agent contract:
+The skills require the machine-readable agent contract introduced in CLI 0.2.0:
 
 - Put global flags before the command: `tamarind --json tools`, not `tamarind tools --json`.
 - Parse result JSON from stdout and structured error JSON from stderr after checking the exit code.

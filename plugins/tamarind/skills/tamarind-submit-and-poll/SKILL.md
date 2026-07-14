@@ -14,7 +14,7 @@ tamarind --version
 tamarind --json auth status
 ```
 
-Require CLI `>=0.2,<0.3`, `hasKey: true`, and `verified: true`; otherwise use `tamarind-api-setup`.
+Require CLI 0.2.0 or newer, `hasKey: true`, and `verified: true`; otherwise use `tamarind-api-setup`.
 
 ## 2. Confirm the live schema
 

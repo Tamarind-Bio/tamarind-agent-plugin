@@ -259,12 +259,27 @@ def test_batch_initial_attempt_uses_same_authorization_boundary() -> None:
     assert "numeric cost ceiling" in examples
 
 
-def test_release_docs_and_ci_use_supported_cli_range() -> None:
+def test_release_docs_install_latest_cli_and_enforce_minimum_contract() -> None:
     readme = (ROOT / "README.md").read_text()
     workflow = (ROOT / ".github/workflows/validate.yml").read_text()
-    supported_range = "tamarind-cli>=0.2,<0.3"
-    assert supported_range in readme
-    assert supported_range in workflow
+    setup = (SKILLS / "tamarind-api-setup/SKILL.md").read_text()
+    submit = (SKILLS / "tamarind-submit-and-poll/SKILL.md").read_text()
+    contract = (
+        SKILLS / "tamarind-submit-and-poll/references/api_reference.md"
+    ).read_text()
+    agents = (ROOT / "AGENTS.md").read_text()
+    policy_docs = "\n".join((readme, workflow, setup, submit, contract, agents))
+
+    assert "Upgrading from 0.1" not in readme
+    assert "uv tool install tamarind-cli" in readme
+    assert "pipx install tamarind-cli" in readme
+    assert "latest published CLI" in readme
+    assert "latest published Tamarind CLI" in workflow
+    assert "tamarind-cli>=0.2.0" in setup
+    assert "CLI 0.2.0 or newer" in submit
+    assert "tamarind-cli>=0.2.0" in contract
+    assert "tamarind-cli>=0.2.0" in agents
+    assert "tamarind-cli>=0.2,<0.3" not in policy_docs
     assert "git+https://github.com/Tamarind-Bio/tamarind-cli" not in readme
     assert "git+https://github.com/Tamarind-Bio/tamarind-cli" not in workflow
     assert "Release gate" not in readme
