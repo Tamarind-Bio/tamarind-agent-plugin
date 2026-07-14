@@ -1293,3 +1293,46 @@ def test_retained_helpers_run_from_an_unrelated_cwd(tmp_path: Path) -> None:
             check=False,
         )
         assert result.returncode == 0, (script, result.stderr)
+
+
+def test_binder_summary_reads_every_subdirectory_csv(tmp_path: Path) -> None:
+    # Regression: a results tree that splits designs across sibling directories
+    # (RFdiffusion / rfantibody / igdesign layouts) must aggregate every metrics
+    # CSV, not silently read only the first match and drop the rest.
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    module = _load(script)
+    (tmp_path / "design_A").mkdir()
+    (tmp_path / "design_B").mkdir()
+    (tmp_path / "design_A" / "scores.csv").write_text("design,iptm\nA1,0.55\nA2,0.60\n")
+    (tmp_path / "design_B" / "scores.csv").write_text("design,iptm\nB1,0.92\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="iptm")
+
+    # Before the fix this reported n_designs=2, max=0.60 (design_B silently dropped).
+    assert result["n_designs"] == 3
+    assert result["max"] == 0.92
+    assert any(row["label"].endswith("B1") for row in result["ranked"])
+
+
+def test_analysis_csv_reader_survives_row_wider_than_header(tmp_path: Path) -> None:
+    # Regression: a data row with more fields than the header (e.g. an unquoted
+    # comma in a value) must not crash the scripts with None.strip(); the overflow
+    # column is dropped and the known columns are preserved.
+    wide = tmp_path / "wide.csv"
+    wide.write_text("design,iptm\nd1,0.80,EXTRACOL\n")
+
+    common = _load(
+        ROOT / "plugins/tamarind/skills/tamarind-results-analysis/scripts/_common.py"
+    )
+    assert common.parse_scores_csv(str(wide)) == [{"design": "d1", "iptm": 0.80}]
+
+    summarize = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    result = summarize.summarize(summarize.load_designs(str(wide)), metric="iptm")
+    assert result["n_scored"] == 1
+    assert result["max"] == 0.80
