@@ -65,7 +65,7 @@ Success requires a tool result, a schema, and `valid: true`. Do not call `submit
 
 ## 4. Handle errors by contract
 
-CLI 0.2 branches its output by exit code, but errors do not all use the same stream or shape. Usage and not-found errors (exit 2, 4) print `{"error": {"type", "message", "exitCode"}}` to **stderr**. A validation failure (exit 5) prints `{"valid": false, "error": "<message>", "missing_fields": [...]}` to **stdout** with stderr empty, and an unsuccessful terminal job (exit 9) also leaves its payload on **stdout**. So on any nonzero exit, read **stdout first**, and do not assume `error` is always an object: in the validation payload it is a plain string. Branch on the exit code before parsing:
+CLI 0.2 branches its output by exit code, but errors do not all use the same stream or shape. Usage and not-found errors (exit 2, 4) print `{"error": {"type", "message", "exitCode"}}` to **stderr**. A validation failure (exit 5) prints `{"valid": false, "error": "<message>", "missing_fields": [...]}` to **stdout** with stderr empty, and an unsuccessful terminal job (exit 9) also leaves its payload on **stdout**. So on any nonzero exit, read **stdout first**, and do not assume `error` is always an object: in the validation payload it is a plain string. `missing_fields` is populated only for missing required fields; other validation failures (for example an un-uploaded file input) leave it empty and carry the actionable detail in the `error` string, so always read `error`. Branch on the exit code before parsing:
 
 | Exit | Meaning | Action |
 |---|---|---|
@@ -74,7 +74,7 @@ CLI 0.2 branches its output by exit code, but errors do not all use the same str
 | 2 | Usage or safety confirmation | Fix argument placement or provide an explicitly authorized `--yes` |
 | 3 | Authentication | Re-authenticate only for a typed credential failure |
 | 4 | Not found | Re-check the tool, job, file, or profile name |
-| 5 | Validation | Read `missing_fields` from the stdout payload; fix settings against the live schema |
+| 5 | Validation | Read the stdout `error` message; fix settings against the live schema, or if it names an un-uploaded file, upload that file (`missing_fields` is only populated for missing required fields) |
 | 6 | Rate limit | Back off; do not duplicate a submission |
 | 7 | Wait timeout | Reattach with `status` or another bounded `wait` |
 | 8 | Budget or quota | Stop and surface the limit; do not retry or resubmit |
