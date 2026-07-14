@@ -123,13 +123,17 @@ def load_designs(path):
     Returns a list of dicts: {label, ipsae, iptm, pdockq, plddt, ptm}. Missing
     metrics stay None. A results dir may split designs across sibling
     directories, so every metrics CSV is read; when more than one contributes,
-    labels are prefixed with the parent directory to stay unique."""
+    labels are prefixed with each CSV's path relative to the run dir to stay
+    unique (a bare parent name collides when the layout uses a fixed
+    intermediate directory such as BoltzGen's final_ranked_designs/)."""
     if os.path.isdir(path):
+        run_root = path
         csv_paths = _find_metrics_csvs(path)
         if not csv_paths:
             raise SystemExit(f"no metrics CSV under {path} "
                              "(looked for all_designs_metrics / final_design_stats)")
     elif path.lower().endswith(".csv"):
+        run_root = os.path.dirname(path)
         csv_paths = [path]
     else:
         raise SystemExit(f"{path} is not a directory or a .csv")
@@ -137,10 +141,15 @@ def load_designs(path):
     multi = len(csv_paths) > 1
     designs = []
     for csv_path in csv_paths:
-        parent = os.path.basename(os.path.dirname(csv_path))
+        prefix = ""
+        if multi:
+            rel = os.path.relpath(os.path.dirname(csv_path), run_root)
+            if rel in (".", ""):
+                rel = os.path.splitext(os.path.basename(csv_path))[0]
+            prefix = f"{rel}/"
         for i, raw in enumerate(_common.parse_scores_csv(csv_path)):
             base = _design_label(raw) or f"design_{i}"
-            d = {"label": f"{parent}/{base}" if multi else base}
+            d = {"label": f"{prefix}{base}"}
             for key, aliases in HIGHER_BETTER.items():
                 d[key] = _pick(raw, aliases)
             designs.append(d)

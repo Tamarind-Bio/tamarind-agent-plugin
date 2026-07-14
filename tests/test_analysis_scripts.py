@@ -1397,3 +1397,23 @@ def test_binder_summary_prefers_metric_csv_over_higher_named_metricless_sibling(
     assert result["n_designs"] == 2
     assert result["n_unscored"] == 0
     assert result["max"] == 0.92
+
+
+def test_binder_summary_disambiguates_labels_across_runs(tmp_path: Path) -> None:
+    # Regression: pointing at a parent of multiple runs that each store results under
+    # a fixed intermediate dir (BoltzGen's final_ranked_designs/) must not collapse
+    # every run to the same label prefix; the label must carry the run directory.
+    module = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    for run, val in (("run1", "0.40"), ("run2", "0.91")):
+        d = tmp_path / run / "final_ranked_designs"
+        d.mkdir(parents=True)
+        (d / "all_designs_metrics.csv").write_text(f"design,ipsae\nrank1,{val}\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="ipsae")
+
+    labels = {row["label"] for row in result["ranked"]}
+    assert len(labels) == 2  # not collapsed to a single "final_ranked_designs/rank1"
+    assert result["max"] == 0.91
