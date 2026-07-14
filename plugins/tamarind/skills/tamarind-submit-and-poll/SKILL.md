@@ -47,7 +47,13 @@ Require `valid: true`. Submit the original settings file, not the validator's `n
 
 Before a material run, surface the few choices that change scientific meaning, runtime, or weighted-hour cost: model/version, samples/designs, recycles, MSA, library size, batch count, GPU tier when exposed, and optional scoring stages.
 
-If the user has not already authorized the exact scope, obtain confirmation before `submit`. Validation is free and is not spending authorization. Never perform a paid compute submission as a smoke test.
+Treat permission and price information separately:
+
+- If the user already authorized the validated scope, proceed to one initial submission attempt. Authorization such as “run one small paid job” is sufficient when the agent-selected settings remain within that delegated scope.
+- A missing pre-submission cost estimate does not block unconditional authorization. State that the estimate is unavailable and report actual `WeightedHours` afterward when present.
+- If authorization depends on a quote or numeric cost cap, and that condition cannot be verified before submission, stop and ask.
+- Reconfirm if the validated payload exceeds or materially changes the authorized scope.
+- A dry run, validation-only request, or setup/connectivity smoke test never authorizes paid compute. An explicitly authorized production canary is a real paid run, not the no-spend setup smoke path.
 
 ## 5. Submit once
 
@@ -55,7 +61,9 @@ If the user has not already authorized the exact scope, obtain confirmation befo
 tamarind --json submit TOOL --input settings.yaml --name JOB_NAME
 ```
 
-Record `JOB_NAME` immediately. If the command times out or the response is ambiguous, do not retry. First query durable status in step 6.
+An initial submission and a retry are different. After validation and authorization, issue one initial client-side submission attempt even though the CLI exposes no idempotency key and job names are not documented as idempotency keys. Their absence does not block that first attempt.
+
+“Submit once” means invoke the client once; it is not a server-side exactly-once guarantee. Record `JOB_NAME` immediately. If the command times out or the response is ambiguous, do not invoke `submit` again. First query durable status in step 6.
 
 Job-name idempotency is not documented, so an automatic retry may create or collide with duplicate work.
 

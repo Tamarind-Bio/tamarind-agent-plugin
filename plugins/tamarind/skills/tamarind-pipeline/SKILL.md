@@ -51,7 +51,7 @@ When a stage fans out over many candidates, use `tamarind-batch`; inspect and ra
 
 - Confirm total intended campaign scope before the first paid stage and again before any large fan-out.
 - Use deterministic unique names derived from the campaign and stage.
-- If a submit result is ambiguous, query the job name before any retry.
+- If a submit result is ambiguous, query the job name and do not invoke `submit` again. Continue only from authoritative remote status.
 - Resume by reading `pipeline-state.json` and remote status; do not restart completed stages.
 - Preserve intermediate outputs and selection rationale for reproducibility.
 

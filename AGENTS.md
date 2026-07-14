@@ -13,6 +13,7 @@ This repository packages Tamarind Bio workflows as Codex and Claude Code skills.
 - Use `submit` followed by bounded `wait --timeout`; do not teach unbounded `submit --wait` or `results --wait` flows.
 - Never retry an ambiguous submission. Query its durable job name first.
 - Confirm material scope and weighted-hour spend before `submit` or `batch` unless the user already authorized that exact run.
+- When a validated scope is already authorized, issue one initial client-side submission attempt even if the CLI provides no idempotency key or pre-submission cost estimate. Idempotency governs retries; a missing estimate only blocks authorization conditioned on a quote or numeric cost cap.
 - Download with `tamarind --json results ... --download ...`; normal CLI 0.2 output suppresses presigned URLs. Never use `--show-url` in agent logs.
 - Keep local scripts only for deterministic scientific preprocessing or post-processing of downloaded artifacts.
 

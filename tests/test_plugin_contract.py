@@ -195,6 +195,70 @@ def test_batch_submission_examples_require_final_row_prevalidation() -> None:
     assert "every final row" in markdown
 
 
+def test_authorized_initial_submit_does_not_require_idempotency_or_estimate() -> None:
+    skill = (SKILLS / "tamarind-submit-and-poll" / "SKILL.md").read_text()
+    workflow = (
+        SKILLS / "tamarind-submit-and-poll/references/workflows.md"
+    ).read_text()
+    contract = (
+        SKILLS / "tamarind-submit-and-poll/references/api_reference.md"
+    ).read_text()
+    combined = "\n".join((skill, workflow, contract))
+
+    for phrase in (
+        "one initial client-side submission attempt",
+        "does not block that first attempt",
+        "missing pre-submission cost estimate",
+        "server-side exactly-once guarantee",
+        "job names are not documented as idempotency keys",
+    ):
+        assert phrase in combined
+
+    assert "“run one small paid job” is sufficient" in skill
+    assert "report actual `WeightedHours` afterward" in skill
+
+
+def test_submit_authorization_edge_cases_keep_stop_boundaries() -> None:
+    skill = (SKILLS / "tamarind-submit-and-poll" / "SKILL.md").read_text()
+    workflow = (
+        SKILLS / "tamarind-submit-and-poll/references/workflows.md"
+    ).read_text()
+
+    assert "quote or numeric cost cap" in skill
+    assert "Dry run, validation-only request, or setup smoke check" in workflow
+    assert "Authorized settings materially change after validation" in workflow
+    assert "do not retry the submit command" in workflow
+    assert "An explicitly authorized production canary is a real paid run" in skill
+
+
+def test_ambiguous_submit_never_permits_pipeline_retry() -> None:
+    contract = (
+        SKILLS / "tamarind-submit-and-poll/references/api_reference.md"
+    ).read_text()
+    pipeline = (SKILLS / "tamarind-pipeline/SKILL.md").read_text()
+    workflow = (
+        SKILLS / "tamarind-pipeline/references/workflows.md"
+    ).read_text()
+    combined = "\n".join((contract, pipeline, workflow))
+
+    assert "do not invoke `submit` or `batch` again" in contract
+    assert "do not invoke `submit` again" in pipeline
+    assert "recover only from authoritative remote state" in workflow
+    assert "before any retry" not in combined
+    assert "retry an ambiguous submission" not in combined
+
+
+def test_batch_initial_attempt_uses_same_authorization_boundary() -> None:
+    skill = (SKILLS / "tamarind-batch" / "SKILL.md").read_text()
+    examples = (
+        SKILLS / "tamarind-batch/references/examples.md"
+    ).read_text()
+    assert "missing idempotency support" in skill
+    assert "missing pre-submission cost estimate" in skill
+    assert "authorized initial batch command once" in skill
+    assert "numeric cost ceiling" in examples
+
+
 def test_release_docs_and_ci_use_supported_cli_range() -> None:
     readme = (ROOT / "README.md").read_text()
     workflow = (ROOT / ".github/workflows/validate.yml").read_text()

@@ -151,6 +151,7 @@ The skills target the hardened CLI 0.2 agent contract:
 - Download with `tamarind --json results JOB_NAME --download DIR`; CLI 0.2 does not print a presigned URL unless `--show-url` is explicitly requested.
 - Never retry an ambiguous submit. Query the durable job name first.
 - Confirm material scope/cost before `submit` or `batch`; `validate` is free and does not authorize spending.
+- Once the validated scope is authorized, missing idempotency support or a missing pre-submission cost estimate does not block the first submit attempt. It only constrains retries or cost-capped requests.
 
 ## Development
 

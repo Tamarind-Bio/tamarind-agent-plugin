@@ -2,6 +2,19 @@
 
 All recipes use an explicit settings file, a durable job name, a bounded wait, and status inspection.
 
+## Authorization and retry decisions
+
+| User request / state | Action |
+|---|---|
+| “Run one small paid job”; validated settings stay within that scope | Submit once, even without an idempotency key or pre-submission cost estimate |
+| Authorized run has no estimate and no numeric cost cap | State that preflight cost is unavailable, submit once, and report actual weighted hours afterward |
+| “Run only if it costs at most X”; X cannot be verified | Stop and ask; do not submit |
+| Dry run, validation-only request, or setup smoke check | Validate only; do not submit |
+| Authorized settings materially change after validation | Reconfirm the changed scope |
+| Initial submit response is ambiguous | Query the durable job name; do not retry the submit command |
+
+One client-side submission attempt is not a server-side exactly-once guarantee.
+
 ## Sequence-only fold
 
 `settings.yaml`:
