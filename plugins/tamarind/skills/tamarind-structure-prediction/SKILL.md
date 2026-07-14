@@ -31,6 +31,8 @@ Represent the input in `settings.yaml`. For file-based YAML, templates, FASTA, o
 tamarind --json validate TOOL --input settings.yaml --name FOLD_NAME
 ```
 
+Validation checks the schema and each field's allowed characters, not the molecule type: an all-A/T/C/G(/U) string passes a protein `sequence` field because those letters are also amino-acid codes. Route a nucleotide sequence to the tool's DNA/RNA input (or `addDNA`/`addRNA`) instead of folding it as a protein, and confirm the molecule type before spending.
+
 Before submitting, surface choices that materially affect runtime, cost, or interpretation: number of samples/models/batches, MSA use, recycles, model/version, templates/restraints, affinity calculation, and output format. Keep live defaults unless the user intentionally changes them.
 
 For a production canary, minimize input length and independent sample count, but keep the selected model's tuned recycling/diffusion defaults. Do not lower quality parameters to their schema minima solely to save smoke-test cost: a job can complete successfully while producing unusable geometry.
