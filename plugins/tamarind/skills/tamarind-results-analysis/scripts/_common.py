@@ -83,6 +83,10 @@ def parse_scores_csv(path):
     rows = []
     with open(path, newline="") as fh:
         for row in csv.DictReader(fh):
+            # csv.DictReader dumps any fields beyond the header into row[None]
+            # (a row wider than its header, e.g. an unquoted comma in a value).
+            # Drop that overflow bucket so downstream key.strip() does not hit None.
+            row.pop(None, None)
             rows.append({k: _maybe_float(v) for k, v in row.items()})
     return rows
 

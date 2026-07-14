@@ -59,41 +59,105 @@ def _design_label(row):
     return None
 
 
-def _find_metrics_csv(run_dir):
-    """BoltzGen all_designs_metrics.csv, BindCraft final_design_stats.csv, or any
-    per-design scores CSV under the results dir."""
-    patterns = ["all_designs_metrics.csv", "final_design_stats.csv",
-                "*design*stats*.csv", "*metrics*.csv", "*scores*.csv", "*.csv"]
-    for pat in patterns:
-        hits = sorted(glob.glob(os.path.join(run_dir, "**", pat), recursive=True))
-        if hits:
-            return hits[0]
-    return None
+def _find_metrics_csvs(run_dir):
+    """Return every logical metrics CSV under run_dir, one per directory.
+
+    An aggregate file (BoltzGen all_designs_metrics.csv, BindCraft
+    final_design_stats.csv) already holds every design, so when one is present it
+    is used directly. Otherwise per-design scores are split across sibling
+    directories (RFdiffusion / rfantibody / igdesign layouts), so collect one CSV
+    per directory instead of silently reading only the first match."""
+    aggregate = []
+    for name in ("all_designs_metrics.csv", "final_design_stats.csv"):
+        aggregate += glob.glob(os.path.join(run_dir, "**", name), recursive=True)
+    if aggregate:
+        # Collect every aggregate file (both filename conventions) so a parent that
+        # holds runs from different tools isn't truncated to whichever name matches first.
+        return sorted(aggregate)
+
+    by_directory = {}
+    for path in sorted(glob.glob(os.path.join(run_dir, "**", "*.csv"), recursive=True)):
+        by_directory.setdefault(os.path.dirname(path), []).append(path)
+
+    def _priority(path):
+        # Rank within a directory: design-*stats* files, then a processed metrics
+        # file over its raw sibling, then generic scores. A bare design/input
+        # manifest (e.g. designs.csv, no metric columns) must NOT outrank scores.csv,
+        # so match "stats" — not a bare "design" — as the old *design*stats*.csv glob did.
+        name = os.path.basename(path).lower()
+        for rank, fragment in enumerate(
+            ("stats", "metrics-processed", "metrics_processed", "metrics", "scores")
+        ):
+            if fragment in name:
+                return rank
+        return 99
+
+    selected = []
+    fallback = []
+    for directory in sorted(by_directory):
+        ranked = sorted(by_directory[directory], key=lambda p: (_priority(p), p))
+        fallback.append(ranked[0])
+        # Within a directory, take the highest-priority CSV that actually carries a
+        # metric column. This skips an input/manifest file (e.g. designs.csv,
+        # stats.csv) even when it outranks the real scores.csv by name, without
+        # dropping the directory's genuine results.
+        metric_csvs = [p for p in ranked if _csv_has_metric_column(p)]
+        if metric_csvs:
+            selected.append(metric_csvs[0])
+    # Fall back to the name-priority pick only if no directory has any metric CSV
+    # (e.g. a single unconventional results file), so callers still get a candidate.
+    return selected or fallback
+
+
+def _csv_has_metric_column(csv_path):
+    """True if the CSV header carries any recognized interface-metric column."""
+    aliases = {alias for names in HIGHER_BETTER.values() for alias in names}
+    rows = _common.parse_scores_csv(csv_path)
+    if not rows:
+        return False
+    return any(
+        col is not None and col.strip().lower() in aliases for col in rows[0]
+    )
 
 
 def load_designs(path):
     """Load per-design rows from a results dir or a single CSV.
 
     Returns a list of dicts: {label, ipsae, iptm, pdockq, plddt, ptm}. Missing
-    metrics stay None."""
+    metrics stay None. A results dir may split designs across sibling
+    directories, so every metrics CSV is read; when more than one contributes,
+    labels are prefixed with each CSV's path relative to the run dir to stay
+    unique (a bare parent name collides when the layout uses a fixed
+    intermediate directory such as BoltzGen's final_ranked_designs/)."""
     if os.path.isdir(path):
-        csv_path = _find_metrics_csv(path)
-        if not csv_path:
+        run_root = path
+        csv_paths = _find_metrics_csvs(path)
+        if not csv_paths:
             raise SystemExit(f"no metrics CSV under {path} "
                              "(looked for all_designs_metrics / final_design_stats)")
     elif path.lower().endswith(".csv"):
-        csv_path = path
+        run_root = os.path.dirname(path)
+        csv_paths = [path]
     else:
         raise SystemExit(f"{path} is not a directory or a .csv")
 
+    multi = len(csv_paths) > 1
     designs = []
-    for i, raw in enumerate(_common.parse_scores_csv(csv_path)):
-        d = {"label": _design_label(raw) or f"design_{i}"}
-        for key, aliases in HIGHER_BETTER.items():
-            d[key] = _pick(raw, aliases)
-        designs.append(d)
+    for csv_path in csv_paths:
+        prefix = ""
+        if multi:
+            rel = os.path.relpath(os.path.dirname(csv_path), run_root)
+            if rel in (".", ""):
+                rel = os.path.splitext(os.path.basename(csv_path))[0]
+            prefix = f"{rel}/"
+        for i, raw in enumerate(_common.parse_scores_csv(csv_path)):
+            base = _design_label(raw) or f"design_{i}"
+            d = {"label": f"{prefix}{base}"}
+            for key, aliases in HIGHER_BETTER.items():
+                d[key] = _pick(raw, aliases)
+            designs.append(d)
     if not designs:
-        raise SystemExit(f"{csv_path} has no rows")
+        raise SystemExit(f"{', '.join(csv_paths)} has no rows")
     return designs
 
 

@@ -1293,3 +1293,150 @@ def test_retained_helpers_run_from_an_unrelated_cwd(tmp_path: Path) -> None:
             check=False,
         )
         assert result.returncode == 0, (script, result.stderr)
+
+
+def test_binder_summary_reads_every_subdirectory_csv(tmp_path: Path) -> None:
+    # Regression: a results tree that splits designs across sibling directories
+    # (RFdiffusion / rfantibody / igdesign layouts) must aggregate every metrics
+    # CSV, not silently read only the first match and drop the rest.
+    script = (
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    module = _load(script)
+    (tmp_path / "design_A").mkdir()
+    (tmp_path / "design_B").mkdir()
+    (tmp_path / "design_A" / "scores.csv").write_text("design,iptm\nA1,0.55\nA2,0.60\n")
+    (tmp_path / "design_B" / "scores.csv").write_text("design,iptm\nB1,0.92\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="iptm")
+
+    # Before the fix this reported n_designs=2, max=0.60 (design_B silently dropped).
+    assert result["n_designs"] == 3
+    assert result["max"] == 0.92
+    assert any(row["label"].endswith("B1") for row in result["ranked"])
+
+
+def test_analysis_csv_reader_survives_row_wider_than_header(tmp_path: Path) -> None:
+    # Regression: a data row with more fields than the header (e.g. an unquoted
+    # comma in a value) must not crash the scripts with None.strip(); the overflow
+    # column is dropped and the known columns are preserved.
+    wide = tmp_path / "wide.csv"
+    wide.write_text("design,iptm\nd1,0.80,EXTRACOL\n")
+
+    common = _load(
+        ROOT / "plugins/tamarind/skills/tamarind-results-analysis/scripts/_common.py"
+    )
+    assert common.parse_scores_csv(str(wide)) == [{"design": "d1", "iptm": 0.80}]
+
+    summarize = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    result = summarize.summarize(summarize.load_designs(str(wide)), metric="iptm")
+    assert result["n_scored"] == 1
+    assert result["max"] == 0.80
+
+
+def test_binder_summary_prefers_scores_over_design_manifest(tmp_path: Path) -> None:
+    # Regression: within a directory, a bare design/input manifest (designs.csv, no
+    # metric columns) must not outrank the real scores.csv, or ranking errors out on
+    # "no rankable interface metric" even though the score file is present.
+    module = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    (tmp_path / "designs.csv").write_text("design,seed\nd1,111\nd2,222\n")
+    (tmp_path / "scores.csv").write_text("design,iptm\nd1,0.81\nd2,0.90\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="iptm")
+
+    assert result["n_scored"] == 2
+    assert result["max"] == 0.90
+
+
+def test_binder_summary_skips_metricless_manifest_directory(tmp_path: Path) -> None:
+    # Regression: a root designs.csv manifest (no metric columns) sitting alongside
+    # per-design subdirectories with real scores.csv must be skipped, not read as
+    # unscored pseudo-designs that inflate n_designs / n_unscored.
+    module = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    (tmp_path / "designs.csv").write_text("design,seq\nd1,AAAA\nd2,CCCC\n")
+    (tmp_path / "A").mkdir()
+    (tmp_path / "B").mkdir()
+    (tmp_path / "A" / "scores.csv").write_text("design,iptm\ndA,0.55\n")
+    (tmp_path / "B" / "scores.csv").write_text("design,iptm\ndB,0.92\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="iptm")
+
+    assert result["n_designs"] == 2
+    assert result["n_unscored"] == 0
+    assert result["max"] == 0.92
+
+
+def test_binder_summary_prefers_metric_csv_over_higher_named_metricless_sibling(
+    tmp_path: Path,
+) -> None:
+    # Regression: within a directory a name-higher-priority but metric-less file
+    # (design_stats.csv) alongside the real scores.csv must not cause that whole
+    # directory to be dropped; pick the metric-bearing scores.csv instead.
+    module = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    (tmp_path / "A").mkdir()
+    (tmp_path / "B").mkdir()
+    (tmp_path / "A" / "design_stats.csv").write_text("design,note\nxA,hello\n")
+    (tmp_path / "A" / "scores.csv").write_text("design,iptm\nxA,0.55\n")
+    (tmp_path / "B" / "scores.csv").write_text("design,iptm\nxB,0.92\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="iptm")
+
+    assert result["n_designs"] == 2
+    assert result["n_unscored"] == 0
+    assert result["max"] == 0.92
+
+
+def test_binder_summary_disambiguates_labels_across_runs(tmp_path: Path) -> None:
+    # Regression: pointing at a parent of multiple runs that each store results under
+    # a fixed intermediate dir (BoltzGen's final_ranked_designs/) must not collapse
+    # every run to the same label prefix; the label must carry the run directory.
+    module = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    for run, val in (("run1", "0.40"), ("run2", "0.91")):
+        d = tmp_path / run / "final_ranked_designs"
+        d.mkdir(parents=True)
+        (d / "all_designs_metrics.csv").write_text(f"design,ipsae\nrank1,{val}\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="ipsae")
+
+    labels = {row["label"] for row in result["ranked"]}
+    assert len(labels) == 2  # not collapsed to a single "final_ranked_designs/rank1"
+    assert result["max"] == 0.91
+
+
+def test_binder_summary_collects_both_aggregate_filename_conventions(
+    tmp_path: Path,
+) -> None:
+    # Regression: a parent holding runs from different tools (BoltzGen's
+    # all_designs_metrics.csv and BindCraft's final_design_stats.csv) must not be
+    # truncated to whichever aggregate filename matches first.
+    module = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    (tmp_path / "bgen" / "final_ranked_designs").mkdir(parents=True)
+    (tmp_path / "bcraft").mkdir()
+    (tmp_path / "bgen" / "final_ranked_designs" / "all_designs_metrics.csv").write_text(
+        "design,iptm\ng1,0.70\ng2,0.85\n"
+    )
+    (tmp_path / "bcraft" / "final_design_stats.csv").write_text("design,iptm\nc1,0.90\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="iptm")
+
+    assert result["n_designs"] == 3  # BindCraft run not dropped
+    assert result["max"] == 0.90
