@@ -67,10 +67,13 @@ def _find_metrics_csvs(run_dir):
     is used directly. Otherwise per-design scores are split across sibling
     directories (RFdiffusion / rfantibody / igdesign layouts), so collect one CSV
     per directory instead of silently reading only the first match."""
+    aggregate = []
     for name in ("all_designs_metrics.csv", "final_design_stats.csv"):
-        hits = sorted(glob.glob(os.path.join(run_dir, "**", name), recursive=True))
-        if hits:
-            return hits
+        aggregate += glob.glob(os.path.join(run_dir, "**", name), recursive=True)
+    if aggregate:
+        # Collect every aggregate file (both filename conventions) so a parent that
+        # holds runs from different tools isn't truncated to whichever name matches first.
+        return sorted(aggregate)
 
     by_directory = {}
     for path in sorted(glob.glob(os.path.join(run_dir, "**", "*.csv"), recursive=True)):

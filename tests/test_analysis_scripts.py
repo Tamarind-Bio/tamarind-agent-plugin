@@ -1417,3 +1417,26 @@ def test_binder_summary_disambiguates_labels_across_runs(tmp_path: Path) -> None
     labels = {row["label"] for row in result["ranked"]}
     assert len(labels) == 2  # not collapsed to a single "final_ranked_designs/rank1"
     assert result["max"] == 0.91
+
+
+def test_binder_summary_collects_both_aggregate_filename_conventions(
+    tmp_path: Path,
+) -> None:
+    # Regression: a parent holding runs from different tools (BoltzGen's
+    # all_designs_metrics.csv and BindCraft's final_design_stats.csv) must not be
+    # truncated to whichever aggregate filename matches first.
+    module = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    (tmp_path / "bgen" / "final_ranked_designs").mkdir(parents=True)
+    (tmp_path / "bcraft").mkdir()
+    (tmp_path / "bgen" / "final_ranked_designs" / "all_designs_metrics.csv").write_text(
+        "design,iptm\ng1,0.70\ng2,0.85\n"
+    )
+    (tmp_path / "bcraft" / "final_design_stats.csv").write_text("design,iptm\nc1,0.90\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="iptm")
+
+    assert result["n_designs"] == 3  # BindCraft run not dropped
+    assert result["max"] == 0.90
