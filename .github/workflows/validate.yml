@@ -21,11 +21,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      # Install the released CLI contract range supported by plugin 0.2.
-      - name: Install the supported CLI 0.2 contract
+      # Catch drift by testing the minimum plugin contract against the latest release.
+      - name: Install the latest published Tamarind CLI
         run: >-
           python -m pip install
-          'tamarind-cli>=0.2,<0.3'
+          tamarind-cli
           pytest PyYAML
       - name: Run plugin and CLI contract tests
         run: python -m pytest --strict-markers
