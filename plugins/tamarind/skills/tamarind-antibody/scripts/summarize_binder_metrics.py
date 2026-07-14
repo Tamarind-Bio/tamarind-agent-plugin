@@ -89,16 +89,21 @@ def _find_metrics_csvs(run_dir):
                 return rank
         return 99
 
-    selected = [
-        sorted(by_directory[directory], key=lambda p: (_priority(p), p))[0]
-        for directory in sorted(by_directory)
-    ]
-    # When several directories contribute, drop any whose chosen CSV carries no
-    # recognized metric column (e.g. a root designs.csv input manifest) so its rows
-    # don't pollute the summary as unscored pseudo-designs. Fall back to the full
-    # set only if nothing has a metric column (single unconventional-name results CSV).
-    with_metrics = [p for p in selected if _csv_has_metric_column(p)]
-    return with_metrics or selected
+    selected = []
+    fallback = []
+    for directory in sorted(by_directory):
+        ranked = sorted(by_directory[directory], key=lambda p: (_priority(p), p))
+        fallback.append(ranked[0])
+        # Within a directory, take the highest-priority CSV that actually carries a
+        # metric column. This skips an input/manifest file (e.g. designs.csv,
+        # stats.csv) even when it outranks the real scores.csv by name, without
+        # dropping the directory's genuine results.
+        metric_csvs = [p for p in ranked if _csv_has_metric_column(p)]
+        if metric_csvs:
+            selected.append(metric_csvs[0])
+    # Fall back to the name-priority pick only if no directory has any metric CSV
+    # (e.g. a single unconventional results file), so callers still get a candidate.
+    return selected or fallback
 
 
 def _csv_has_metric_column(csv_path):

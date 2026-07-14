@@ -1374,3 +1374,26 @@ def test_binder_summary_skips_metricless_manifest_directory(tmp_path: Path) -> N
     assert result["n_designs"] == 2
     assert result["n_unscored"] == 0
     assert result["max"] == 0.92
+
+
+def test_binder_summary_prefers_metric_csv_over_higher_named_metricless_sibling(
+    tmp_path: Path,
+) -> None:
+    # Regression: within a directory a name-higher-priority but metric-less file
+    # (design_stats.csv) alongside the real scores.csv must not cause that whole
+    # directory to be dropped; pick the metric-bearing scores.csv instead.
+    module = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    (tmp_path / "A").mkdir()
+    (tmp_path / "B").mkdir()
+    (tmp_path / "A" / "design_stats.csv").write_text("design,note\nxA,hello\n")
+    (tmp_path / "A" / "scores.csv").write_text("design,iptm\nxA,0.55\n")
+    (tmp_path / "B" / "scores.csv").write_text("design,iptm\nxB,0.92\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="iptm")
+
+    assert result["n_designs"] == 2
+    assert result["n_unscored"] == 0
+    assert result["max"] == 0.92
