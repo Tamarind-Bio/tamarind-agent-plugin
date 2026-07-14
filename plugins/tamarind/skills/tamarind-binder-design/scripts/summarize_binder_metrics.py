@@ -77,12 +77,13 @@ def _find_metrics_csvs(run_dir):
         by_directory.setdefault(os.path.dirname(path), []).append(path)
 
     def _priority(path):
-        # Keep the old pattern order within a directory: design/stats first, then a
-        # processed metrics file over its raw sibling, then generic scores.
+        # Rank within a directory: design-*stats* files, then a processed metrics
+        # file over its raw sibling, then generic scores. A bare design/input
+        # manifest (e.g. designs.csv, no metric columns) must NOT outrank scores.csv,
+        # so match "stats" — not a bare "design" — as the old *design*stats*.csv glob did.
         name = os.path.basename(path).lower()
         for rank, fragment in enumerate(
-            ("design", "stats", "metrics-processed", "metrics_processed",
-             "metrics", "scores")
+            ("stats", "metrics-processed", "metrics_processed", "metrics", "scores")
         ):
             if fragment in name:
                 return rank

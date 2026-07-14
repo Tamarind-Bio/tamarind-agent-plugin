@@ -1336,3 +1336,20 @@ def test_analysis_csv_reader_survives_row_wider_than_header(tmp_path: Path) -> N
     result = summarize.summarize(summarize.load_designs(str(wide)), metric="iptm")
     assert result["n_scored"] == 1
     assert result["max"] == 0.80
+
+
+def test_binder_summary_prefers_scores_over_design_manifest(tmp_path: Path) -> None:
+    # Regression: within a directory, a bare design/input manifest (designs.csv, no
+    # metric columns) must not outrank the real scores.csv, or ranking errors out on
+    # "no rankable interface metric" even though the score file is present.
+    module = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    (tmp_path / "designs.csv").write_text("design,seed\nd1,111\nd2,222\n")
+    (tmp_path / "scores.csv").write_text("design,iptm\nd1,0.81\nd2,0.90\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="iptm")
+
+    assert result["n_scored"] == 2
+    assert result["max"] == 0.90
