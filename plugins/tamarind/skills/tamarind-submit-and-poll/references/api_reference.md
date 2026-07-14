@@ -11,7 +11,7 @@ tamarind --json COMMAND
 tamarind --no-json COMMAND
 ```
 
-Successful non-TTY commands default to JSON. Errors and Typer usage failures are structured JSON on stderr, so branch on the exit code before parsing the appropriate stream.
+Successful non-TTY commands default to JSON. Usage/Typer failures and not-found errors (exit 2, 4) are `{"error": {...}}` on **stderr**, but a validation failure (exit 5) returns `{"valid": false, "error": "<string>", "missing_fields": [...]}` on **stdout** (stderr empty), and an unsuccessful terminal job (exit 9) also leaves its payload on **stdout**. On a nonzero exit, read **stdout first** and treat `error` as possibly a string, not always an object. Branch on the exit code before parsing.
 
 | Exit | Meaning |
 |---|---|
