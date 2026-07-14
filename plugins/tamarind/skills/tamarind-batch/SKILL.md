@@ -23,7 +23,7 @@ CLI 0.2 can prevalidate every final row before it submits the batch. During prep
 tamarind --json validate TOOL --input one-settings.yaml --name BATCH-probe-001
 ```
 
-Check duplicate job names, input count, file availability, per-input sampling, and total expected scope. Obtain explicit confirmation for the multiplied spend before submission.
+Check duplicate job names, input count, file availability, per-input sampling, and total expected scope. Obtain explicit confirmation for the multiplied spend before submission. If that exact validated scope is already authorized, missing idempotency support or a missing pre-submission cost estimate does not block one initial batch attempt. Stop only when authorization depends on an unavailable quote or numeric cost cap.
 
 ## Submit and recover the parent
 
@@ -32,7 +32,7 @@ tamarind --json batch TOOL --input batch.yaml --name BATCH_NAME --prevalidate
 tamarind --json wait BATCH_NAME --timeout 3600 --poll-interval 15
 ```
 
-Always retain `--prevalidate` on the final batch command; it aborts before submission when any row is invalid. Do not retry an ambiguous batch submit. Query `BATCH_NAME` first. Wait on the parent with a finite `--timeout`; inspect `batchStatus` and stop on `Complete`, `AggregationFailed`, or `Stopped`. A deadline means "report still running and reattach later," not "resubmit."
+Always retain `--prevalidate` on the final batch command; it aborts before submission when any row is invalid. Issue the authorized initial batch command once; lack of an idempotency key does not block that attempt. Do not retry an ambiguous batch submit. Query `BATCH_NAME` first. Wait on the parent with a finite `--timeout`; inspect `batchStatus` and stop on `Complete`, `AggregationFailed`, or `Stopped`. A deadline means "report still running and reattach later," not "resubmit."
 
 Inspect authoritative subjob rows:
 

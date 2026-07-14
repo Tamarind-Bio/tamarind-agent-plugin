@@ -41,3 +41,5 @@ Keep `jobNames` and `settings` aligned one-to-one. These entries are bare, uniqu
 ## Cost review
 
 Before submission, report input count multiplied by per-input samples/designs and any expensive optional stage. Validation does not authorize the aggregate spend.
+
+If the user has already authorized that exact aggregate scope, proceed with one `batch --prevalidate` attempt even when the CLI returns no pre-submission cost estimate. If the user instead sets a numeric cost ceiling that cannot be checked, stop before submission.

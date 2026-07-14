@@ -41,4 +41,4 @@ Maintain fields like:
 }
 ```
 
-Before resuming, query each recorded `jobName`. Never restart a completed stage or retry an ambiguous submission without checking remote state.
+Before resuming, query each recorded `jobName`. Never restart a completed stage or invoke `submit` again after an ambiguous response; recover only from authoritative remote state.

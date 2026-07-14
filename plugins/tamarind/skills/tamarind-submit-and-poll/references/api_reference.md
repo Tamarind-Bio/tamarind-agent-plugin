@@ -61,4 +61,6 @@ Use the returned bare `filename` in a file-typed setting. Do not use email-prefi
 
 ## Retry boundary
 
-Job-name idempotency is not documented. After an ambiguous submit response, query `status JOB_NAME` before any retry. Never automatically retry `submit` or `batch` on network, rate-limit, or local timeout errors.
+The CLI exposes no idempotency key, and job-name idempotency is not documented. This does not block one validated, authorized initial client-side submission attempt. It means the client cannot promise server-side exactly-once execution.
+
+After an ambiguous submit response, query `status JOB_NAME` and do not invoke `submit` or `batch` again on network, rate-limit, or local timeout errors.
