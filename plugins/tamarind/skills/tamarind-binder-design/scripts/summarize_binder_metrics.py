@@ -89,10 +89,27 @@ def _find_metrics_csvs(run_dir):
                 return rank
         return 99
 
-    return [
+    selected = [
         sorted(by_directory[directory], key=lambda p: (_priority(p), p))[0]
         for directory in sorted(by_directory)
     ]
+    # When several directories contribute, drop any whose chosen CSV carries no
+    # recognized metric column (e.g. a root designs.csv input manifest) so its rows
+    # don't pollute the summary as unscored pseudo-designs. Fall back to the full
+    # set only if nothing has a metric column (single unconventional-name results CSV).
+    with_metrics = [p for p in selected if _csv_has_metric_column(p)]
+    return with_metrics or selected
+
+
+def _csv_has_metric_column(csv_path):
+    """True if the CSV header carries any recognized interface-metric column."""
+    aliases = {alias for names in HIGHER_BETTER.values() for alias in names}
+    rows = _common.parse_scores_csv(csv_path)
+    if not rows:
+        return False
+    return any(
+        col is not None and col.strip().lower() in aliases for col in rows[0]
+    )
 
 
 def load_designs(path):

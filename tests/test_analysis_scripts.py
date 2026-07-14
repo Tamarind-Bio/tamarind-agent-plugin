@@ -1353,3 +1353,24 @@ def test_binder_summary_prefers_scores_over_design_manifest(tmp_path: Path) -> N
 
     assert result["n_scored"] == 2
     assert result["max"] == 0.90
+
+
+def test_binder_summary_skips_metricless_manifest_directory(tmp_path: Path) -> None:
+    # Regression: a root designs.csv manifest (no metric columns) sitting alongside
+    # per-design subdirectories with real scores.csv must be skipped, not read as
+    # unscored pseudo-designs that inflate n_designs / n_unscored.
+    module = _load(
+        ROOT
+        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+    )
+    (tmp_path / "designs.csv").write_text("design,seq\nd1,AAAA\nd2,CCCC\n")
+    (tmp_path / "A").mkdir()
+    (tmp_path / "B").mkdir()
+    (tmp_path / "A" / "scores.csv").write_text("design,iptm\ndA,0.55\n")
+    (tmp_path / "B" / "scores.csv").write_text("design,iptm\ndB,0.92\n")
+
+    result = module.summarize(module.load_designs(str(tmp_path)), metric="iptm")
+
+    assert result["n_designs"] == 2
+    assert result["n_unscored"] == 0
+    assert result["max"] == 0.92
