@@ -29,6 +29,27 @@ tamarind --json logs JOB_NAME --max-lines 200
 
 Report the failure and propose a corrected payload; do not resubmit without authorization.
 
+## Cancel or delete a job
+
+Both actions are consequential and target a durable job name. Confirm the exact name against `tamarind --json jobs` (or `--batch NAME --include-subjobs`) before acting; never act on a name the user only described.
+
+Cancel a running or queued job so it stops consuming compute:
+
+```bash
+tamarind --json cancel JOB_NAME
+tamarind --json cancel --batch BATCH_NAME
+```
+
+Cancel is scope-sensitive: a batch or pipeline is cancelled with `--batch`, a single job by positional name. If the named job is not found, do not cancel a similarly named one; surface the mismatch and ask.
+
+Delete permanently removes a job and, for a batch, its subjobs. It is irreversible with no restore:
+
+```bash
+tamarind --json delete JOB_NAME
+```
+
+`delete` prompts for confirmation unless `-y` is passed. For a bulk cleanup there is no wildcard: list, filter to the exact names, show that list to the user for approval, then loop `delete -y` only over the approved set. Exclude any job not in a terminal state unless the user explicitly includes it.
+
 ## Read metrics
 
 The `status` response contains tool-specific metadata and may carry `Score` as a JSON-encoded string. Parse it defensively and report only fields present. Common families include pLDDT, pTM, ipTM, ipSAE, pDockQ, affinity/energy, design filters, and `WeightedHours`.
