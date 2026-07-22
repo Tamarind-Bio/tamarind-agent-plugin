@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Inverse Folding"
+  short_description: "Design sequences and run protein language models"
+  default_prompt: "Use $tamarind-mcp-inverse-folding to design sequences or run a protein language model through MCP."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Tool Discovery"
+  short_description: "Choose a live Tamarind tool through MCP"
+  default_prompt: "Use $tamarind-mcp-tool-discovery to choose the best live Tamarind tool for this scientific goal."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

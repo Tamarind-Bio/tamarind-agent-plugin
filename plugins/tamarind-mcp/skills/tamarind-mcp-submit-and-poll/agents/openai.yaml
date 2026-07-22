@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Job Runner"
+  short_description: "Run one validated Tamarind MCP job safely"
+  default_prompt: "Use $tamarind-mcp-submit-and-poll to validate, estimate, submit, monitor, and recover this Tamarind job."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

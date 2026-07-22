@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Binder Design"
+  short_description: "Design and filter new binders through MCP"
+  default_prompt: "Use $tamarind-mcp-binder-design to design and validate binder candidates for this target."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

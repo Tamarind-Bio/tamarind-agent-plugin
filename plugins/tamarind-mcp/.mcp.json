@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tamarind": {
+      "type": "http",
+      "url": "https://mcp.tamarind.bio/mcp",
+      "note": "Tamarind Bio remote MCP server. Uses OAuth; complete the browser authorization flow when the client first connects. Scientific submissions can consume weighted compute hours."
+    }
+  }
+}

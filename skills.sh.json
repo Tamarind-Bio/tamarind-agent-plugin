@@ -4,6 +4,9 @@
   "groupings": [
     { "title": "Setup & core", "skills": ["tamarind-api-setup", "tamarind-tool-discovery", "tamarind-submit-and-poll", "tamarind-results-analysis"] },
     { "title": "Domain tools", "skills": ["tamarind-structure-prediction", "tamarind-antibody", "tamarind-binder-design", "tamarind-inverse-folding", "tamarind-docking", "tamarind-developability", "tamarind-finetune", "tamarind-more-tools"] },
-    { "title": "Scale & orchestration", "skills": ["tamarind-batch", "tamarind-pipeline"] }
+    { "title": "Scale & orchestration", "skills": ["tamarind-batch", "tamarind-pipeline"] },
+    { "title": "MCP setup & core", "skills": ["tamarind-mcp-setup", "tamarind-mcp-tool-discovery", "tamarind-mcp-submit-and-poll", "tamarind-mcp-results-analysis"] },
+    { "title": "MCP domain tools", "skills": ["tamarind-mcp-structure-prediction", "tamarind-mcp-antibody", "tamarind-mcp-binder-design", "tamarind-mcp-inverse-folding", "tamarind-mcp-docking", "tamarind-mcp-developability", "tamarind-mcp-finetune", "tamarind-mcp-more-tools"] },
+    { "title": "MCP scale & orchestration", "skills": ["tamarind-mcp-batch", "tamarind-mcp-pipeline"] }
   ]
 }

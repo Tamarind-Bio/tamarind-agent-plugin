@@ -1,0 +1,25 @@
+{
+  "name": "tamarind-mcp",
+  "version": "0.1.0",
+  "description": "Run Tamarind Bio scientific workflows through the authenticated Tamarind MCP server without installing the CLI.",
+  "author": {
+    "name": "Tamarind Bio",
+    "url": "https://www.tamarind.bio"
+  },
+  "homepage": "https://www.tamarind.bio",
+  "repository": "https://github.com/Tamarind-Bio/tamarind-agent-plugin",
+  "license": "MIT",
+  "keywords": [
+    "tamarind",
+    "mcp",
+    "computational-biology",
+    "protein-design",
+    "structure-prediction",
+    "docking",
+    "drug-discovery"
+  ],
+  "displayName": "Tamarind Bio MCP",
+  "skills": [
+    "./skills/"
+  ]
+}

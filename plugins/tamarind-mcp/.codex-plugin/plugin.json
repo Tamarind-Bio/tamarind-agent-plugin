@@ -1,0 +1,42 @@
+{
+  "name": "tamarind-mcp",
+  "version": "0.1.0",
+  "description": "Run Tamarind Bio scientific workflows through the authenticated Tamarind MCP server without installing the CLI.",
+  "author": {
+    "name": "Tamarind Bio",
+    "url": "https://www.tamarind.bio"
+  },
+  "homepage": "https://www.tamarind.bio",
+  "repository": "https://github.com/Tamarind-Bio/tamarind-agent-plugin",
+  "license": "MIT",
+  "keywords": [
+    "tamarind",
+    "mcp",
+    "computational-biology",
+    "protein-design",
+    "structure-prediction",
+    "docking",
+    "drug-discovery"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Tamarind Bio MCP",
+    "shortDescription": "Fold, dock, design, and screen through Tamarind MCP",
+    "longDescription": "Use Tamarind Bio through its authenticated remote MCP server to discover live tools, validate and estimate settings, submit and monitor jobs, inspect outputs, run batches, and orchestrate dependent scientific workflows. This plugin is independent of the Tamarind CLI plugin.",
+    "developerName": "Tamarind Bio",
+    "category": "Education & Research",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://www.tamarind.bio",
+    "brandColor": "#00BB55",
+    "screenshots": [],
+    "defaultPrompt": [
+      "Fold this complex through Tamarind MCP",
+      "Dock this ligand through Tamarind MCP",
+      "Design and screen binders through Tamarind MCP"
+    ]
+  }
+}

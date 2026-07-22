@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Docking"
+  short_description: "Dock and score molecular binders through MCP"
+  default_prompt: "Use $tamarind-mcp-docking to choose and run the right docking or affinity workflow."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

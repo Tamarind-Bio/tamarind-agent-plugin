@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Results"
+  short_description: "Recover and analyze Tamarind MCP results"
+  default_prompt: "Use $tamarind-mcp-results-analysis to recover this Tamarind job and analyze its outputs."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

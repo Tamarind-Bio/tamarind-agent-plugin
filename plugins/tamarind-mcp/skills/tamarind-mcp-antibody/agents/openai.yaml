@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Antibody"
+  short_description: "Engineer antibodies and nanobodies through MCP"
+  default_prompt: "Use $tamarind-mcp-antibody to design or analyze this antibody workflow through Tamarind MCP."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

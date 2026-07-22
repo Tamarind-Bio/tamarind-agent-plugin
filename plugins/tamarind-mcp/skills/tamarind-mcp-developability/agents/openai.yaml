@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Developability"
+  short_description: "Filter candidates for developability through MCP"
+  default_prompt: "Use $tamarind-mcp-developability to build a developability panel for these candidates."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

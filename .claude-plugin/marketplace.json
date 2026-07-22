@@ -11,6 +11,12 @@
       "source": "./plugins/tamarind",
       "description": "Run Tamarind Bio biology tools from your agent through the Tamarind CLI.",
       "category": "science"
+    },
+    {
+      "name": "tamarind-mcp",
+      "source": "./plugins/tamarind-mcp",
+      "description": "Run Tamarind Bio biology tools from your agent through the authenticated MCP server.",
+      "category": "science"
     }
   ]
 }

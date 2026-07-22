@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Batch"
+  short_description: "Run one Tamarind tool across many inputs"
+  default_prompt: "Use $tamarind-mcp-batch to validate, estimate, submit, and monitor this multi-input batch."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"
