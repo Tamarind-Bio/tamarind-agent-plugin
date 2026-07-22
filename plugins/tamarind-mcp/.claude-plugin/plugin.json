@@ -1,7 +1,7 @@
 {
   "name": "tamarind-mcp",
   "version": "0.1.0",
-  "description": "Run Tamarind Bio scientific workflows through the authenticated Tamarind MCP server without installing the CLI.",
+  "description": "Run 300+ Tamarind Bio protein and molecular-science tools through the authenticated MCP server — structure prediction, design, docking, and analysis.",
   "author": {
     "name": "Tamarind Bio",
     "url": "https://www.tamarind.bio"
