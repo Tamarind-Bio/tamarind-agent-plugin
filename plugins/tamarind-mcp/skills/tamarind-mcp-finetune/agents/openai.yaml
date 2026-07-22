@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Fine-tuning"
+  short_description: "Fine-tune and run supported models through MCP"
+  default_prompt: "Use $tamarind-mcp-finetune to validate and run this supported fine-tuning workflow."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

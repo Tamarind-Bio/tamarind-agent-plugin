@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP More Tools"
+  short_description: "Use Tamarind long-tail scientific tools via MCP"
+  default_prompt: "Use $tamarind-mcp-more-tools to discover and run a Tamarind tool outside the dedicated workflows."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

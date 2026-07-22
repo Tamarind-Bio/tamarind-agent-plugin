@@ -1,0 +1,47 @@
+{
+  "name": "tamarind-mcp",
+  "version": "0.1.0",
+  "description": "Run 300+ Tamarind Bio protein and molecular-science tools through the authenticated MCP server — structure prediction, design, docking, and analysis.",
+  "author": {
+    "name": "Tamarind Bio",
+    "url": "https://www.tamarind.bio"
+  },
+  "homepage": "https://www.tamarind.bio",
+  "repository": "https://github.com/Tamarind-Bio/tamarind-agent-plugin",
+  "license": "MIT",
+  "keywords": [
+    "tamarind",
+    "mcp",
+    "computational-biology",
+    "protein-design",
+    "structure-prediction",
+    "docking",
+    "drug-discovery"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Tamarind Bio MCP",
+    "shortDescription": "Run 300+ protein and molecular-science tools on Tamarind Bio — structure prediction, design, docking, and analysis.",
+    "longDescription": "Connect ChatGPT to your Tamarind Bio workspace for computational protein and molecular science. Validate, estimate, submit, and monitor jobs across 300+ tools — structure prediction (AlphaFold, Chai-1, Boltz-2, ESMFold, OpenFold3), protein and binder design (RFdiffusion, ProteinMPNN, BindCraft), docking (AutoDock Vina, DiffDock, GNINA), molecular dynamics, antibody and enzyme workflows, and property prediction (solubility, thermostability, developability). Chain tools into pipelines (e.g. ProteinMPNN → AlphaFold/Chai) and run many inputs as a single batch. Browse and upload workspace files, and pull back results, output files, and logs — all from chat.",
+    "developerName": "Tamarind Bio",
+    "category": "Education & Research",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://www.tamarind.bio",
+    "brandColor": "#00BB55",
+    "screenshots": [],
+    "defaultPrompt": [
+      "Design a de novo nanobody binder to block PD-L1",
+      "Fold this sequence with AlphaFold and tell me the pLDDT: MKTVRQ…",
+      "Dock my binder to a target structure",
+      "Design 8 binders to receptor.pdb with RFdiffusion, run ProteinMPNN, then fold the top 3 with Chai",
+      "Predict solubility and thermostability for these five sequences",
+      "Predict ADME properties for my small-molecule candidates",
+      "Generate antibody variants for affinity maturation",
+      "Show my last 10 jobs and download the results from my BindCraft run"
+    ]
+  }
+}

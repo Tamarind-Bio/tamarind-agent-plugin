@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Setup"
+  short_description: "Connect and verify Tamarind MCP access"
+  default_prompt: "Use $tamarind-mcp-setup to connect and verify Tamarind MCP without submitting compute."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

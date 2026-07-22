@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Structure Prediction"
+  short_description: "Predict biomolecular structures through MCP"
+  default_prompt: "Use $tamarind-mcp-structure-prediction to choose and run a structure model for this input."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

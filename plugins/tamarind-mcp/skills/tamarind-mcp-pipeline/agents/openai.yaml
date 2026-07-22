@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Pipeline"
+  short_description: "Chain dependent Tamarind jobs through MCP"
+  default_prompt: "Use $tamarind-mcp-pipeline to plan and run this resumable multi-stage Tamarind campaign."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"
