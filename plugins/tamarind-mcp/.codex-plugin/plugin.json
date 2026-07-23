@@ -37,13 +37,13 @@
     "screenshots": [],
     "defaultPrompt": [
       "Design nanobody binders to PD-L1",
-      "Fold this sequence with AlphaFold",
-      "Dock a ligand to my receptor",
-      "Design 8 binders to receptor.pdb with RFdiffusion, run ProteinMPNN, then fold the top 3 with Chai",
-      "Predict solubility and thermostability for these five sequences",
-      "Predict ADME properties for my small-molecule candidates",
-      "Generate antibody variants for affinity maturation",
-      "Show my last 10 jobs and download the results from my BindCraft run"
+      "Predict the structure of KRAS G12C",
+      "Dock imatinib into ABL1 kinase",
+      "Design binders to the SARS-CoV-2 RBD, then refold and rank the top hits",
+      "Screen trastuzumab for developability liabilities",
+      "Predict ADME properties for sorafenib",
+      "Suggest affinity-maturation mutations for pembrolizumab",
+      "Show my recent jobs and download the latest results"
     ]
   }
 }
