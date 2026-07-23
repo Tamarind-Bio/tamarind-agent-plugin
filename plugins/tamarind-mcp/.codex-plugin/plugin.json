@@ -32,6 +32,8 @@
     ],
     "websiteURL": "https://www.tamarind.bio",
     "brandColor": "#00BB55",
+    "logo": "./assets/icon.png",
+    "composerIcon": "./assets/icon.png",
     "screenshots": [],
     "defaultPrompt": [
       "Design nanobody binders to PD-L1",
