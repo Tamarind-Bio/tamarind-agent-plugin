@@ -28,7 +28,7 @@ def test_manifest_is_cli_first_and_valid_shape() -> None:
         (ROOT / ".claude-plugin" / "marketplace.json").read_text()
     )
     assert manifest["name"] == "tamarind"
-    assert manifest["version"] == "0.2.0"
+    assert manifest["version"] == "0.2.1"
     assert claude_manifest["version"] == manifest["version"]
     assert claude_marketplace["metadata"]["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
