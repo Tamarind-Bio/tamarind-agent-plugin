@@ -24,9 +24,12 @@ If a tool reports unauthorized or the client shows that Tamarind is disconnected
 
 After OAuth completes, repeat the no-spend checks. There is no separate MCP `auth status` tool; a successful account-scoped catalog call is the connectivity signal.
 
+If OAuth never starts - the client's connect or authenticate control does nothing, or the tools stay missing after installing this plugin from its git marketplace rather than the published listing - the server has to be added by hand instead. Send the user to <https://app.tamarind.bio/api-docs/mcp-server> for their client's exact steps, and do not attempt the setup on their behalf or accept a key in chat.
+
 ## Diagnose failures
 
 - Missing tools: install or enable the `tamarind-mcp` plugin/server, then start a new task if the client requires tool discovery at task creation.
+- Missing tools after a git-marketplace install, or a connect control that does nothing: the server needs to be added manually - point the user at <https://app.tamarind.bio/api-docs/mcp-server> rather than retrying the control.
 - Unauthorized: reconnect through the client and complete OAuth once; do not loop authentication attempts.
 - Tool not found: query the live catalog instead of assuming a remembered tool name.
 - File upload egress blocked: use `uploadFile` inline for files up to its inline limit, or allow the exact host returned by `uploadFile` before retrying the streaming upload.

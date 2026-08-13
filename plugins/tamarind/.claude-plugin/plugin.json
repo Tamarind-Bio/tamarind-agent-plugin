@@ -7,6 +7,6 @@
   "repository": "https://github.com/Tamarind-Bio/tamarind-agent-plugin",
   "license": "MIT",
   "keywords": ["tamarind", "computational-biology", "protein-design", "structure-prediction", "docking", "drug-discovery"],
-  "displayName": "Tamarind Bio",
+  "displayName": "Tamarind Bio CLI",
   "skills": ["./skills/"]
 }
