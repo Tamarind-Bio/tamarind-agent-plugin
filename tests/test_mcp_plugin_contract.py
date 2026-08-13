@@ -91,14 +91,25 @@ def test_every_mcp_skill_has_metadata_and_server_dependency() -> None:
 
 
 def test_mcp_skills_never_fall_back_to_cli_or_raw_http() -> None:
-    markdown = "\n".join(path.read_text() for path in SKILLS.rglob("*.md"))
+    paths = sorted(SKILLS.rglob("*.md"))
+    markdown = "\n".join(path.read_text() for path in paths)
 
     assert not re.search(r"(?m)^\s*(?:```bash\s*)?tamarind\s+", markdown)
     assert "TAMARIND_API_KEY" not in markdown
     assert "tamarind auth" not in markdown
-    assert "app.tamarind.bio/api" not in markdown
     assert "requests.post" not in markdown
     assert "curl https://mcp.tamarind.bio" not in markdown
+
+    # The setup skill is the one place that may send the user to the website:
+    # connecting the server needs an API key, and the key and the client-by-client
+    # instructions both live under /api-docs. Every other skill must stay inside
+    # the MCP surface rather than routing work back through the web app.
+    workflow_markdown = "\n".join(
+        path.read_text()
+        for path in paths
+        if path.parent.name != "tamarind-mcp-setup"
+    )
+    assert "app.tamarind.bio/api" not in workflow_markdown
 
 
 def test_single_job_contract_is_bounded_and_retry_safe() -> None:
