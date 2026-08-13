@@ -28,7 +28,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     server_config = json.loads((PLUGIN / ".mcp.json").read_text())
 
     assert manifest["name"] == "tamarind-mcp"
-    assert manifest["version"] == "0.1.0"
+    assert manifest["version"] == "0.1.1"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
