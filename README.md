@@ -1,5 +1,7 @@
 # Tamarind Bio agent plugin
 
+> **Disclaimer:** This plugin is meant to be used via CLI only. If you'd like to use Tamarind via Codex, please use the Tamarind official published plugin (https://chatgpt.com/plugins/plugin_asdk_app_6a5fc156fad88191a3977b60131d7391?q=tamarind).
+
 Run [Tamarind Bio](https://www.tamarind.bio) from Codex or Claude Code. This repository provides two separate transport-specific plugins with parallel scientific workflows:
 
 - `tamarind`: use the independently installed Tamarind CLI.
