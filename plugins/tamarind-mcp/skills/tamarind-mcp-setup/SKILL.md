@@ -7,7 +7,7 @@ description: Connect, authenticate, or troubleshoot the Tamarind Bio MCP server 
 
 Use the remote MCP server configured by this plugin. Do not install the Tamarind CLI, request an API key first, or recreate Tamarind HTTP calls.
 
-This plugin ships the server's OAuth client configuration, so a supported client should offer to authorize on first connection rather than failing. Everything below is for when it does not.
+A supported client obtains its own OAuth client identity and offers to authorize on first connection rather than failing. Everything below is for when it does not.
 
 ## Check availability
 
