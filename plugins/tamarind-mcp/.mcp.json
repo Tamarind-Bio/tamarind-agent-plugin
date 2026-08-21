@@ -4,10 +4,7 @@
       "type": "http",
       "url": "https://mcp.tamarind.bio/mcp",
       "oauth_resource": "https://mcp.tamarind.bio/mcp",
-      "oauth": {
-        "client_id": "V8apuKVjc88f0FNP"
-      },
-      "note": "Tamarind Bio remote MCP server. Ships a pre-registered public OAuth client so the host can run the browser authorization flow on first connection without dynamic client registration. Scientific submissions can consume weighted compute hours."
+      "note": "Tamarind Bio remote MCP server. The host obtains its own OAuth client identity (CIMD where the authorization server advertises it, otherwise dynamic client registration) and runs the browser authorization flow on first connection. Do NOT pin a static oauth.client_id here: it preempts both, and the loopback redirect a local client generates cannot be pre-registered. Scientific submissions can consume weighted compute hours."
     }
   }
 }

@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.2"
+    assert manifest["version"] == "0.1.3"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -42,19 +42,20 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert server["url"] == MCP_URL
     assert server["note"].strip()
 
-    # The plugin ships a pre-registered PUBLIC (PKCE, no secret) OAuth client so
-    # hosts can authorize on install instead of falling back to dynamic client
-    # registration or a hand-added API key. `oauth_resource` is the RFC 8707
-    # resource indicator; Codex reads both keys straight out of this file.
+    # `oauth_resource` is the RFC 8707 resource indicator - safe to pin, it is
+    # our own URL and does not affect how the host identifies itself.
     assert server["oauth_resource"] == MCP_URL
-    assert set(server["oauth"]) == {"client_id"}
 
-    # Guard against shipping the placeholder: Clerk client ids are 16 chars of
-    # base62. A public repo must never carry a client SECRET - only the id.
-    assert re.fullmatch(r"[A-Za-z0-9]{16}", server["oauth"]["client_id"]), (
-        "plugins/tamarind-mcp/.mcp.json still has the placeholder client_id - "
-        "replace it with the real Clerk public OAuth client id before merging"
+    # NEVER pin a static oauth.client_id here. Codex prefers it over obtaining
+    # its own identity, which disables BOTH dynamic client registration and
+    # CIMD. It then sends a loopback redirect on an ephemeral port
+    # (http://127.0.0.1:<random>/callback/...) that cannot be pre-registered
+    # against an exact-match allowlist, so authorization fails outright.
+    assert "oauth" not in server, (
+        "a static oauth.client_id preempts CIMD/DCR and breaks authorization - "
+        "see the note in .mcp.json"
     )
+    # A public repo must never carry a client secret under any key.
     assert "client_secret" not in json.dumps(server_config)
 
 
