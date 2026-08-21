@@ -34,17 +34,26 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["skills"] == "./skills/"
     assert manifest["mcpServers"] == "./.mcp.json"
     assert re.fullmatch(r"#[0-9A-Fa-f]{6}", manifest["interface"]["brandColor"])
-    assert server_config["mcpServers"] == {
-        "tamarind": {
-            "type": "http",
-            "url": MCP_URL,
-            "note": (
-                "Tamarind Bio remote MCP server. Uses OAuth; complete the browser "
-                "authorization flow when the client first connects. Scientific "
-                "submissions can consume weighted compute hours."
-            ),
-        }
-    }
+    server = server_config["mcpServers"]["tamarind"]
+    assert set(server_config["mcpServers"]) == {"tamarind"}
+    assert server["type"] == "http"
+    assert server["url"] == MCP_URL
+    assert server["note"].strip()
+
+    # The plugin ships a pre-registered PUBLIC (PKCE, no secret) OAuth client so
+    # hosts can authorize on install instead of falling back to dynamic client
+    # registration or a hand-added API key. `oauth_resource` is the RFC 8707
+    # resource indicator; Codex reads both keys straight out of this file.
+    assert server["oauth_resource"] == MCP_URL
+    assert set(server["oauth"]) == {"client_id"}
+
+    # Guard against shipping the placeholder: Clerk client ids are 16 chars of
+    # base62. A public repo must never carry a client SECRET - only the id.
+    assert re.fullmatch(r"[A-Za-z0-9]{16}", server["oauth"]["client_id"]), (
+        "plugins/tamarind-mcp/.mcp.json still has the placeholder client_id - "
+        "replace it with the real Clerk public OAuth client id before merging"
+    )
+    assert "client_secret" not in json.dumps(server_config)
 
 
 def test_mcp_plugin_is_listed_separately_in_both_marketplaces() -> None:
