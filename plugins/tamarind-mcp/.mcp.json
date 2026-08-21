@@ -3,8 +3,7 @@
     "tamarind": {
       "type": "http",
       "url": "https://mcp.tamarind.bio/mcp",
-      "oauth_resource": "https://mcp.tamarind.bio/mcp",
-      "note": "Tamarind Bio remote MCP server. The host obtains its own OAuth client identity (CIMD where the authorization server advertises it, otherwise dynamic client registration) and runs the browser authorization flow on first connection. Do NOT pin a static oauth.client_id here: it preempts both, and the loopback redirect a local client generates cannot be pre-registered. Scientific submissions can consume weighted compute hours."
+      "note": "Tamarind Bio remote MCP server. The host obtains its own OAuth client identity and runs the browser authorization flow on first connection. Keep this entry to type/url/note only: pinning oauth.client_id preempts the host's own registration, and pinning oauth_resource makes the host send the RFC 8707 resource parameter twice, which Clerk rejects as a duplicate. Scientific submissions can consume weighted compute hours."
     }
   }
 }

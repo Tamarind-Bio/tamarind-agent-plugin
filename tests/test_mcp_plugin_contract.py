@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.3"
+    assert manifest["version"] == "0.1.4"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -42,18 +42,20 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert server["url"] == MCP_URL
     assert server["note"].strip()
 
-    # `oauth_resource` is the RFC 8707 resource indicator - safe to pin, it is
-    # our own URL and does not affect how the host identifies itself.
-    assert server["oauth_resource"] == MCP_URL
-
-    # NEVER pin a static oauth.client_id here. Codex prefers it over obtaining
-    # its own identity, which disables BOTH dynamic client registration and
-    # CIMD. It then sends a loopback redirect on an ephemeral port
-    # (http://127.0.0.1:<random>/callback/...) that cannot be pre-registered
-    # against an exact-match allowlist, so authorization fails outright.
-    assert "oauth" not in server, (
-        "a static oauth.client_id preempts CIMD/DCR and breaks authorization - "
-        "see the note in .mcp.json"
+    # Keep this entry to type/url/note ONLY. Both OAuth keys break authorization,
+    # each in its own way, and each was shipped and reverted once already:
+    #
+    #   oauth.client_id  - Codex prefers a pinned id over obtaining its own,
+    #                      disabling both DCR and CIMD. It then sends a loopback
+    #                      redirect on an ephemeral port that cannot be
+    #                      pre-registered against an exact-match allowlist.
+    #   oauth_resource   - Codex already sends the RFC 8707 resource parameter
+    #                      itself. Pinning it sends the parameter twice
+    #                      (measured: 2 vs 1) and Clerk rejects duplicates with
+    #                      invalid_request.
+    assert set(server) == {"type", "url", "note"}, (
+        "unexpected key in the tamarind server entry - oauth.client_id and "
+        "oauth_resource both break authorization; see the note in .mcp.json"
     )
     # A public repo must never carry a client secret under any key.
     assert "client_secret" not in json.dumps(server_config)
