@@ -4,7 +4,7 @@
 
 Run [Tamarind Bio](https://www.tamarind.bio) from Codex or Claude Code. This repository provides two separate transport-specific plugins with parallel scientific workflows:
 
-- `tamarind`: use the independently installed Tamarind CLI.
+- `tamarind-cli`: use the independently installed Tamarind CLI.
 - `tamarind-mcp`: use the authenticated remote Tamarind MCP server with no CLI installation.
 
 Install one or both. Their skill names are distinct, and neither plugin modifies or wraps the other.
@@ -13,7 +13,7 @@ Install one or both. Their skill names are distinct, and neither plugin modifies
 
 The repository keeps the transports isolated:
 
-- In `plugins/tamarind`, the independently versioned [`tamarind-cli`](https://github.com/Tamarind-Bio/tamarind-cli) owns authentication, catalog/schema lookup, validation, API calls, polling, files, and downloads.
+- In `plugins/tamarind-cli`, the independently versioned [`tamarind-cli`](https://github.com/Tamarind-Bio/tamarind-cli) owns authentication, catalog/schema lookup, validation, API calls, polling, files, and downloads.
 - In `plugins/tamarind-mcp`, the remote MCP server owns OAuth, discovery, validation, estimates, submissions, job state, files, and results.
 - Both plugins own intent routing, scientific workflow guidance, spend confirmation, recovery rules, and result interpretation.
 - The CLI plugin contains no MCP configuration. The MCP plugin contains no CLI commands or installation guidance.
@@ -22,9 +22,18 @@ Keeping the transports in different plugin folders prevents one surface from sil
 
 ## Install
 
+> **Renamed in 0.3.0:** the CLI plugin is now `tamarind-cli` (it was `tamarind`).
+> The MCP plugin keeps its name. Hosts identify a plugin by that name, so an
+> existing install of `tamarind@tamarind-agent-plugin` no longer resolves for
+> updates — uninstall it and install `tamarind-cli@tamarind-agent-plugin`. The
+> skills themselves are unchanged and keep their own names. The rename makes the
+> two transports legible where both sets are listed side by side, such as the
+> Claude Science skill importer, which labels each group by the plugin name.
+
+
 ### CLI plugin
 
-Install the latest published CLI. The `tamarind` plugin requires version 0.2.0 or newer:
+Install the latest published CLI. The `tamarind-cli` plugin requires version 0.2.0 or newer:
 
 ```bash
 uv tool install tamarind-cli
@@ -49,14 +58,14 @@ Then install the CLI plugin.
 
 ```bash
 codex plugin marketplace add Tamarind-Bio/tamarind-agent-plugin
-codex plugin add tamarind@tamarind-agent-plugin
+codex plugin add tamarind-cli@tamarind-agent-plugin
 ```
 
 For local development, point Codex at a checkout:
 
 ```bash
 codex plugin marketplace add /absolute/path/to/tamarind-agent-plugin
-codex plugin add tamarind@tamarind-agent-plugin
+codex plugin add tamarind-cli@tamarind-agent-plugin
 ```
 
 Start a new task after installation or update so Codex loads the new skills.
@@ -65,7 +74,7 @@ Start a new task after installation or update so Codex loads the new skills.
 
 ```bash
 claude plugin marketplace add Tamarind-Bio/tamarind-agent-plugin
-claude plugin install tamarind@tamarind-agent-plugin
+claude plugin install tamarind-cli@tamarind-agent-plugin
 ```
 
 ### MCP plugin
@@ -166,11 +175,26 @@ Scale and orchestration:
 - `tamarind-batch`: one tool across many inputs.
 - `tamarind-pipeline`: resumable, imperative multi-tool campaigns through CLI stages.
 
+Campaigns:
+
+- `tamarind-miniprotein-campaign`: a multi-method de novo miniprotein binder campaign against one target and epitope, scored on a three-arm instrument fixed before any design is seen and shipped as a ranked, diversity-capped panel.
+
 The MCP plugin provides the parallel `tamarind-mcp-*` set:
 
 - Core: `tamarind-mcp-setup`, `tamarind-mcp-tool-discovery`, `tamarind-mcp-submit-and-poll`, and `tamarind-mcp-results-analysis`.
 - Domains: `tamarind-mcp-structure-prediction`, `tamarind-mcp-antibody`, `tamarind-mcp-binder-design`, `tamarind-mcp-inverse-folding`, `tamarind-mcp-docking`, `tamarind-mcp-developability`, `tamarind-mcp-finetune`, and `tamarind-mcp-more-tools`.
 - Scale: `tamarind-mcp-batch` and `tamarind-mcp-pipeline`.
+- Campaigns: `tamarind-mcp-miniprotein-campaign`, a multi-method de novo miniprotein binder campaign against one target and epitope, scored on a three-arm instrument fixed before any design is seen and shipped as a ranked, diversity-capped panel.
+
+Both campaign skills bundle a vendored science kernel beside their SKILL.md — the
+frozen score algebra, the liability and plausibility gates, the target-mimic
+screen and the selection caps — so the numbers a campaign ships are computed the
+same way every run rather than re-derived from prose. The panel selector
+refuses to emit a panel without a passing validation-gate artifact and halts on
+any row whose gates do not reproduce to 1e-4. Re-vendor with
+`python3 tools/vendor_campaign_kernel.py --agent-repo /path/to/tamarind-agent`;
+`--check` fails when the tree is stale. The structural gates need `numpy`;
+without it they report NOT_RUN rather than passing.
 
 ## Agent contract
 
@@ -202,9 +226,9 @@ Run the repository contract tests and the official validators:
 
 ```bash
 python -m pytest -q
-python /path/to/plugin-creator/scripts/validate_plugin.py plugins/tamarind
+python /path/to/plugin-creator/scripts/validate_plugin.py plugins/tamarind-cli
 python /path/to/plugin-creator/scripts/validate_plugin.py plugins/tamarind-mcp
-for plugin in plugins/tamarind plugins/tamarind-mcp; do
+for plugin in plugins/tamarind-cli plugins/tamarind-mcp; do
   for skill in "$plugin"/skills/*; do
     test -f "$skill/SKILL.md" || continue
     python /path/to/skill-creator/scripts/quick_validate.py "$skill"

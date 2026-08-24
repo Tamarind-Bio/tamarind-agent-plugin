@@ -46,7 +46,7 @@ def _pdb_atom(
 
 
 def test_rank_batch_only_ranks_completed_rows() -> None:
-    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    script = ROOT / "plugins/tamarind-cli/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
     batch = {
         "batch_status": "Running",
@@ -75,7 +75,7 @@ def test_rank_batch_only_ranks_completed_rows() -> None:
 def test_confidence_ranking_uses_finite_metric_shared_by_all_models() -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     models = [
@@ -103,7 +103,7 @@ def test_confidence_ranking_uses_finite_metric_shared_by_all_models() -> None:
 def test_confidence_does_not_rank_without_finite_common_metric() -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     models = [
@@ -124,7 +124,7 @@ def test_confidence_does_not_rank_without_finite_common_metric() -> None:
 def test_confidence_does_not_label_unknown_applicability_as_weak_interface() -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     models = [
@@ -150,7 +150,7 @@ def test_confidence_csv_only_iptm_ranks_but_requires_interface_verification(
 ) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     scores = tmp_path / "scores.csv"
@@ -172,7 +172,7 @@ def test_confidence_csv_only_iptm_ranks_but_requires_interface_verification(
 def test_confidence_loads_best_only_scores_csv(tmp_path: Path) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     scores = tmp_path / "boltz-scores-best.csv"
@@ -193,7 +193,7 @@ def test_confidence_deduplicates_generic_metrics_and_ignores_monomer_iptm(
 ) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     (tmp_path / "metrics.csv").write_text(
@@ -224,7 +224,7 @@ def test_confidence_deduplicates_generic_metrics_and_ignores_monomer_iptm(
 def test_confidence_flags_implausible_adjacent_ca_geometry(tmp_path: Path) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     (tmp_path / "metrics-processed.csv").write_text(
@@ -262,7 +262,7 @@ def test_confidence_keeps_raw_only_candidates_beside_processed_candidates(
 ) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     processed = tmp_path / "candidate-a"
@@ -291,7 +291,7 @@ def test_confidence_uses_one_conventional_score_source_per_directory(
 ) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     (tmp_path / "scores.csv").write_text("model,ptm\nscore-row,0.8\n")
@@ -309,7 +309,7 @@ def test_confidence_uses_one_conventional_score_source_per_directory(
 def test_confidence_flags_nonfinite_ca_coordinates(tmp_path: Path) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     (tmp_path / "metrics.csv").write_text("model,ptm\nbad,0.7\n")
@@ -331,7 +331,7 @@ def test_confidence_flags_nonfinite_ca_coordinates(tmp_path: Path) -> None:
 def test_confidence_checks_insertion_code_adjacency(tmp_path: Path) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     (tmp_path / "metrics.csv").write_text("model,ptm\ninserted,0.7\n")
@@ -351,7 +351,7 @@ def test_confidence_checks_insertion_code_adjacency(tmp_path: Path) -> None:
 def test_confidence_ignores_water_only_hetero_chains(tmp_path: Path) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     (tmp_path / "metrics.csv").write_text("model,ptm,iptm\nwet,0.7,0.9\n")
@@ -378,7 +378,7 @@ def test_confidence_ignores_water_only_hetero_chains(tmp_path: Path) -> None:
 def test_confidence_surfaces_unchecked_cif_geometry(tmp_path: Path) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     (tmp_path / "metrics.csv").write_text("model,ptm\ncif-only,0.7\n")
@@ -396,7 +396,7 @@ def test_confidence_surfaces_unchecked_cif_geometry(tmp_path: Path) -> None:
 def test_confidence_does_not_attach_one_pdb_to_multiple_rows(tmp_path: Path) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     (tmp_path / "scores.csv").write_text(
@@ -418,7 +418,7 @@ def test_confidence_maps_explicit_structure_files_not_lexical_order(
 ) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     (tmp_path / "scores.csv").write_text(
@@ -448,7 +448,7 @@ def test_confidence_counts_nonprotein_atom_chains_for_interface_context(
 ) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     (tmp_path / "metrics.csv").write_text("model,ptm,iptm\ncomplex,0.6,0.7\n")
@@ -468,7 +468,7 @@ def test_confidence_counts_nonprotein_atom_chains_for_interface_context(
 def test_confidence_mixed_monomer_multimer_set_does_not_rank_on_iptm() -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     models = [
@@ -500,7 +500,7 @@ def test_confidence_labels_multiple_generic_metric_files_by_parent(
 ) -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
+        / "plugins/tamarind-cli/skills/tamarind-structure-prediction/scripts/parse_boltz_confidence.py"
     )
     module = _load(script)
     for name, ptm in (("candidate-a", 0.4), ("candidate-b", 0.7)):
@@ -527,7 +527,7 @@ def test_confidence_labels_multiple_generic_metric_files_by_parent(
 
 
 def test_rank_batch_parses_json_score_strings(tmp_path: Path) -> None:
-    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    script = ROOT / "plugins/tamarind-cli/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
     rows = [
         {"JobName": "a", "JobStatus": "Complete", "Score": json.dumps({"iptm": 0.8})},
@@ -615,7 +615,7 @@ def test_rank_batch_parses_json_score_strings(tmp_path: Path) -> None:
     ],
 )
 def test_rank_batch_infers_lower_better_metric_direction(metric: str) -> None:
-    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    script = ROOT / "plugins/tamarind-cli/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
     batch = {
         "batch_status": "Complete",
@@ -676,7 +676,7 @@ def test_rank_batch_infers_lower_better_metric_direction(metric: str) -> None:
     ],
 )
 def test_rank_batch_keeps_higher_better_metrics_descending(metric: str) -> None:
-    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    script = ROOT / "plugins/tamarind-cli/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
     batch = {
         "batch_status": "Complete",
@@ -694,7 +694,7 @@ def test_rank_batch_keeps_higher_better_metrics_descending(metric: str) -> None:
 
 
 def test_rank_batch_requires_explicit_direction_for_ambiguous_glued_p_scale() -> None:
-    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    script = ROOT / "plugins/tamarind-cli/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
     metric = "novelpKd"
     batch = {
@@ -718,7 +718,7 @@ def test_rank_batch_requires_explicit_direction_for_ambiguous_glued_p_scale() ->
 
 
 def test_rank_batch_accepts_native_cli_jobs_envelope(tmp_path: Path) -> None:
-    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    script = ROOT / "plugins/tamarind-cli/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
     path = tmp_path / "jobs.json"
     path.write_text(
@@ -752,7 +752,7 @@ def test_rank_batch_accepts_native_cli_jobs_envelope(tmp_path: Path) -> None:
 
 
 def test_rank_batch_does_not_invent_completion_from_artifacts(tmp_path: Path) -> None:
-    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    script = ROOT / "plugins/tamarind-cli/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
     subjob = tmp_path / "batch-candidate"
     subjob.mkdir()
@@ -766,7 +766,7 @@ def test_rank_batch_does_not_invent_completion_from_artifacts(tmp_path: Path) ->
 
 
 def test_completed_row_without_selected_metric_is_explicitly_unranked() -> None:
-    script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    script = ROOT / "plugins/tamarind-cli/skills/tamarind-batch/scripts/rank_batch.py"
     module = _load(script)
     batch = {
         "batch_status": "Complete",
@@ -784,7 +784,7 @@ def test_completed_row_without_selected_metric_is_explicitly_unranked() -> None:
 
 def test_non_finite_values_are_missing_and_never_ranked(tmp_path: Path) -> None:
     common_script = (
-        ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/_common.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-batch/scripts/_common.py"
     )
     common = _load(common_script)
     scores = tmp_path / "scores.csv"
@@ -802,7 +802,7 @@ def test_non_finite_values_are_missing_and_never_ranked(tmp_path: Path) -> None:
         {"Score": '{"nan": NaN, "inf": Infinity, "finite": 1.0}'}
     ) == {"nan": None, "inf": None, "finite": 1.0}
 
-    rank_script = ROOT / "plugins/tamarind/skills/tamarind-batch/scripts/rank_batch.py"
+    rank_script = ROOT / "plugins/tamarind-cli/skills/tamarind-batch/scripts/rank_batch.py"
     rank_module = _load(rank_script)
     batch = {
         "batch_status": "Complete",
@@ -820,7 +820,7 @@ def test_non_finite_values_are_missing_and_never_ranked(tmp_path: Path) -> None:
 
     binder_script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-binder-design/scripts/summarize_binder_metrics.py"
+        / "plugins/tamarind-cli/skills/tamarind-binder-design/scripts/summarize_binder_metrics.py"
     )
     binder = _load(binder_script)
     binder_result = binder.summarize(
@@ -839,7 +839,7 @@ def test_non_finite_values_are_missing_and_never_ranked(tmp_path: Path) -> None:
 def test_binder_auto_metric_maximizes_candidate_coverage() -> None:
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-binder-design/scripts/summarize_binder_metrics.py"
+        / "plugins/tamarind-cli/skills/tamarind-binder-design/scripts/summarize_binder_metrics.py"
     )
     module = _load(script)
     designs = [
@@ -869,7 +869,7 @@ def _sdf_record(name: str, **properties: float) -> str:
 
 def test_gnina_uses_sdf_cnnscore_not_vina_energy_column(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "result.sdf").write_text(
@@ -895,7 +895,7 @@ def test_docking_rejects_truncated_multimodel_file_before_pairing_scores(
     tmp_path: Path,
 ) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.pdbqt").write_text(
@@ -912,7 +912,7 @@ def test_docking_rejects_truncated_multimodel_file_before_pairing_scores(
 
 def test_docking_rejects_pose_score_count_mismatch(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.pdbqt").write_text(
@@ -929,7 +929,7 @@ def test_docking_rejects_pose_score_count_mismatch(tmp_path: Path) -> None:
 
 def test_docking_rejects_pose_score_model_rank_mismatch(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.pdbqt").write_text(
@@ -962,7 +962,7 @@ def test_docking_ranks_valid_aligned_vina_ensembles(
     tmp_path: Path, filename: str, ensemble: str
 ) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / filename).write_text(ensemble)
@@ -981,7 +981,7 @@ def test_docking_ranks_valid_aligned_vina_ensembles(
 
 def test_docking_rejects_reordered_or_duplicate_score_ranks(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.sdf").write_text(
@@ -1001,7 +1001,7 @@ def test_docking_rejects_reordered_or_duplicate_score_ranks(tmp_path: Path) -> N
 
 def test_docking_rejects_malformed_model_number(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.pdbqt").write_text(
@@ -1017,7 +1017,7 @@ def test_docking_rejects_malformed_model_number(tmp_path: Path) -> None:
 
 def test_docking_rejects_decimal_model_number(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.pdbqt").write_text(
@@ -1033,7 +1033,7 @@ def test_docking_rejects_decimal_model_number(tmp_path: Path) -> None:
 
 def test_docking_rejects_empty_pose_file(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.pdbqt").write_text("")
@@ -1047,7 +1047,7 @@ def test_docking_rejects_empty_pose_file(tmp_path: Path) -> None:
 
 def test_docking_rejects_unterminated_sdf_record(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.sdf").write_text("pose-one\n  test\n")
@@ -1061,7 +1061,7 @@ def test_docking_rejects_unterminated_sdf_record(tmp_path: Path) -> None:
 
 def test_docking_rejects_sdf_without_pose_records(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.sdf").write_text("$$$$\n")
@@ -1072,7 +1072,7 @@ def test_docking_rejects_sdf_without_pose_records(tmp_path: Path) -> None:
 
 def test_docking_rejects_pdbqt_without_atom_records(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.pdbqt").write_text(
@@ -1085,7 +1085,7 @@ def test_docking_rejects_pdbqt_without_atom_records(tmp_path: Path) -> None:
 
 def test_docking_rejects_cross_directory_affinity_pairing(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     pose_dir = tmp_path / "pose-run"
@@ -1105,7 +1105,7 @@ def test_docking_rejects_cross_directory_affinity_pairing(tmp_path: Path) -> Non
 
 def test_docking_rejects_multiple_ensemble_directories(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     for name in ("run-a", "run-b"):
@@ -1121,7 +1121,7 @@ def test_docking_rejects_multiple_ensemble_directories(tmp_path: Path) -> None:
 
 def test_docking_rejects_multiple_local_affinity_logs(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "ligand_out.pdbqt").write_text(
@@ -1139,7 +1139,7 @@ def test_docking_rejects_diffdock_poses_from_multiple_directories(
     tmp_path: Path,
 ) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     for directory, rank in (("run-a", 1), ("run-b", 2)):
@@ -1153,7 +1153,7 @@ def test_docking_rejects_diffdock_poses_from_multiple_directories(
 
 def test_docking_rejects_mixed_diffdock_extensions(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "rank1_confidence0.8.sdf").write_text("pose\n$$$$\n")
@@ -1168,7 +1168,7 @@ def test_docking_rejects_incomplete_or_duplicate_diffdock_ranks(
     tmp_path: Path, ranks: tuple[int, int]
 ) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     for index, rank in enumerate(ranks):
@@ -1182,7 +1182,7 @@ def test_docking_rejects_incomplete_or_duplicate_diffdock_ranks(
 
 def test_gnina_with_incomplete_cnn_scores_preserves_source_rank(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "result.sdf").write_text(
@@ -1203,7 +1203,7 @@ def test_gnina_with_incomplete_cnn_scores_preserves_source_rank(tmp_path: Path) 
 
 def test_docking_rerun_ignores_its_own_top_pose_outputs(tmp_path: Path) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     (tmp_path / "rank1_confidence0.8.sdf").write_text("pose 1\n$$$$\n")
@@ -1221,7 +1221,7 @@ def test_docking_rerun_ignores_its_own_top_pose_outputs(tmp_path: Path) -> None:
 
 def test_docking_human_summary_preserves_source_rank(capsys) -> None:
     script = (
-        ROOT / "plugins/tamarind/skills/tamarind-docking/scripts/extract_docking_poses.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-docking/scripts/extract_docking_poses.py"
     )
     module = _load(script)
     summary = {
@@ -1245,7 +1245,7 @@ def test_docking_human_summary_preserves_source_rank(capsys) -> None:
 
 
 def test_copied_analysis_helpers_remain_identical() -> None:
-    skills = ROOT / "plugins" / "tamarind" / "skills"
+    skills = ROOT / "plugins" / "tamarind-cli" / "skills"
     groups = [
         [
             skills / "tamarind-structure-prediction/scripts/parse_boltz_confidence.py",
@@ -1280,7 +1280,7 @@ def test_copied_analysis_helpers_remain_identical() -> None:
 def test_retained_helpers_run_from_an_unrelated_cwd(tmp_path: Path) -> None:
     scripts = sorted(
         path
-        for path in (ROOT / "plugins/tamarind/skills").glob("*/scripts/*.py")
+        for path in (ROOT / "plugins/tamarind-cli/skills").glob("*/scripts/*.py")
         if path.name != "_common.py"
     )
     assert scripts
@@ -1301,7 +1301,7 @@ def test_binder_summary_reads_every_subdirectory_csv(tmp_path: Path) -> None:
     # CSV, not silently read only the first match and drop the rest.
     script = (
         ROOT
-        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+        / "plugins/tamarind-cli/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
     )
     module = _load(script)
     (tmp_path / "design_A").mkdir()
@@ -1325,13 +1325,13 @@ def test_analysis_csv_reader_survives_row_wider_than_header(tmp_path: Path) -> N
     wide.write_text("design,iptm\nd1,0.80,EXTRACOL\n")
 
     common = _load(
-        ROOT / "plugins/tamarind/skills/tamarind-results-analysis/scripts/_common.py"
+        ROOT / "plugins/tamarind-cli/skills/tamarind-results-analysis/scripts/_common.py"
     )
     assert common.parse_scores_csv(str(wide)) == [{"design": "d1", "iptm": 0.80}]
 
     summarize = _load(
         ROOT
-        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+        / "plugins/tamarind-cli/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
     )
     result = summarize.summarize(summarize.load_designs(str(wide)), metric="iptm")
     assert result["n_scored"] == 1
@@ -1344,7 +1344,7 @@ def test_binder_summary_prefers_scores_over_design_manifest(tmp_path: Path) -> N
     # "no rankable interface metric" even though the score file is present.
     module = _load(
         ROOT
-        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+        / "plugins/tamarind-cli/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
     )
     (tmp_path / "designs.csv").write_text("design,seed\nd1,111\nd2,222\n")
     (tmp_path / "scores.csv").write_text("design,iptm\nd1,0.81\nd2,0.90\n")
@@ -1361,7 +1361,7 @@ def test_binder_summary_skips_metricless_manifest_directory(tmp_path: Path) -> N
     # unscored pseudo-designs that inflate n_designs / n_unscored.
     module = _load(
         ROOT
-        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+        / "plugins/tamarind-cli/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
     )
     (tmp_path / "designs.csv").write_text("design,seq\nd1,AAAA\nd2,CCCC\n")
     (tmp_path / "A").mkdir()
@@ -1384,7 +1384,7 @@ def test_binder_summary_prefers_metric_csv_over_higher_named_metricless_sibling(
     # directory to be dropped; pick the metric-bearing scores.csv instead.
     module = _load(
         ROOT
-        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+        / "plugins/tamarind-cli/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
     )
     (tmp_path / "A").mkdir()
     (tmp_path / "B").mkdir()
@@ -1405,7 +1405,7 @@ def test_binder_summary_disambiguates_labels_across_runs(tmp_path: Path) -> None
     # every run to the same label prefix; the label must carry the run directory.
     module = _load(
         ROOT
-        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+        / "plugins/tamarind-cli/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
     )
     for run, val in (("run1", "0.40"), ("run2", "0.91")):
         d = tmp_path / run / "final_ranked_designs"
@@ -1427,7 +1427,7 @@ def test_binder_summary_collects_both_aggregate_filename_conventions(
     # truncated to whichever aggregate filename matches first.
     module = _load(
         ROOT
-        / "plugins/tamarind/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
+        / "plugins/tamarind-cli/skills/tamarind-results-analysis/scripts/summarize_binder_metrics.py"
     )
     (tmp_path / "bgen" / "final_ranked_designs").mkdir(parents=True)
     (tmp_path / "bcraft").mkdir()

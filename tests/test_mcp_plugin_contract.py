@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.4"
+    assert manifest["version"] == "0.1.5"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -68,8 +68,8 @@ def test_mcp_plugin_is_listed_separately_in_both_marketplaces() -> None:
     codex_entries = {entry["name"]: entry for entry in codex["plugins"]}
     claude_entries = {entry["name"]: entry for entry in claude["plugins"]}
 
-    assert set(codex_entries) == {"tamarind", "tamarind-mcp"}
-    assert set(claude_entries) == {"tamarind", "tamarind-mcp"}
+    assert set(codex_entries) == {"tamarind-cli", "tamarind-mcp"}
+    assert set(claude_entries) == {"tamarind-cli", "tamarind-mcp"}
     assert codex_entries["tamarind-mcp"]["source"]["path"] == "./plugins/tamarind-mcp"
     assert claude_entries["tamarind-mcp"]["source"] == "./plugins/tamarind-mcp"
 
@@ -78,7 +78,7 @@ def test_every_mcp_skill_has_metadata_and_server_dependency() -> None:
     skill_dirs = sorted(
         path for path in SKILLS.iterdir() if (path / "SKILL.md").is_file()
     )
-    assert len(skill_dirs) == 14
+    assert len(skill_dirs) == 15
 
     for skill_dir in skill_dirs:
         skill_path = skill_dir / "SKILL.md"
@@ -166,7 +166,7 @@ def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
 
 
 def test_cli_plugin_remains_cli_only() -> None:
-    cli_plugin = ROOT / "plugins/tamarind"
+    cli_plugin = ROOT / "plugins/tamarind-cli"
     manifest = json.loads(
         (cli_plugin / ".codex-plugin/plugin.json").read_text()
     )

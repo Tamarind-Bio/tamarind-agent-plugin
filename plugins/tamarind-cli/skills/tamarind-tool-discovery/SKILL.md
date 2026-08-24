@@ -59,5 +59,6 @@ Compute trivial local properties locally when a standard library can answer them
 - Single job: use the matching domain skill plus `tamarind-submit-and-poll`.
 - One tool over many inputs: use `tamarind-batch`.
 - Multiple dependent tools: use `tamarind-pipeline`.
+- A multi-method binder campaign ranked on a scoring method fixed in advance: use `tamarind-miniprotein-campaign`.
 
 Read [references/selection_principles.md](references/selection_principles.md) for disambiguation examples and [references/tool_catalog.md](references/tool_catalog.md) for catalog field semantics.

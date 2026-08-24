@@ -6,12 +6,12 @@
   },
   "metadata": {
     "description": "Tamarind Bio biology tools as ready-to-call agent skills: structure prediction, docking, binder design and screening, fine-tuning.",
-    "version": "0.2.1"
+    "version": "0.3.0"
   },
   "plugins": [
     {
-      "name": "tamarind",
-      "source": "./plugins/tamarind",
+      "name": "tamarind-cli",
+      "source": "./plugins/tamarind-cli",
       "description": "Run Tamarind Bio biology tools from your agent through the Tamarind CLI.",
       "category": "science"
     },
