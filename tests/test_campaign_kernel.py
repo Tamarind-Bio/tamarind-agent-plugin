@@ -944,3 +944,48 @@ def test_a_legitimately_varied_pool_is_not_caught_by_that_check(tmp_path: Path) 
 
     assert done.returncode == 0, done.stdout + done.stderr
     assert "identical" not in done.stdout
+
+
+def test_a_row_scored_on_a_different_sequence_halts(tmp_path: Path) -> None:
+    """The one defect no gate can catch, reproduced for real during verification.
+
+    Every gate recomputes against the row's OWN sequence, so a row whose SCORES
+    came from a different molecule reproduces perfectly and ranks on numbers
+    that are not its own. Hand-building a scoring submission produced exactly
+    this twice in one small run: one row mislabelled, and one whose submitted
+    sequence matched no design anywhere.
+    """
+    rows = _population(3)
+    rows[1]["scored_sequence"] = _SEQUENCES[2]          # folded a different design
+    rows[0]["scored_sequence"] = rows[0]["sequence"]
+    rows[2]["scored_sequence"] = rows[2]["sequence"]
+    pool = tmp_path / "swapped.json"
+    pool.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(pool), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+
+    assert done.returncode != 0
+    out = done.stdout + done.stderr
+    assert "scored on a different sequence" in out
+    assert "p1" in out, f"the halt must name the row: {out}"
+
+
+def test_matching_scored_sequences_pass_and_absence_warns(tmp_path: Path) -> None:
+    """Present-and-equal must not trip; absent must not be silent."""
+    ok = _population(3)
+    for r in ok:
+        r["scored_sequence"] = r["sequence"]
+    good = tmp_path / "ok.json"
+    good.write_text(json.dumps(ok))
+    done = _run("select_panel.py", str(good), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "a.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "scored on a different sequence" not in done.stdout + done.stderr
+
+    silent = tmp_path / "nocol.json"
+    silent.write_text(json.dumps(_population(3)))
+    done = _run("select_panel.py", str(silent), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "b.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "no row carries scored_sequence" in done.stderr

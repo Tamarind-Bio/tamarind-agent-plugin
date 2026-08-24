@@ -377,6 +377,53 @@ def main():
     except ImportError as exc:
         raise SystemExit(f"vendored kernel unavailable: {exc}")
 
+    # DID THE SCORES COME FROM THIS ROW'S SEQUENCE?
+    #
+    # Nothing else on this page can tell. Every gate recomputes against the
+    # row's own sequence, so a row whose SCORES belong to a different molecule
+    # reproduces perfectly and ranks on numbers that are not its own.
+    #
+    # This is not hypothetical. Building a scoring submission by hand-copying
+    # sequences into it produced, in one small real run: one row whose id named
+    # design n1 while the job folded n0, and one row whose submitted sequence
+    # matched NO design in any result table -- it shared a prefix with a real
+    # design and then diverged. The platform accepted both, folded them, and
+    # returned entirely plausible confidence numbers.
+    #
+    # So carry `scored_sequence` -- the sequence the scoring job actually
+    # received, read back from the platform, not from the notes you submitted
+    # from -- and check it here.
+    scored = [r for r in rows if str(r.get("scored_sequence") or "").strip()]
+    mismatched = [
+        r for r in scored
+        if str(r["scored_sequence"]).strip().upper() != str(r.get("sequence") or "").strip().upper()
+    ]
+    if mismatched:
+        lines = []
+        for r in mismatched[:5]:
+            lines.append(
+                f"  {r.get('design_id')}: row carries {len(str(r.get('sequence') or ''))} aa, "
+                f"the scoring job folded {len(str(r['scored_sequence']))} aa"
+            )
+        raise SystemExit(
+            f"HALTED: {len(mismatched)} row(s) were scored on a different sequence "
+            "than they carry:\n" + "\n".join(lines) + "\n"
+            "  These rows rank on numbers that belong to another molecule, and every "
+            "gate still reproduces\n"
+            "  because the gates read the row's own sequence. Rebuild the scoring "
+            "pool by threading the\n"
+            "  sequence programmatically from the generation table -- never by "
+            "transcribing it."
+        )
+    if rows and not scored:
+        print(
+            "  WARNING: no row carries scored_sequence, so nothing verifies that these "
+            "scores came from\n"
+            "  these designs. A row scored on another molecule ranks normally and "
+            "reproduces every gate.",
+            file=sys.stderr,
+        )
+
     # A repeated design_id is a WHOLE-RUN refusal, not a per-row unranking:
     # nothing here can tell which row is the real one, and the caps, the
     # rejects ledger and the trace all address rows by that id. The kernel
@@ -646,6 +693,30 @@ def main():
                 for r in panel
                 if _num(r.get("monomer_plddt")) is not None
             }
+            # The arms do NOT agree on the pLDDT scale. Measured on real rows for
+            # the same construct: ESMFold2 reports 0-1 (0.7884) and Protenix
+            # reports 0-100 (86.75). Compared against a 0-1 floor, a 0-100 value
+            # clears it for EVERY design -- the foldability gate stops rejecting
+            # anything while still reporting PASS on every row. That is a vacuous
+            # gate, which is worse than an absent one, so refuse rather than
+            # rescale: only the campaign knows which arm produced the column.
+            over = sorted(
+                (did for did, v in plddt.items() if v is not None and v > 1.0)
+            )
+            if over and args.monomer_floor <= 1.0:
+                raise SystemExit(
+                    f"HALTED: monomer_plddt exceeds 1.0 on {len(over)} row(s) while "
+                    f"--monomer-floor is {args.monomer_floor} (a 0-1 scale).\n"
+                    f"  first: {', '.join(over[:5])}\n"
+                    "  The arms disagree on this scale -- ESMFold2 reports pLDDT on "
+                    "0-1 and Protenix on 0-100.\n"
+                    "  Against a 0-1 floor a 0-100 value passes for every design, so "
+                    "the foldability gate\n"
+                    "  would report PASS on every row while rejecting nothing. Put the "
+                    "column and the floor on\n"
+                    "  the same scale in the pool, and record which arm's convention "
+                    "the frozen floor is in."
+                )
             if plddt:
                 try:
                     reports["monomer"] = sr.monomer_recompute(
