@@ -166,3 +166,167 @@ def test_vendor_rewriter_does_not_corrupt_relative_imports() -> None:
     for line in ("from dataclasses import dataclass", "import numpy as np",
                  "from ._rubric_constants import X", "from ._foo import Y"):
         assert tool.rewrite(line) == line, line
+
+
+# ── round 1 codex findings, each pinned by the failure it caused ────────────
+
+def _run(script: str, *args: str, scripts=MCP_SCRIPTS):
+    return subprocess.run(
+        [sys.executable, str(scripts / script), *args], capture_output=True, text=True
+    )
+
+
+def _gate(tmp_path: Path, **over) -> Path:
+    body = {"status": "PASS", "separation": 0.31,
+            "controls": ["pos_ctrl", "neg_1", "target_selfpair"]}
+    body.update(over)
+    p = tmp_path / "gate.json"
+    p.write_text(json.dumps(body))
+    return p
+
+
+def _candidate(design_id: str, z: float, **over) -> dict:
+    row = {
+        "design_id": design_id, "sequence": "MKQLEDKVEELLSKNYHLENEVARLKKLVGERGS",
+        "root_backbone_id": f"b-{design_id}", "structure_method": "boltzgen",
+        "seq_method": "solublempnn", "tm_cluster": f"c-{design_id}",
+        "target_mimic": "PASS", "opt_round": 0, "n_seeds": 5,
+        "ipsae_ef2full": 0.5 + z / 100, "sc_DockQ_ef2full": 0.3 + z / 100,
+    }
+    row.update(over)
+    return row
+
+
+def test_the_ipsae_mask_stamp_is_not_treated_as_a_score_term(tmp_path: Path) -> None:
+    """Every scored row is REQUIRED to carry `ipsae_mask`, and it is a string.
+
+    Swept into the algebra it parses to None and makes the whole row ineligible,
+    so a correctly-stamped campaign scores nothing at all.
+    """
+    rows = [_candidate("d1", 5.0, ipsae_mask="PER_PROTOMER_MAX(not UNION)")]
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "1", "--out", str(tmp_path / "s.csv"), "--json")
+    assert done.returncode == 0, done.stderr
+    summary = json.loads(done.stdout)
+    assert summary["panel_size_shipped"] == 1
+    assert "ipsae_mask" not in summary["realized_terms"]
+
+
+def test_candidates_are_sorted_before_the_caps_not_after(tmp_path: Path) -> None:
+    """The selector admits greedily in input order.
+
+    Both rows share a root backbone, so the 5% cap admits exactly one. Sorting
+    only the finished panel cannot recover the better row the caps excluded.
+    """
+    shared = {"root_backbone_id": "b1", "tm_cluster": "c1"}
+    rows = [
+        _candidate("low", -9.0, rank_zscore=-9.0, **shared),
+        _candidate("high", 9.0, rank_zscore=9.0, **shared),
+    ]
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    out = tmp_path / "s.csv"
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "1", "--out", str(out))
+    assert done.returncode == 0, done.stderr
+    shipped = [line.split(",")[0] for line in out.read_text().splitlines()[1:]]
+    assert shipped == ["high"], f"input-order selection admitted {shipped}"
+
+
+def test_a_null_score_row_is_never_ranked(tmp_path: Path) -> None:
+    """final_score non-null is never relaxed; such rows are unranked, not shipped."""
+    rows = [_candidate("ok", 1.0), _candidate("broken", 1.0, ipsae_ef2full=None)]
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "5", "--json")
+    assert done.returncode == 0, done.stderr
+    summary = json.loads(done.stdout)
+    assert summary["unranked"] == 1
+    assert summary["panel_size_shipped"] == 1
+
+
+def test_a_status_only_gate_artifact_is_refused(tmp_path: Path) -> None:
+    """PASS has to say what separated the controls, not merely that something did."""
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps([_candidate("d1", 1.0)]))
+
+    bare = tmp_path / "bare.json"
+    bare.write_text(json.dumps({"status": "PASS"}))
+    assert "no numeric `separation`" in _run(
+        "select_panel.py", str(src), "--gate", str(bare)
+    ).stderr
+
+    thin = _gate(tmp_path, controls=["only_one"])
+    assert "fewer than two `controls`" in _run(
+        "select_panel.py", str(src), "--gate", str(thin)
+    ).stderr
+
+
+def test_a_path_in_the_sequence_field_is_refused_not_salvaged(tmp_path: Path) -> None:
+    """The kernel's normalizer would turn `results/design1.pdb` into a protein.
+
+    Fixed at this boundary rather than in the vendored kernel, which must stay
+    byte-identical to upstream.
+    """
+    rows = [_candidate("d1", 1.0), _candidate("bad", 1.0, sequence="results/design1.pdb")]
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "5", "--json")
+    summary = json.loads(done.stdout)
+    assert summary["unranked"] == 1
+    assert any("non-residue" in r for r in summary["unranked_reasons"])
+
+
+@pytest.mark.parametrize(
+    "over,expected",
+    [
+        ({"opt_round": 0, "parent_design_id": "p1"}, "round-0 design claims a parent"),
+        ({"opt_round": 3}, "carries no parent_design_id"),
+        ({"opt_round": ""}, "opt_round is blank"),
+        ({"opt_round": 2, "parent_design_id": "self"}, "its own parent"),
+    ],
+)
+def test_broken_optimization_lineage_is_refused(tmp_path: Path, over, expected) -> None:
+    """A child that mints a fresh root escapes the per-root cap looking ordinary."""
+    row = _candidate("self", 1.0, **over)
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps([row]))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "5", "--json")
+    summary = json.loads(done.stdout)
+    assert summary["unranked"] == 1
+    assert any(expected in r for r in summary["unranked_reasons"]), summary["unranked_reasons"]
+
+
+def test_gates_refuse_a_pool_row_with_no_durable_identifier(tmp_path: Path) -> None:
+    """A silently dropped row is an ungated design with no ledger entry."""
+    pool = tmp_path / "p.json"
+    pool.write_text(json.dumps([{"design_id": "d1", "sequence": "MKQL"}, {"sequence": "MKQL"}]))
+    done = _run("campaign_gates.py", str(pool))
+    assert done.returncode != 0
+    assert "no design_id or id" in done.stderr
+
+    dupes = tmp_path / "d.json"
+    dupes.write_text(json.dumps([{"design_id": "d1"}, {"design_id": "d1"}]))
+    assert "duplicate design_id" in _run("campaign_gates.py", str(dupes)).stderr
+
+
+def test_gates_mark_the_job_borne_checks_not_run_rather_than_omitting_them(
+    tmp_path: Path,
+) -> None:
+    """An absent column reads downstream like a gate that ran and found nothing."""
+    pool = tmp_path / "p.json"
+    pool.write_text(json.dumps([{"design_id": "d1", "sequence": "MKQLEDKVEELLSKNYHLENEVARLKK"}]))
+    out = tmp_path / "gates.csv"
+    done = _run("campaign_gates.py", str(pool), "--out", str(out), "--json")
+    assert done.returncode == 0, done.stderr
+    header = out.read_text().splitlines()[0]
+    for column in ("monomer_foldability_verdict", "novelty_verdict", "fold_class"):
+        assert column in header, column
+    counts = json.loads(done.stdout)["verdict_counts"]
+    assert counts["monomer_foldability"] == {"NOT_RUN": 1}
+    assert counts["novelty"] == {"NOT_RUN": 1}

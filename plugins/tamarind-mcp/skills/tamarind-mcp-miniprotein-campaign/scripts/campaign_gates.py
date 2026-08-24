@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Run the pre-scoring gates over a design pool, before any co-folding spend.
 
-The four gates the protocol makes mandatory before a design may be scored:
-liability (composition entropy, hydrophobic patches, homopolymer runs, cysteine
-parity), structural plausibility (backbone geometry, steric clashes, core
-packing), the target-mimic screen (TM-score against every target and control
-chain), and fold class for the diversity target. Novelty's database limb is a
-Tamarind job and stays in the skill; its cheap sequence-level half runs here.
+What runs HERE, on the host, at zero co-folding cost: liability (composition
+entropy, hydrophobic patches, homopolymer runs, cysteine parity), structural
+plausibility (backbone geometry, steric clashes, core packing), the target-mimic
+screen (TM-score against every target and control chain), and fold class for the
+diversity target.
+
+Two mandatory gates CANNOT run here, and this script says so on every row rather
+than leaving them absent: monomer foldability needs a binder-alone fold, and the
+database limb of novelty needs a sequence-identity search. Both are Tamarind
+jobs. They are emitted as NOT_RUN with a reason, because an absent column reads
+downstream exactly like a gate that ran and found nothing.
 
 Every gate emits its own NUMBERS, not just a verdict, because the sheet writer
 recomputes each one and matches to 1e-4 -- a verdict with no numbers beside it
@@ -121,10 +126,25 @@ def main():
             refs = [tuple(pair) for pair in json.load(fh)]
 
     rows, rejects, counts = [], [], {}
-    for entry in _load_pool(args.pool):
+    pool = _load_pool(args.pool)
+    # A silently dropped row is an ungated design with no ledger entry proving
+    # it stayed out -- indistinguishable downstream from one that passed. Name
+    # the offender and refuse the pool.
+    nameless = [i for i, e in enumerate(pool)
+                if not str(e.get("design_id") or e.get("id") or "").strip()]
+    if nameless:
+        shown = ", ".join(str(i) for i in nameless[:5])
+        raise SystemExit(
+            f"refusing the pool: {len(nameless)} row(s) carry no design_id or id "
+            f"(first at index {shown}).\n"
+            "A row with no durable identifier cannot be tracked into or out of a gate."
+        )
+    seen = set()
+    for entry in pool:
         did = str(entry.get("design_id") or entry.get("id") or "").strip()
-        if not did:
-            continue
+        if did in seen:
+            raise SystemExit(f"refusing the pool: duplicate design_id {did!r}")
+        seen.add(did)
         pdb = entry.get("designed_structure_path") or entry.get("structure_path")
         chain = entry.get("binder_chain")
         row = {"design_id": did}
@@ -143,11 +163,40 @@ def main():
         row.update(pev)
         row["target_mimic_verdict"] = mv
         row.update(mev)
+
+        # Fold class feeds the >=10% non-all-alpha diversity target. Reported,
+        # never a ranking gate.
+        if pdb and os.path.exists(pdb):
+            try:
+                fold = helpers.dssp_fold_class(pdb, chain=chain)
+                row["fold_class"] = getattr(fold, "fold_class", None) or getattr(fold, "label", str(fold))
+                helical = getattr(fold, "helical_fraction", None)
+                if helical is not None:
+                    row["fold_helical_fraction"] = helical
+            except Exception as exc:
+                row["fold_class"] = VERDICT_NOT_RUN
+                row["fold_class_not_run_reason"] = f"{type(exc).__name__}: {exc}"
+        else:
+            row["fold_class"] = VERDICT_NOT_RUN
+            row["fold_class_not_run_reason"] = "no designed structure on this row"
+
+        # The two gates this script cannot run. Written explicitly: an absent
+        # column reads downstream exactly like a gate that ran and passed.
+        row["monomer_foldability_verdict"] = VERDICT_NOT_RUN
+        row["monomer_foldability_not_run_reason"] = (
+            "needs a binder-alone fold job; run it and join monomer_plddt onto the row"
+        )
+        row["novelty_verdict"] = VERDICT_NOT_RUN
+        row["novelty_not_run_reason"] = (
+            "needs a sequence-identity search job; run it on the survivors and join the verdict"
+        )
+
         if preason or mreason:
             row["gate_not_run_reason"] = "; ".join(r for r in (preason, mreason) if r)
 
         for gate, verdict in (
-            ("liability", lv), ("structural_plausibility", pv), ("target_mimic", mv)
+            ("liability", lv), ("structural_plausibility", pv), ("target_mimic", mv),
+            ("monomer_foldability", VERDICT_NOT_RUN), ("novelty", VERDICT_NOT_RUN),
         ):
             counts.setdefault(gate, {}).setdefault(verdict, 0)
             counts[gate][verdict] += 1

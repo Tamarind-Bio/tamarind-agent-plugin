@@ -1,6 +1,6 @@
 # Tamarind Bio agent plugin
 
-This repository packages Tamarind Bio workflows as Codex and Claude Code skills. It contains two intentionally separate plugins: `plugins/tamarind` uses the independently released CLI, while `plugins/tamarind-mcp` uses the authenticated remote MCP server. Do not mix transports inside either plugin.
+This repository packages Tamarind Bio workflows as Codex and Claude Code skills. It contains two intentionally separate plugins: `plugins/tamarind-cli` uses the independently released CLI, while `plugins/tamarind-mcp` uses the authenticated remote MCP server. Do not mix transports inside either plugin.
 
 ## Architecture rules
 
@@ -91,7 +91,7 @@ plugins/tamarind-mcp/
 Before handing off changes:
 
 1. Run repository tests.
-2. Validate both `plugins/tamarind` and `plugins/tamarind-mcp` with the plugin validator.
+2. Validate both `plugins/tamarind-cli` and `plugins/tamarind-mcp` with the plugin validator.
 3. Validate every skill with `quick_validate.py`.
 4. Compile and test each retained Python helper.
 5. Run CLI help-contract tests.

@@ -13,7 +13,7 @@ Install one or both. Their skill names are distinct, and neither plugin modifies
 
 The repository keeps the transports isolated:
 
-- In `plugins/tamarind`, the independently versioned [`tamarind-cli`](https://github.com/Tamarind-Bio/tamarind-cli) owns authentication, catalog/schema lookup, validation, API calls, polling, files, and downloads.
+- In `plugins/tamarind-cli`, the independently versioned [`tamarind-cli`](https://github.com/Tamarind-Bio/tamarind-cli) owns authentication, catalog/schema lookup, validation, API calls, polling, files, and downloads.
 - In `plugins/tamarind-mcp`, the remote MCP server owns OAuth, discovery, validation, estimates, submissions, job state, files, and results.
 - Both plugins own intent routing, scientific workflow guidance, spend confirmation, recovery rules, and result interpretation.
 - The CLI plugin contains no MCP configuration. The MCP plugin contains no CLI commands or installation guidance.
@@ -226,9 +226,9 @@ Run the repository contract tests and the official validators:
 
 ```bash
 python -m pytest -q
-python /path/to/plugin-creator/scripts/validate_plugin.py plugins/tamarind
+python /path/to/plugin-creator/scripts/validate_plugin.py plugins/tamarind-cli
 python /path/to/plugin-creator/scripts/validate_plugin.py plugins/tamarind-mcp
-for plugin in plugins/tamarind plugins/tamarind-mcp; do
+for plugin in plugins/tamarind-cli plugins/tamarind-mcp; do
   for skill in "$plugin"/skills/*; do
     test -f "$skill/SKILL.md" || continue
     python /path/to/skill-creator/scripts/quick_validate.py "$skill"
