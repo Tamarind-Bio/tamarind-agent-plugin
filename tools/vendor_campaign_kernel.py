@@ -104,6 +104,29 @@ DESTS = [
 ]
 
 
+def recorded_ref() -> str:
+    """The ref the current tree was actually vendored from.
+
+    `--ref` used to default to `main`, but `campaign/cda/` does not exist
+    there -- the modules live on an unmerged branch. The default therefore
+    failed for anyone who did not already know to pass `--ref`, and it failed
+    as a raw CalledProcessError rather than a diagnosis, so `--check` (the
+    whole point of the manifest) was inoperable out of the box.
+
+    Read the ref back from the manifest instead of restating it here: a
+    constant copied into a second place is a constant that goes stale, and
+    this one is already written down by the generator below.
+    """
+    for dest in DESTS:
+        manifest = pathlib.Path(__file__).resolve().parents[1] / dest / "VENDORED.md"
+        if not manifest.exists():
+            continue
+        found = re.search(r"^- ref: `([^`]+)`", manifest.read_text(), re.M)
+        if found:
+            return found.group(1)
+    return "main"
+
+
 def rewrite(text: str) -> str:
     """Point intra-package imports at the vendored copy.
 
@@ -124,7 +147,11 @@ def rewrite(text: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--agent-repo", required=True, help="path to a tamarind-agent checkout")
-    ap.add_argument("--ref", default="main", help="git ref to vendor from")
+    ap.add_argument(
+        "--ref",
+        default=recorded_ref(),
+        help="git ref to vendor from (defaults to the ref recorded in VENDORED.md)",
+    )
     ap.add_argument("--check", action="store_true", help="fail if the tree is stale")
     args = ap.parse_args()
 
@@ -134,9 +161,22 @@ def main() -> int:
         return 2
 
     def git(*a: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(repo), *a], check=True, capture_output=True, text=True
-        ).stdout
+        done = subprocess.run(
+            ["git", "-C", str(repo), *a], capture_output=True, text=True
+        )
+        if done.returncode:
+            # A missing ref or path is the ORDINARY failure here -- the kernel
+            # lives on a branch, so a checkout without it is the common case.
+            # Say which ref and which path, because an unhandled
+            # CalledProcessError told the operator neither.
+            raise SystemExit(
+                f"git {' '.join(a)} failed in {repo}:\n"
+                f"  {done.stderr.strip()}\n"
+                f"  The kernel is vendored from `{SRC_PREFIX}/` at ref "
+                f"`{args.ref}`. Fetch that ref in the agent checkout, or pass "
+                f"--ref with one that carries it."
+            )
+        return done.stdout
 
     commit = git("rev-parse", args.ref).strip()
     rubrics = git("show", f"{args.ref}:{RUBRICS_PATH}")

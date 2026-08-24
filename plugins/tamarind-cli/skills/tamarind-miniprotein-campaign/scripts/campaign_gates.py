@@ -213,8 +213,22 @@ def main():
         if pdb and os.path.exists(pdb):
             try:
                 fold = helpers.dssp_fold_class(pdb, chain=chain)
-                row["fold_class"] = getattr(fold, "fold_class", None) or getattr(fold, "label", str(fold))
+                label = getattr(fold, "fold_class", None) or getattr(fold, "label", None)
                 helical = getattr(fold, "helical_fraction", None)
+                # The kernel does NOT raise when it cannot classify -- it hands
+                # back a FoldClass whose `.fold_class` is None and whose str()
+                # is "unknown". Falling through to str(fold) minted a fourth
+                # token beside PASS/REJECT/NOT_RUN, carrying no reason, which
+                # `references/selection.md` forbids. An unclassifiable fold is
+                # a gate that did not run, and it has to say why.
+                if not label or str(label).strip().lower() == "unknown":
+                    row["fold_class"] = VERDICT_NOT_RUN
+                    row["fold_class_not_run_reason"] = (
+                        "the fold classifier returned no class for this structure "
+                        "(no secondary structure resolved on the designed chain)"
+                    )
+                else:
+                    row["fold_class"] = label
                 if helical is not None:
                     row["fold_helical_fraction"] = helical
             except Exception as exc:
@@ -235,8 +249,21 @@ def main():
             "needs a sequence-identity search job; run it on the survivors and join the verdict"
         )
 
-        if preason or mreason:
-            row["gate_not_run_reason"] = "; ".join(r for r in (preason, mreason) if r)
+        # Route each reason by ITS OWN verdict. The kernel returns a `reason`
+        # for any outcome, so folding them together wrote REJECT rationales
+        # into a column named `_not_run_reason` -- and a consumer filtering on
+        # "this column is non-empty" then counted refused designs as gates that
+        # never ran, which is the exact confusion every NOT_RUN here exists to
+        # prevent.
+        not_run, rejected_because = [], []
+        for verdict, reason in ((pv, preason), (mv, mreason)):
+            if not reason:
+                continue
+            (not_run if verdict == VERDICT_NOT_RUN else rejected_because).append(reason)
+        if not_run:
+            row["gate_not_run_reason"] = "; ".join(not_run)
+        if rejected_because:
+            row["gate_reject_reason"] = "; ".join(rejected_because)
 
         for gate, verdict in (
             ("liability", lv), ("structural_plausibility", pv), ("target_mimic", mv),

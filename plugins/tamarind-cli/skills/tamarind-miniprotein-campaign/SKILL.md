@@ -29,6 +29,10 @@ python3 "$SKILL_DIR/scripts/select_panel.py" candidates.json --gate gate.json --
 
 Resolve `SKILL_DIR` to the directory holding this `SKILL.md`; do not assume the shell starts there. The scripts need `numpy` for the structural gates — without it they report those gates **NOT_RUN**, which is honest, and they never report them passed.
 
+**`numpy` also switches off the write-time recompute**, and that is the larger loss: without it `select_panel.py` prints `gate recompute: SKIPPED - disclose this` and ships the sheet anyway, so the halt in §7 that catches a row whose gates do not reproduce is simply not running. A stock machine often has no `numpy`. Install it before the campaign rather than discovering at the sheet that the campaign's last check never fired — and if you genuinely cannot, say in the report that gate reproduction was not verified.
+
+The pool these scripts read is **not** the shape any tool emits. Building it is a real step, and the two ways it goes wrong silently — an inverted chain split and a collapsed identifier — are in [references/pool_schema.md](references/pool_schema.md). Read it before the first gate run.
+
 **Where each piece runs.** Put the scripts on the workspace's own compute and keep every artifact — the frozen plan, the gate verdict, the rejects ledger, each stage's surviving pool, the sheet — in workspace storage under stable names, because later stages read them back rather than re-deriving them. Where the workspace can run review passes as separate agents, use one per review in §8 and keep them strictly serial. Where it cannot, run them yourself in the same order and say so.
 
 **What is still on you.** `select_panel.py` refuses to emit a panel without a PASS gate artifact, and it halts on a row whose gates do not reproduce — those two are mechanical. Nothing, however, stops you from submitting a scoring job that skips the gate entirely. That boundary is yours to hold, and §5 is where it costs the most.
@@ -58,14 +62,17 @@ Run one small canary per generation method **on the real campaign target with pr
 
 **Only UNAVAILABLE releases a method from its floor.** Recording it for a method you merely have not tested quietly excuses that method from the campaign.
 
-**Read the files, not the file listing.** Download the canary and open its actual result table — often neither the first nor the largest file — and read the run's own log for a stage that died silently:
+**Read the files, not the file listing.** Ask the schema which file is the result before you open anything — its output contract names the actual result table, and every other table the job wrote is an intermediate. It is often neither the first nor the largest file, and guessing from the listing is what once cost a working method its place in a campaign. Then download the canary and read the run's own log for a stage that died silently:
 
 ```bash
+tamarind --json schema TOOL          # its output contract names the real result table
 tamarind --json results CANARY_NAME --download /absolute/path/to/canary
 tamarind --json logs CANARY_NAME --max-lines 200
 ```
 
 Then name **which stage** lost the designs. "This method produced nothing" is a restatement, not a diagnosis, and it is the sentence that drops a working method.
+
+**Check the job's status before you read absence as evidence.** An empty log and an empty file listing look identical whether the job has not started, is still running, or finished having produced nothing. Resolve the status with `tamarind --json status CANARY_NAME` first: only a *terminal* job supports a verdict. A queued job is NOT_PROBED, not RAN_NO_YIELD.
 
 When the diagnosis points at a setting, change that setting and re-run the canary. **At most two diagnosis-driven retries**, each changing something a diagnosis pointed at; then record the drop with its consequence and move that compute to methods that are producing. The common repairable shape is a generator whose own in-job sequence step rejects everything: turn that step off and route its backbones through this campaign's own sequence-design pass instead.
 

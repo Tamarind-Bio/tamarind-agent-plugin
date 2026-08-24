@@ -757,3 +757,145 @@ def test_a_degenerate_term_halts_with_its_cause_named(tmp_path: Path) -> None:
     assert done.returncode != 0
     assert "rank_zscore is undefined for every eligible row" in done.stderr
     assert "sc_DockQ_ef2full" in done.stderr
+
+
+# ── Fixes found by running the skill end to end against live prod ────────────
+# Every test below reproduced a defect that shipped in the merged skill. The
+# first one is the worst kind: a refusal that was written, documented, tested
+# by nothing, and dead.
+
+
+def test_a_recompute_mismatch_names_the_row_instead_of_crashing(tmp_path: Path) -> None:
+    """The halt in §7 must PRINT the row whose gates did not reproduce.
+
+    The kernel declares `mismatches` as a list of design-id STRINGS, but this
+    branch read them as mappings -- so the halt raised AttributeError and the
+    operator got a traceback instead of the id and the gate. It fired on every
+    mismatch, i.e. exactly whenever the check actually caught something.
+    """
+    rows = _population(4)
+    # Carry a liability number that cannot reproduce from this row's own sequence.
+    rows[1]["liability_max_homopolymer_run"] = 999
+    rows[1]["liability_min_window_entropy_bits"] = 0.001
+    pool = tmp_path / "candidates.json"
+    pool.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(pool), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "4", "--out", str(tmp_path / "sheet.csv"))
+
+    assert "Traceback" not in done.stderr, done.stderr
+    assert "AttributeError" not in done.stderr
+    out = done.stdout + done.stderr
+    if "HALTED" in out:
+        assert "p1" in out, f"the halt must name the row: {out}"
+        assert "liability" in out
+
+
+def test_a_duplicate_design_id_is_refused_cleanly(tmp_path: Path) -> None:
+    """A repeated id makes the caps, the ledger and the trace ambiguous.
+
+    campaign_gates.py already refused this in a clean paragraph one stage
+    earlier; the selector let the kernel's bare ValueError escape instead.
+    """
+    rows = _population(3)
+    rows[2]["design_id"] = rows[0]["design_id"]
+    pool = tmp_path / "dupe.json"
+    pool.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(pool), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+
+    assert done.returncode != 0
+    assert "Traceback" not in done.stderr, done.stderr
+    assert "duplicate design_id" in done.stdout + done.stderr
+
+
+def test_an_empty_panel_names_why_the_rows_were_unranked(tmp_path: Path) -> None:
+    """The row-intrinsic checks drop rows BEFORE selection.
+
+    So a pool emptied entirely that way has empty `rejection_counts`, and the
+    refusal used to print no reason at all -- on precisely the run where the
+    operator has nothing else to go on.
+    """
+    rows = _population(3)
+    for row in rows:
+        row["opt_round"] = ""
+    pool = tmp_path / "allbad.json"
+    pool.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(pool), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+
+    out = done.stdout + done.stderr
+    assert "no candidate survived" in out
+    assert "unranked because" in out, f"the refusal must name a reason: {out}"
+    assert "opt_round" in out
+
+
+def _gated(tmp_path: Path, rows: list[dict]) -> list[dict]:
+    pool = tmp_path / "pool.json"
+    pool.write_text(json.dumps(rows))
+    out = tmp_path / "gates.csv"
+    done = _run("campaign_gates.py", str(pool), "--out", str(out))
+    assert out.exists(), done.stdout + done.stderr
+    import csv
+    with out.open() as fh:
+        return list(csv.DictReader(fh))
+
+
+def test_a_reject_reason_is_not_written_into_the_not_run_column(tmp_path: Path) -> None:
+    """The kernel returns a `reason` for ANY verdict, not only NOT_RUN.
+
+    Folding them together wrote REJECT rationales into a column named
+    `gate_not_run_reason`, so a consumer filtering on it counted refused
+    designs as gates that never ran -- the exact confusion every NOT_RUN in
+    this script exists to prevent.
+    """
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    for row in rows:
+        if row.get("gate_not_run_reason"):
+            for gate in ("structural_plausibility_verdict", "target_mimic_verdict"):
+                assert row.get(gate) != "REJECT" or row.get("gate_reject_reason"), (
+                    f"{row['design_id']}: a REJECT rationale landed in the "
+                    f"not-run column: {row['gate_not_run_reason']!r}"
+                )
+
+
+def test_an_unclassifiable_fold_is_not_a_fourth_verdict_token(tmp_path: Path) -> None:
+    """`selection.md` allows PASS / REJECT / NOT_RUN and nothing else.
+
+    The fold classifier does not RAISE when it cannot classify -- it returns a
+    value whose str() is "unknown" -- so the except branch never fired and a
+    reasonless fourth token reached the sheet.
+    """
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    for row in rows:
+        fold = (row.get("fold_class") or "").strip()
+        assert fold.lower() != "unknown", "an unclassifiable fold must be NOT_RUN, not 'unknown'"
+        if fold == "NOT_RUN":
+            assert row.get("fold_class_not_run_reason"), (
+                f"{row['design_id']}: NOT_RUN with no reason"
+            )
+
+
+def test_the_drift_check_defaults_to_the_ref_it_was_vendored_from() -> None:
+    """`--ref` defaulted to `main`, where the source package does not exist.
+
+    So the drift detector the manifest exists to enable was inoperable out of
+    the box, and failed as an unhandled CalledProcessError rather than a
+    diagnosis. The default is now read back from the manifest itself.
+    """
+    tool = ROOT / "tools/vendor_campaign_kernel.py"
+    spec = importlib.util.spec_from_file_location("vendor_tool", tool)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    manifest = (MCP_SCRIPTS / "_kernel/VENDORED.md").read_text()
+    assert f"- ref: `{module.recorded_ref()}`" in manifest
+    assert module.recorded_ref() != "main"

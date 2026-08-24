@@ -19,6 +19,43 @@ The lowercase token is the job `type`; the name in parentheses is the only spell
 | `boltzdesign` | BoltzDesign1 | optional |
 | `protein-hunter` | Protein Hunter | optional |
 
+## Defaults you must override, per method
+
+**Every starred method needs settings set explicitly, and at least four of them produce something that is not a miniprotein binder campaign if you accept their defaults.** These are not tuning knobs — at defaults the method silently does the wrong job, and the canary in §2 still returns PASS because *something* ran. Resolve each against `getJobSchema` before submitting; this is a grounded snapshot, not the authority.
+
+| method | setting | default | why you must set it |
+|---|---|---|---|
+| `rfdiffusion` | `task` | **`Motif Scaffolding`** | **Not binder design.** All of `targetChains`, `binderLength`, `binderHotspots` are scoped to `Binder Design` and are ignored otherwise. Set `task: "Binder Design"`. |
+| | `binderLength` | required | A **string** range (`"60-80"`), not a number. |
+| `boltzgen` | `binderType` | **`de-novo-nanobody`** | **The default designs a nanobody** — the modality §0 puts out of scope. Set `binderType: "protein"`. |
+| | `budget` | **2** | Caps designs *returned* regardless of `numDesigns`. Left alone, a request for 50 backbones yields **2**, and the per-method floor silently goes undischarged. |
+| | `lengthRange` | protein `"100,150"` | Exists **only** on the `protein`/`peptide` tasks — so length is unsettable until `binderType` is right. The default also sits inside the mimic band. |
+| | `filterBindingSite` | **false** | Supplying `bindingSite` does **not** filter on it; the conditioning is soft and the schema says so. |
+| `pxdesign` | `pxdesignMode` | **`generation`** | Raw backbones, **no ranked table and no output contract at all**. Only `extended` writes `summary.csv`. |
+| | `binderLength` | **10** | Below this campaign's own 35-residue floor; every row would be refused by the gate. |
+| `mosaic-hallucinate` | `binderLength` | **220** | Above the 160 ceiling. |
+| `freebindcraft` | `numDesigns` | **1** | It generates until this many designs *pass its filters*, and stops early on its runtime cap — so a run can end partial and silently short. |
+| `genie3` | `foldNumModels` | 5 | Rows are per predicted **model**, and `rank` is the AF2 model rank, not a design ordinal — there is no design identifier at all. See [pool_schema.md](pool_schema.md). |
+
+## Aiming at the frozen epitope — the key per method
+
+Five spellings and four value grammars. Submission validates against that type's own schema and rejects the whole job on the first unrecognized key, so a spelling borrowed from a neighbour costs the entire round.
+
+| method | aiming field(s) | value shape |
+|---|---|---|
+| `rfdiffusion` | `targetChains` + `binderHotspots` | `{"A": "20 21 23"}` — space |
+| `rfdiffusion3` | `targetChains` + `hotspots` | no example in schema |
+| `freebindcraft` | `chains` + `hotspotResidues` | `{"A": "1-10"}` — dash range |
+| `boltzgen` | `targetChains` + `bindingSite` / `notBindingSite` | no example in schema |
+| `pxdesign` | `targetChains` + `hotspots` | `{"A": "12-33"}` — dash range |
+| `proteina-complexa` | `targetChains` + `hotspotResidues` | `{"A": "37,39,49,98"}` — comma |
+| `genie3` | `targetChains` + `hotspots` (**required**) | `{"A": "261 263 264"}` — space |
+| `boltzdesign` | `constraintChain` + `constraintResidues` | comma-separated |
+| `mosaic-hallucinate` | **none** — sequence-conditioned | diversity arm |
+| `protein-hunter` | **none** — sequence-conditioned | diversity arm |
+
+Three of these carry **no example** in the schema, so the value shape cannot be read off it. Validate a single job before committing a round to that method.
+
 **No method opens the campaign by default.** The protocol names them as peers and requires backbones from each, so a preferred first method is a finger on the scale of the very comparison the campaign exists to make. A method whose outputs will not parse is a gap to disclose and fix, never a reason to substitute a different method for it.
 
 **Per-method floor: at least 50 backbones into the scored pool from every starred method not proved UNAVAILABLE.** NOT_PROBED still owes them — the way to discharge that is to run the canary, not to assume the method is dead. Beyond the floor, reallocate toward whichever methods perform best on this target and epitope, while staying under the selection caps.

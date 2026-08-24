@@ -239,6 +239,20 @@ def _bad_gate_verdicts(row):
     return None
 
 
+def _mismatch_id(entry):
+    """The design id inside one recompute mismatch.
+
+    The kernel declares `mismatches` as a list of design-id STRINGS
+    (`_kernel/sheet_recompute.py`), so reading it as a mapping raised
+    AttributeError and crashed the very halt this id is printed by -- the
+    operator got a traceback instead of the row and the gate. Accept both
+    shapes so a widened kernel contract cannot resurrect that failure.
+    """
+    if isinstance(entry, dict):
+        return str(entry.get("design_id") or entry.get("id") or entry)
+    return str(entry)
+
+
 def _canonical_method(value):
     """Fold a method token to its canonical form.
 
@@ -362,6 +376,31 @@ def main():
         from _kernel import qa_selection_helpers as selection
     except ImportError as exc:
         raise SystemExit(f"vendored kernel unavailable: {exc}")
+
+    # A repeated design_id is a WHOLE-RUN refusal, not a per-row unranking:
+    # nothing here can tell which row is the real one, and the caps, the
+    # rejects ledger and the trace all address rows by that id. The kernel
+    # catches it too, but only as a bare ValueError escaping mid-selection --
+    # every other refusal on this path is a clean paragraph, so raise it here
+    # in the same shape campaign_gates.py already uses one stage earlier.
+    seen_ids, duplicated = set(), []
+    for row in rows:
+        did = row.get("design_id") or row.get("id")
+        if did is None:
+            continue
+        if did in seen_ids:
+            duplicated.append(str(did))
+        seen_ids.add(did)
+    if duplicated:
+        shown = ", ".join(sorted(set(duplicated))[:5])
+        raise SystemExit(
+            f"refusing to build a panel: duplicate design_id {shown}.\n"
+            "  Design ids address rows in the caps, the rejects ledger and the "
+            "trace, so a repeated one makes all three ambiguous.\n"
+            "  This usually means two pools were concatenated, or a "
+            "sequence-design pass minted a second id space over the same "
+            "backbones."
+        )
 
     # ── ELIGIBILITY FIRST, THEN THE ALGEBRA ─────────────────────────────────
     # rank_zscore is TRANSDUCTIVE: the mean and spread come from the scored
@@ -651,7 +690,7 @@ def main():
             if failed:
                 lines = []
                 for name, rows_bad in failed.items():
-                    ids = ", ".join(str(m.get("design_id") or m) for m in rows_bad[:5])
+                    ids = ", ".join(_mismatch_id(m) for m in rows_bad[:5])
                     lines.append(f"  {name}: {len(rows_bad)} row(s) (first: {ids})")
                 raise SystemExit(
                     "HALTED: carried gate numbers do not reproduce from the row's own "
@@ -733,11 +772,19 @@ def main():
                 (result.get("rejection_counts") or {}).items(), key=lambda kv: -kv[1]
             )
         )
+        # The row-intrinsic checks (bad sequence, broken lineage, absent
+        # verdict, unusable n_seeds) drop a row BEFORE selection, so they never
+        # reach `rejection_counts`. A pool emptied entirely that way printed a
+        # refusal naming no reason at all -- on precisely the run where the
+        # operator has nothing else to go on. Name both populations: the caps
+        # are one repair, the malformed rows are a different one.
+        why = ", ".join(sorted({r["unranked_reason"] for r in unranked}))
         raise SystemExit(
             "refusing to report success: no candidate survived to the panel.\n"
             f"  {len(rows)} candidate(s) in, {len(unranked)} unranked, "
             f"{len(ranked)} reached selection.\n"
             + (f"  rejected by: {detail}\n" if detail else "")
+            + (f"  unranked because: {why}\n" if why else "")
             + "Nothing was written. Fix the pool upstream rather than shipping an empty sheet."
         )
 

@@ -4,13 +4,25 @@
 
 ## The three arms
 
-All three are all-atom co-folders, one sample per seed. The bold name is the only one you use with the user. **Never refer to an arm by position** — "the third arm" names nothing a protein designer can act on.
+All three are all-atom co-folders. The bold name is the only one you use with the user. **Never refer to an arm by position** — "the third arm" names nothing a protein designer can act on.
 
-- **ESMFold2 with MSA** — target-chain MSAs, binder single-sequence.
-- **ESMFold2 (fast)** — single-sequence only. Its released checkpoint has no MSA encoder, so passing an MSA is a silent no-op; never claim it used one.
-- **Protenix-v2** — target-chain MSAs, binder single-sequence.
+**Two of the three arms are the same tool.** They are separated by a `model` setting, not by a job type, and that is the single most important mechanical fact on this page. Resolve all of it with `getJobSchema` before submitting; this snapshot is grounded but it is not the authority.
 
-All three compute the interface confidence term in-job, but it degrades to a soft warning rather than a job failure, and it is correctly skipped for a monomer construct. **Verify the column per arm on the rows in hand.** A missing column is silent and is caught by checking, not by trusting.
+| Arm (user-facing) | Job `type` | Settings that select it |
+|---|---|---|
+| **ESMFold2 with MSA** | `esmfold2` | `{"model": "esmfold2", "useMSA": true}` |
+| **ESMFold2 (fast)** | `esmfold2` | `{"model": "esmfold2-fast"}` |
+| **Protenix-v2** | `protenix` | — |
+
+Three traps, each of which produces a campaign that looks complete and is not:
+
+- **Omitting `model` runs the same arm twice.** `model` defaults to `esmfold2`, so two submissions that differ only in the label you gave them are one arm run twice. The rows come back with identical columns and nothing downstream can tell. That is the "never tier the arm axis" invariant failing silently, which is the failure this whole section exists to prevent. **Set `model` explicitly on every ESMFold2 submission, including the full one.**
+- **`esmfold2-binder-design` is a different tool** — a binder *generator*, not a co-folder. A catalog search for "esmfold" returns it beside the two you want. Select on the exact token, never on name similarity.
+- **The fast checkpoint has no MSA encoder.** `useMSA` is conditional on `model == "esmfold2"` and does not apply to the fast model, which always runs single-sequence. Never claim the fast arm used an MSA.
+
+**The per-chain MSA policy is not expressible on this platform, and that is a disclosed instrument reduction.** `useMSA` is a single global boolean over the whole prediction; Protenix exposes no MSA toggle at all. There is no way to give the target chain an MSA while holding the binder single-sequence. Record what you actually ran — MSA on or off for the entire complex — and never describe the run in per-chain terms the settings could not have produced.
+
+All three compute the interface confidence term in-job (`ipSAE_*`, per ordered chain pair plus a `_max` aggregate), but it degrades to a soft warning rather than a job failure, and it is correctly skipped for a monomer construct. **Verify the column per arm on the rows in hand.** A missing column is silent and is caught by checking, not by trusting.
 
 Three constructs are needed and they are different submissions:
 
@@ -23,6 +35,12 @@ Three constructs are needed and they are different submissions:
 - **Interface confidence per arm** = minimum over both alignment directions, then **max over seeds**.
 - **Self-consistency per arm** = structural agreement between the designed complex and that arm's prediction **at the argmax-interface-confidence seed** — not the best-agreement seed. Record both argmax seeds per arm so seed concordance is auditable. Chain mapping is the best symmetric relabeling, which applies on monomeric targets too, since chain ids may differ between designed and predicted structures.
 - **Pose term** = the **minimum** over the arms that ran, passing at or above the frozen threshold (default 0.23). Because it is a minimum, it is comparable across designs only when the same arms ran for each: two arms of three reads **systematically higher** than three, so a row missing an arm's term is written NOT_RUN rather than given a minimum over what is left. Never approximate this term from the legs that did run.
+
+  **Where `sc_DockQ` comes from — read this before you build the column.** No co-folding arm emits it. It is a *structural comparison you run yourself*: the *self-consistency* DockQ between the design's own structure and that arm's predicted complex, at the argmax-interface-confidence seed. On this platform that is the **`dockq`** tool ("Evaluate your docking interface"), submitted per arm on the two structures. `dockq` takes `.pdb`; an arm that wrote `.cif` needs converting first, and the platform does no format sniffing.
+
+  **Do not substitute `pDockQ_*` or `pDockQ2_*`.** They are already on the arms' own result rows, they are named almost identically, and their live descriptions carry the same "above ~0.23 indicates an acceptable interface" sentence as this term's frozen threshold — so the substitution is easy, tempting, and looks right. It is the single most damaging error available on this page. `pDockQ` is a *predicted* DockQ inferred from pLDDT and PAE **in the same forward pass that produced the confidence terms**. Swapping it in replaces the campaign's only geometric check with a fourth confidence estimate correlated with the three already in the score. A design whose arms confidently agree on a wrong pose then passes every limb — which is precisely and exactly the failure the pose term exists to catch. The platform ships `dockq` and `pdockq` as two separate tools; the distinction is real and the campaign depends on it.
+
+  If you cannot run the structural comparison, the pose limb is **NOT_RUN** — with the consequence stated below — never `pDockQ` wearing this term's name.
 - **final score** = the **raw mean of the terms actually realized**. Never z-scored, never averaging a NOT_RUN term as 0. Every row names which subset it realized.
 - **rank score** = the per-target weighted z-score average of those same realized terms, each confidence z-term weighted **4** and each self-consistency z-term weighted **1**. A NOT_RUN term is absent from the average, never zero.
 - **z-scores are transductive** — the mean and spread depend on the scored pool, so they are comparable only within the batch that produced them, never across waves or campaigns. Record raw values and seed count on every row so any batch can be re-standardized. **Rank and select on the z-score; report the raw numbers.**
@@ -37,6 +55,10 @@ Three constructs are needed and they are different submissions:
 
 - **Screen** — 1 seed per arm.
 - **Intermediate and final** — **5 distinct integer seeds** per arm. Assert the seeds are distinct: a per-design standard deviation of exactly 0 across more than one seed is a bug, not a result.
+
+**Seeds and samples are two different axes, and the arms do not default alike.** Structures per submission is `numSeeds × numSamples`, and *seed* diversity is the axis this instrument tiers on — samples are diffusion draws within one seed. **Set both explicitly on every arm.** Leaving them to defaults is how one arm quietly runs a different instrument from another, which makes a cross-arm minimum incomparable while every column still looks populated. Read each arm's own defaults with `getJobSchema` rather than assuming they match.
+
+**The seed is not reliably recoverable from the result rows on the ranking construct.** The `seed` column is conditionally present and is documented as omitted on multi-chain complex runs in prod — and the complex *is* the ranking construct. So "assert the seeds are distinct" and "record both argmax seeds per arm" cannot be discharged by reading that column. Carry the seed yourself: submit one job per seed with the seed in the job name, and join it on. A campaign that cannot say which seed produced a row cannot make either assertion, and must say so rather than implying an audit it did not do.
 
 ## The validation check, before production scoring
 
