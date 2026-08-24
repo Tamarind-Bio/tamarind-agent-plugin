@@ -43,22 +43,33 @@ The lowercase token is the job `type`; the name in parentheses is the only spell
 
 Five spellings and four value grammars. Submission validates against that type's own schema and rejects the whole job on the first unrecognized key, so a spelling borrowed from a neighbour costs the entire round.
 
-| method | aiming field(s) | value shape |
-|---|---|---|
-| `rfdiffusion` | `targetChains` + `binderHotspots` | `{"A": "20 21 23"}` — space |
-| `rfdiffusion3` | `targetChains` + `hotspots` | no example in schema |
-| `freebindcraft` | `chains` + `hotspotResidues` — **OPTIONAL, auto-selects** | `{"A": "1-10"}` — dash range |
-| `boltzgen` | `targetChains` + `bindingSite` / `notBindingSite` | no example in schema |
-| `pxdesign` | `targetChains` + `hotspots` | `{"A": "12-33"}` — dash range |
-| `proteina-complexa` | `targetChains` + `hotspotResidues` | `{"A": "37,39,49,98"}` — comma |
-| `genie3` | `targetChains` + `hotspots` (**required**) | `{"A": "261 263 264"}` — space |
-| `boltzdesign` | `constraintChain` + `constraintResidues` | comma-separated |
-| `mosaic-hallucinate` | **none** — sequence-conditioned | diversity arm |
-| `protein-hunter` | **none** — sequence-conditioned | diversity arm |
+| method | chain field | aiming field | required? | value shape |
+|---|---|---|---|---|
+| `rfdiffusion` | `targetChains` | `binderHotspots` | optional | `{"A": "20 21 23"}` — space |
+| `rfdiffusion3` | `targetChains` | `hotspots` | optional | no example in schema |
+| `freebindcraft` | `chains` | `hotspotResidues` | **optional — AUTO-SELECTS** | `{"A": "1-10"}` — dash range |
+| `boltzgen` | `targetChains` | `bindingSite` / `notBindingSite` | optional | no example in schema |
+| `pxdesign` | `targetChains` | `hotspots` | optional | `{"A": "12-33"}` — dash range |
+| `proteina-complexa` | `targetChains` | `hotspotResidues` | optional | `{"A": "37,39,49,98"}` — comma |
+| `genie3` | `targetChains` | `hotspots` | **REQUIRED** | `{"A": "261 263 264"}` — space |
+| `boltzdesign` | `targetChains` (+ `constraintChain` scopes the picker) | `constraintResidues` | optional | comma-separated |
+| `mosaic-hallucinate` | **none** — `targetSequence` only | — | — | cannot be aimed |
+| `protein-hunter` | **none** — `targetSequence`/`targetCCD` | — | — | cannot be aimed |
 
-Three of these carry **no example** in the schema, so the value shape cannot be read off it. Validate a single job before committing a round to that method.
+Three carry **no example**, so the value shape cannot be read off the schema. The file field differs too — `genie3` takes `targetFile`, not `pdbFile`, and an unrecognized key fails the whole job. Validate one job per method before committing a round to it.
 
-**Check whether the aiming field is REQUIRED, and treat an optional one as the hazard it is.** A required field fails loudly when you forget it. An optional one does not — the job runs, and the method aims wherever it likes. `freebindcraft` is confirmed to work this way. Before you submit a method's first production round, confirm from its schema that the aiming field is required, or that you have supplied it; then confirm from the run's own output that the site it used is the site you froze. "Every method got the same epitope" is a claim about what came back, not about what you sent.
+**Seven of the eight aimable methods accept no epitope without complaint.** Only `genie3` refuses — measured: omitting `hotspots` returns `valid: false` ("At least one residue is required"), while omitting `freebindcraft`'s `hotspotResidues` returns **`valid: true`** and runs. Forgetting the epitope is therefore a silent event on almost every method, and it fails in two different ways:
+
+- **FreeBindCraft substitutes its own epitope** — it selects hotspots automatically and designs against a site you did not choose. Its designs then look like ordinary members of the pool aimed somewhere else.
+- **The other six drop the constraint entirely** — the binder lands wherever the model prefers. Proteina-Complexa says so outright: "will design without specified hotspots."
+
+Neither errors, and the difference matters: the first is a *wrong* epitope, the second is *no* epitope.
+
+**Audit adherence from the output, not from what you submitted.** Two methods hand you the check for free — `genie3` emits `target_hotspot_coverage` ("fraction of user-specified target hotspot residues the designed binder engages") and `boltzgen` emits `bindsite_under_*rmsd`. FreeBindCraft's `Target_Hotspot` is documented "empty if auto-selected", so a blank cell there means the epitope was not yours. For the rest, compute interface contacts against the frozen site yourself.
+
+**Setting `bindingSite` on `boltzgen` is necessary but not sufficient.** Its own `filterBindingSite` description states that "the soft bindingSite conditioning alone does not guarantee adherence" — so set `filterBindingSite: true` (default `false`) or accept that the aim is a bias rather than a constraint, and say which.
+
+"Every method got the same epitope" is a claim about what came back, not about what you sent.
 
 **No method opens the campaign by default.** The protocol names them as peers and requires backbones from each, so a preferred first method is a finger on the scale of the very comparison the campaign exists to make. A method whose outputs will not parse is a gap to disclose and fix, never a reason to substitute a different method for it.
 
