@@ -53,6 +53,7 @@ to carry these or the row goes to the unranked section with its reason:
 | `target` | one target across the whole file, or none at all. The rank score is per-target and transductive, so two targets pooled changes every z-score |
 | `structure_method`, `seq_method` | canonicalized before counting, so `rfdiffusion3` / `RFdiffusion3` / `rfdiffusion-3` count as ONE method rather than three |
 | binder length | 35-160 residues. The >25%-from-the-target-chain mimic band needs the frozen construct and is the skill's to enforce, not the script's |
+| `pose_PASS`, `pose_dockq` | **derived, never trusted** — recomputed as the min over the realized `sc_DockQ_*` terms against the frozen 0.23 threshold, and the run halts when a carried verdict disagrees. A row missing any arm's term carries `NOT_RUN`, never a min over what is left |
 
 Two whole-run refusals, distinct from per-row ones: it will not emit a panel
 whose distinct `structure_method` count is below **3** — that floor is absolute,
@@ -63,6 +64,17 @@ missing file. It also refuses to rank at all when no `sc_DockQ_*` column
 survives: losing the whole pose limb is a **disclosed reduction** that must be
 named with `--allow-reduced-instrument` and reported, not a smaller version of
 the same score.
+
+It also refuses to rank when `rank_zscore` is undefined for **every** eligible
+row — which happens when any single term is constant across the pool, since a
+term with no spread has no z-score and the weighted average inherits that
+pool-wide. It names the degenerate term rather than reporting an empty panel.
+
+Pass `--companion per_seed_metrics.csv` to check the sheet against a *different*
+artifact: every ranked design must appear, no (design, arm) group may be
+uniformly null, and each per-arm aggregate must equal the max over that design
+and arm's seed rows. Recomputing a row's score from its own cells cannot catch a
+cell that is stale or misjoined but still numeric; only the companion can.
 
 A short panel that clears the floor **does** ship. "Ship the actual N" is the
 instruction; padding with duplicates is what is forbidden.

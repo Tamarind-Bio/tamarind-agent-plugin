@@ -70,6 +70,76 @@ BINDER_LEN_MIN, BINDER_LEN_MAX = 35, 160
 # panel size the caller asked for.
 ABSOLUTE_STRUCTURE_METHOD_FLOOR = 3
 
+# pose_dockq is the MIN over the arms that ran, and pose_PASS is that value
+# against the frozen threshold. Both are derived here rather than trusted,
+# because pose_PASS sits AHEAD of rank_zscore in the rank key: one stale or
+# hand-authored TRUE sorts a pose-failing design above every honest row, and
+# corrupts cap admission order on the way.
+POSE_THRESHOLD_DEFAULT = 0.23
+
+
+def _verify_companion(panel, path, ipsae_names, tolerance=1e-4):
+    """Check the ranked rows against the per-seed companion.
+
+    The failure this catches is an aggregate term cell that is STALE or joined to
+    the WRONG design while staying numeric -- recomputing the score from that
+    same cell cannot see it, which is why the check has to come from a different
+    artifact.
+
+    Two things are verified. COVERAGE: every ranked design_id appears, and no
+    (design, arm) group is uniformly null on the ranking metric. VALUE: each
+    row's per-arm ipSAE aggregate equals the MAX over that design-and-arm's seed
+    rows, which is the frozen aggregation rule and one operation, not a
+    re-derivation of the score.
+    """
+    with open(path, newline="") as fh:
+        companion = list(csv.DictReader(fh))
+    if not companion:
+        return {"ran": False, "reason": f"{path} is empty"}
+
+    fields = set(companion[0])
+    for required in ("design_id", "arm"):
+        if required not in fields:
+            return {"ran": False, "reason": f"{path} has no {required!r} column"}
+    metric = next(
+        (c for c in ("ipsae_min", "ipsae", "ipSAE_min", "ipSAE") if c in fields), None
+    )
+
+    per_group = {}
+    for entry in companion:
+        key = (str(entry.get("design_id")), str(entry.get("arm")).strip())
+        per_group.setdefault(key, []).append(_num(entry.get(metric)) if metric else None)
+
+    seen = {design for design, _ in per_group}
+    missing = [str(r.get("design_id")) for r in panel if str(r.get("design_id")) not in seen]
+    uniformly_null = [
+        f"{design}/{arm}" for (design, arm), values in per_group.items()
+        if metric and all(v is None for v in values)
+    ]
+
+    mismatches = []
+    if metric:
+        for row in panel:
+            design = str(row.get("design_id"))
+            for name in ipsae_names:
+                arm = name[len(IPSAE_PREFIX):]
+                values = [v for v in per_group.get((design, arm), []) if v is not None]
+                carried = _num(row.get(name))
+                if not values or carried is None:
+                    continue
+                if abs(max(values) - carried) > tolerance:
+                    mismatches.append(
+                        f"{design}/{arm}: sheet {carried:.6f} vs companion max {max(values):.6f}"
+                    )
+    return {
+        "ran": True,
+        "metric_column": metric,
+        "rows": len(companion),
+        "missing_from_companion": missing,
+        "uniformly_null_groups": uniformly_null,
+        "value_mismatches": mismatches,
+    }
+
 
 def _load_rows(path):
     with open(path) as fh:
@@ -271,6 +341,10 @@ def main():
     ap.add_argument("--trace", help="write the cap/rejection/relaxation trace here")
     ap.add_argument("--allow-campaign-failure", action="store_true",
                     help="write the sheet even when the panel is below the structure-method floor; for inspection only, never to ship")
+    ap.add_argument("--companion",
+                    help="per_seed_metrics.csv; verifies coverage and that each per-arm\naggregate is the max over that design and arm's seed rows")
+    ap.add_argument("--pose-threshold", type=float, default=POSE_THRESHOLD_DEFAULT,
+                    help="frozen pose_dockq threshold; pose_PASS is derived, never trusted")
     ap.add_argument("--allow-reduced-instrument", action="store_true",
                     help="rank without the pose limb; a DISCLOSED reduction that must be\nreported on every row and in the deliverable")
     ap.add_argument("--skip-recompute", action="store_true",
@@ -374,6 +448,28 @@ def main():
     # constant across the pool, or fewer than two rows are eligible -- means the
     # ranking metric is UNDEFINED for that row. Ranking it anyway would order it
     # by file position while the sheet claims it was ranked on the instrument.
+    # A term with no spread has an undefined z-score, and the weighted average
+    # is None for EVERY row as a result -- not just the offending one. Unranking
+    # them all would empty the panel and report "no candidate survived", which
+    # names the symptom and hides the cause. Halt on the cause instead.
+    if eligible and all(row.get("rank_zscore") is None for row in eligible):
+        flat = [
+            (name, [_num(r.get(name)) for r in eligible])
+            for name in realized
+        ]
+        constant = [
+            name for name, values in flat
+            if len({v for v in values if v is not None}) == 1
+        ]
+        raise SystemExit(
+            "refusing to rank: rank_zscore is undefined for every eligible row.\n"
+            + (f"  constant across the pool: {', '.join(constant)}\n" if constant else "")
+            + f"  eligible rows: {len(eligible)}\n"
+            "A term with no spread has no z-score, and the weighted average inherits that\n"
+            "for the whole pool. Widen the pool or drop the degenerate term and re-score --\n"
+            "do not rank on an instrument that cannot separate these designs."
+        )
+
     ranked = []
     for row in eligible:
         if row.get("final_score") is None:
@@ -412,6 +508,39 @@ def main():
         # bottom alongside rows that have no score at all.
         z = float("-inf") if z is None else z
         return (-(1 if seeds >= 5 else 0), -pose_rank, -z)
+
+    # Derive the pose verdict from the realized terms. A row missing ANY arm's
+    # term carries NOT_RUN rather than a min over what is left -- two arms of
+    # three read systematically HIGHER than three, so a partial min turns a
+    # missing check into a passing one.
+    pose_conflicts = []
+    for row in ranked:
+        terms = [_num(row.get(name)) for name in dockq_names]
+        carried = str(row.get("pose_PASS") or "").strip().upper()
+        if not dockq_names or any(term is None for term in terms):
+            row["pose_dockq"] = "NOT_RUN"
+            row["pose_PASS"] = "NOT_RUN"
+            if carried in ("TRUE", "FALSE"):
+                pose_conflicts.append(
+                    f"{row.get('design_id')}: carries pose_PASS={carried} but "
+                    "at least one arm's sc_DockQ term did not run"
+                )
+            continue
+        pose_dockq = min(terms)
+        derived = "TRUE" if pose_dockq >= args.pose_threshold else "FALSE"
+        if carried and carried != derived:
+            pose_conflicts.append(
+                f"{row.get('design_id')}: carries pose_PASS={carried}, "
+                f"but min over arms is {pose_dockq:.4f} -> {derived}"
+            )
+        row["pose_dockq"] = pose_dockq
+        row["pose_PASS"] = derived
+    if pose_conflicts:
+        raise SystemExit(
+            "HALTED: carried pose verdicts disagree with the realized sc_DockQ terms:\n  "
+            + "\n  ".join(pose_conflicts[:5])
+            + "\nThe sheet must not report a pose value no scoring run measured."
+        )
 
     # Sort BEFORE the caps, not after. The selector admits greedily in input
     # order, so an unsorted pool lets a low-scoring row consume a cap that a
@@ -565,6 +694,36 @@ def main():
             "--allow-campaign-failure only to inspect the partial selection, never to ship it."
         )
 
+    # ── #3847121418: check the sheet against a DIFFERENT artifact ──────────
+    # Recomputing a row's score from its own cells cannot catch a cell that is
+    # stale or misjoined but still numeric. Only the companion can.
+    companion = {"ran": False, "reason": "no --companion supplied"}
+    if args.companion:
+        companion = _verify_companion(panel, args.companion, ipsae_names)
+        problems = []
+        if companion.get("missing_from_companion"):
+            problems.append(
+                f"{len(companion['missing_from_companion'])} ranked design(s) absent from the "
+                f"companion: {', '.join(companion['missing_from_companion'][:5])}"
+            )
+        if companion.get("uniformly_null_groups"):
+            problems.append(
+                f"{len(companion['uniformly_null_groups'])} (design, arm) group(s) uniformly "
+                f"null: {', '.join(companion['uniformly_null_groups'][:5])}"
+            )
+        if companion.get("value_mismatches"):
+            problems.append(
+                f"{len(companion['value_mismatches'])} term(s) disagree with the companion: "
+                f"{'; '.join(companion['value_mismatches'][:3])}"
+            )
+        if problems:
+            raise SystemExit(
+                "HALTED: the sheet does not agree with the per-seed companion:\n  "
+                + "\n  ".join(problems)
+                + "\nCompanion coverage is 100% by contract; regenerate it rather than "
+                "shipping rows it cannot corroborate."
+            )
+
     # An empty panel is not a successful run. Exiting 0 while silently not
     # creating --out leaves a pipeline to fail later on a missing file, and the
     # summary would name a design_sheet that does not exist.
@@ -616,6 +775,7 @@ def main():
         "relaxations_applied": result.get("relaxations_applied") or [],
         "relaxation_rung": result.get("relaxation_rung"),
         "recompute": recompute,
+        "companion": companion,
         "design_sheet": args.out,
     }
     if args.json:
@@ -644,6 +804,12 @@ def main():
                 )
         else:
             print("  gate recompute: SKIPPED - disclose this")
+        if companion.get("ran"):
+            print(f"  companion: {companion['rows']} row(s) corroborate the sheet "
+                  f"on {companion.get('metric_column')}")
+        else:
+            print(f"  companion NOT checked - {companion.get('reason')}; "
+                  "scores are not independently corroborated")
         for skip in recompute.get("skipped") or []:
             print(f"  not recomputed - {skip}")
     return 0

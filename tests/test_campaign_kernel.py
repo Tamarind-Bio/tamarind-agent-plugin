@@ -335,14 +335,14 @@ def test_broken_optimization_lineage_is_refused(tmp_path: Path, over, expected) 
 def test_gates_refuse_a_pool_row_with_no_durable_identifier(tmp_path: Path) -> None:
     """A silently dropped row is an ungated design with no ledger entry."""
     pool = tmp_path / "p.json"
-    pool.write_text(json.dumps([{"design_id": "d1", "sequence": "MKQL"}, {"sequence": "MKQL"}]))
+    pool.write_text(json.dumps([{"design_id": "d1", "sequence": _SEQUENCES[0]}, {"sequence": _SEQUENCES[0]}]))
     done = _run("campaign_gates.py", str(pool))
     assert done.returncode != 0
     assert "no design_id or id" in done.stderr
 
     dupes = tmp_path / "d.json"
-    dupes.write_text(json.dumps([{"design_id": "d1", "sequence": "MKQL"},
-                                 {"design_id": "d1", "sequence": "MKQL"}]))
+    dupes.write_text(json.dumps([{"design_id": "d1", "sequence": _SEQUENCES[0]},
+                                 {"design_id": "d1", "sequence": _SEQUENCES[0]}]))
     assert "duplicate design_id" in _run("campaign_gates.py", str(dupes)).stderr
 
 
@@ -351,7 +351,7 @@ def test_gates_mark_the_job_borne_checks_not_run_rather_than_omitting_them(
 ) -> None:
     """An absent column reads downstream like a gate that ran and found nothing."""
     pool = tmp_path / "p.json"
-    pool.write_text(json.dumps([{"design_id": "d1", "sequence": "MKQLEDKVEELLSKNYHLENEVARLKK"}]))
+    pool.write_text(json.dumps([{"design_id": "d1", "sequence": _SEQUENCES[1]}]))
     out = tmp_path / "gates.csv"
     done = _run("campaign_gates.py", str(pool), "--out", str(out), "--json")
     assert done.returncode == 0, done.stderr
@@ -459,7 +459,7 @@ def test_a_short_panel_that_meets_the_floor_still_ships(tmp_path: Path) -> None:
 def test_gates_refuse_a_pool_row_with_no_sequence(tmp_path: Path) -> None:
     """Liability cannot run on it, and the ledger records only REJECT."""
     pool = tmp_path / "p.json"
-    pool.write_text(json.dumps([{"design_id": "d1", "sequence": "MKQL"},
+    pool.write_text(json.dumps([{"design_id": "d1", "sequence": _SEQUENCES[0]},
                                 {"design_id": "d2"}]))
     done = _run("campaign_gates.py", str(pool))
     assert done.returncode != 0
@@ -470,7 +470,7 @@ def test_gates_warn_when_a_gate_is_constant_across_the_pool(tmp_path: Path) -> N
     """All-pass and all-reject are broken until investigated, same as all-NOT_RUN."""
     pool = tmp_path / "p.json"
     pool.write_text(json.dumps([
-        {"design_id": f"d{i}", "sequence": "MKKKKKKKKKKKKWWWWWWWWWWCA"} for i in range(3)
+        {"design_id": f"d{i}", "sequence": "MKKKKKKKKKKKKWWWWWWWWWWCAAAAAAAAAAAAAAAAAAAAAAAA"} for i in range(3)
     ]))
     done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
     assert done.returncode == 0, done.stderr
@@ -483,7 +483,7 @@ def test_gates_report_structural_execution_separately_from_availability(
     """numpy importing says nothing about whether any row had a structure."""
     pool = tmp_path / "p.json"
     pool.write_text(json.dumps([
-        {"design_id": "d1", "sequence": "MKQLEDKVEELLSKNYHLENEVARLKK"}
+        {"design_id": "d1", "sequence": _SEQUENCES[1]}
     ]))
     done = _run("campaign_gates.py", str(pool), "--json")
     summary = json.loads(done.stdout)
@@ -633,3 +633,127 @@ def test_gates_refuse_an_empty_pool(tmp_path: Path) -> None:
     assert done.returncode != 0
     assert "empty pool" in done.stderr
     assert not (tmp_path / "g.csv").exists()
+
+
+# ── round 5 (confirming) codex findings ────────────────────────────────────
+
+def test_pose_pass_is_derived_not_trusted(tmp_path: Path) -> None:
+    """pose_PASS sits AHEAD of rank_zscore in the rank key.
+
+    One stale or hand-authored TRUE sorts a pose-failing design above every
+    honest row, and corrupts cap admission order on the way.
+    """
+    rows = _population(3)
+    rows[0]["sc_DockQ_ef2full"] = 0.05      # well below the 0.23 floor
+    rows[0]["pose_PASS"] = "TRUE"
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)), "--panel-size", "3")
+    assert done.returncode != 0
+    assert "carried pose verdicts disagree" in done.stderr
+
+    # Derived honestly, the same row ranks below the pose-passing ones.
+    rows[0].pop("pose_PASS")
+    src.write_text(json.dumps(rows))
+    out = tmp_path / "s.csv"
+    ok = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+              "--panel-size", "3", "--out", str(out))
+    assert ok.returncode == 0, ok.stderr
+    import csv as _csv
+    with out.open() as fh:
+        ranked = [(r["design_id"], r["pose_PASS"]) for r in _csv.DictReader(fh)]
+    assert ranked[-1] == ("p0", "FALSE"), ranked
+
+
+def test_a_missing_arm_makes_the_pose_term_not_run_never_a_partial_min(
+    tmp_path: Path,
+) -> None:
+    """Two arms of three read systematically HIGHER than three."""
+    rows = _population(4)
+    for i, row in enumerate(rows):
+        row["sc_DockQ_ptxv2"] = 0.40 + i / 50
+    rows[0]["sc_DockQ_ptxv2"] = None
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    out = tmp_path / "s.csv"
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "4", "--out", str(out))
+    assert done.returncode == 0, done.stderr
+    import csv as _csv
+    with out.open() as fh:
+        by_id = {r["design_id"]: r for r in _csv.DictReader(fh)}
+    # p0 lost a term, so it never reaches the panel at all -- which is the
+    # stronger form of "never a partial min".
+    assert "p0" not in by_id
+    assert all(row["pose_PASS"] in ("TRUE", "FALSE") for row in by_id.values())
+
+
+def test_gates_refuse_a_malformed_sequence_before_paid_compute(tmp_path: Path) -> None:
+    """The ledger records only literal REJECTs.
+
+    A malformed design is otherwise reported as SCREENED with no entry keeping
+    it out, and reaches paid folding before the selector ever sees it.
+    """
+    pool = tmp_path / "p.json"
+    pool.write_text(json.dumps([
+        {"design_id": "d1", "sequence": _SEQUENCES[0]},
+        {"design_id": "bad", "sequence": "results/design1.pdb"},
+    ]))
+    done = _run("campaign_gates.py", str(pool))
+    assert done.returncode != 0
+    assert "non-residue characters" in done.stderr
+
+    pool.write_text(json.dumps([{"design_id": "long", "sequence": "A" * 200}]))
+    assert "outside the frozen" in _run("campaign_gates.py", str(pool)).stderr
+
+
+def test_a_misjoined_aggregate_is_caught_by_the_companion(tmp_path: Path) -> None:
+    """Recomputing a cell from itself cannot catch a stale-but-numeric cell."""
+    rows = _population(3)
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+
+    companion = tmp_path / "per_seed.csv"
+    lines = ["design_id,arm,seed,ipsae_min"]
+    for row in rows:
+        for seed in (1, 2):
+            lines.append(f"{row['design_id']},ef2full,{seed},{row['ipsae_ef2full']}")
+    companion.write_text("\n".join(lines) + "\n")
+    ok = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+              "--panel-size", "3", "--companion", str(companion), "--json")
+    assert ok.returncode == 0, ok.stderr
+    assert json.loads(ok.stdout)["companion"]["ran"] is True
+
+    # One sheet cell drifts from what the companion's seeds actually recorded.
+    rows[0]["ipsae_ef2full"] = 0.99
+    src.write_text(json.dumps(rows))
+    bad = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+               "--panel-size", "3", "--companion", str(companion))
+    assert bad.returncode != 0
+    assert "disagree with the companion" in bad.stderr
+
+    # A companion missing a ranked design is a coverage failure.
+    partial = tmp_path / "partial.csv"
+    partial.write_text("design_id,arm,seed,ipsae_min\np0,ef2full,1,0.5\n")
+    src.write_text(json.dumps(_population(3)))
+    assert "absent from the" in _run(
+        "select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+        "--panel-size", "3", "--companion", str(partial)
+    ).stderr
+
+
+def test_a_degenerate_term_halts_with_its_cause_named(tmp_path: Path) -> None:
+    """One constant term nulls rank_zscore for EVERY row, not just its own.
+
+    Unranking them all would empty the panel and report "no candidate survived",
+    which names the symptom and hides the cause.
+    """
+    rows = _population(3)
+    for row in rows:
+        row["sc_DockQ_ef2full"] = 0.40      # no spread
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)), "--panel-size", "3")
+    assert done.returncode != 0
+    assert "rank_zscore is undefined for every eligible row" in done.stderr
+    assert "sc_DockQ_ef2full" in done.stderr

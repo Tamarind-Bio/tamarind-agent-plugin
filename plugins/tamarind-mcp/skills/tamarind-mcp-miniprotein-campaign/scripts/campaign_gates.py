@@ -43,6 +43,15 @@ VERDICT_PASS = "PASS"
 VERDICT_REJECT = "REJECT"
 VERDICT_NOT_RUN = "NOT_RUN"
 
+# Mirrors the panel selector's alphabet and length policy, applied one stage
+# EARLIER and for a sharper reason: the ledger records only literal gate
+# REJECTs, so a malformed design is reported as SCREENED with no entry keeping
+# it out -- and it reaches paid folding before the selector ever sees it. The
+# liability helper would meanwhile strip `results/design1.pdb` to
+# RESULTSDESIGNPDB and hand it a PASS.
+AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWYXBZJUO")
+BINDER_LEN_MIN, BINDER_LEN_MAX = 35, 160
+
 
 def _load_pool(path):
     with open(path) as fh:
@@ -159,11 +168,26 @@ def main():
         # REJECT -- so the row is reported as screened with no rejection entry,
         # and a downstream pool built by removing ledger ids carries it into
         # paid folding ungated. Fail closed, like a missing id.
-        if not str(entry.get("sequence") or "").strip():
+        seq = str(entry.get("sequence") or "").strip().upper()
+        if not seq:
             raise SystemExit(
                 f"refusing the pool: design {did!r} carries no sequence.\n"
                 "Liability cannot run on it, and a row that is neither gated nor "
                 "rejected is one nothing downstream can keep out."
+            )
+        offenders = sorted({ch for ch in seq if ch not in AMINO_ACIDS})
+        if offenders:
+            raise SystemExit(
+                f"refusing the pool: design {did!r} has non-residue characters "
+                f"{''.join(offenders)!r} in its sequence.\n"
+                "The liability helper would strip these and score whatever letters remain,\n"
+                "so the row would be reported as screened and reach paid folding."
+            )
+        if not BINDER_LEN_MIN <= len(seq) <= BINDER_LEN_MAX:
+            raise SystemExit(
+                f"refusing the pool: design {did!r} is {len(seq)} residues, outside the "
+                f"frozen {BINDER_LEN_MIN}-{BINDER_LEN_MAX} policy.\n"
+                "Gating it would spend co-folding compute on a design the selector refuses."
             )
         pdb = entry.get("designed_structure_path") or entry.get("structure_path")
         chain = entry.get("binder_chain")
