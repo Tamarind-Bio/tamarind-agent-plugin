@@ -134,11 +134,44 @@ GATE_VERDICT_COLUMNS = (
 )
 
 
-def _carried_reject(row):
-    """Reason a gate already rejected this row, or None."""
+RECOGNIZED_VERDICTS = ("PASS", "REJECT", "NOT_RUN")
+
+
+def _bad_gate_verdicts(row):
+    """Reason this row's gate verdicts do not clear it for ranking, or None.
+
+    Refusing only the literal REJECT would let a row that never carried the
+    column at all through -- and an absent verdict is indistinguishable
+    downstream from a gate that ran and passed. Absence is not a pass, the same
+    rule the kernel already applies to the target-mimic verdict.
+    """
     for column in GATE_VERDICT_COLUMNS:
-        if str(row.get(column) or "").strip().upper() == "REJECT":
+        verdict = str(row.get(column) or "").strip().upper()
+        if not verdict:
+            return f"{column} is absent: a gate with no verdict is not a gate that passed"
+        if verdict not in RECOGNIZED_VERDICTS:
+            return f"{column} is {verdict!r}, which is not one of {'/'.join(RECOGNIZED_VERDICTS)}"
+        if verdict == "REJECT":
             return f"{column} is REJECT: a gate already refused this design"
+    return None
+
+
+def _bad_seed_count(row):
+    """Reason this row's seed depth is unusable, or None.
+
+    The rank key's first term is "full seed tier", so a missing count coerced to
+    0 silently reads as a deliberately shallow result. A row that ships a
+    headline score has to be able to say how deep the instrument ran.
+    """
+    raw = row.get("n_seeds")
+    if raw is None or str(raw).strip() == "":
+        return "n_seeds is absent: a ranked row cannot disclose its seed depth"
+    try:
+        seeds = int(str(raw).strip())
+    except ValueError:
+        return f"n_seeds {raw!r} is not a whole number"
+    if seeds < 0:
+        return f"n_seeds {seeds} is negative"
     return None
 
 
@@ -233,7 +266,12 @@ def main():
     # need a score -- run before the algebra, not after it.
     eligible, unranked = [], []
     for row in rows:
-        reason = _bad_sequence(row.get("sequence")) or _bad_lineage(row) or _carried_reject(row)
+        reason = (
+            _bad_sequence(row.get("sequence"))
+            or _bad_lineage(row)
+            or _bad_gate_verdicts(row)
+            or _bad_seed_count(row)
+        )
         if reason:
             row["unranked_reason"] = reason
             unranked.append(row)
@@ -253,6 +291,26 @@ def main():
             "Every co-folding stage runs all three arms; a pool with no interface-confidence\n"
             "terms has not been scored."
         )
+    # rank_zscore is per-target and transductive, so two targets' artifacts
+    # concatenated into one file would pool their means and variances and rank
+    # against each other. Mixing is fatal. A pool where NO row names a target is
+    # a different, softer problem -- nothing can be mixed if nothing is
+    # labelled -- so that is reported rather than refused.
+    targets = {str(r.get("target") or "").strip() for r in eligible}
+    named = {name for name in targets if name}
+    if len(named) > 1:
+        raise SystemExit(
+            "refusing to score: eligible rows name more than one target "
+            f"({', '.join(sorted(named))}).\n"
+            "rank_zscore is per-target and transductive -- pooling two targets changes every\n"
+            "z-score and lets one target's designs enter the other's panel. Split the file."
+        )
+    if named and len(targets) > len(named):
+        raise SystemExit(
+            f"refusing to score: some eligible rows name target {named.pop()!r} and others "
+            "name none.\nA partially-labelled pool cannot be shown to be single-target."
+        )
+
     ipsae_terms = [[_num(r.get(n)) for n in ipsae_names] for r in eligible]
     dockq_terms = [[_num(r.get(n)) for n in dockq_names] for r in eligible]
 
@@ -453,7 +511,24 @@ def main():
             "--allow-campaign-failure only to inspect the partial selection, never to ship it."
         )
 
-    if args.out and panel:
+    # An empty panel is not a successful run. Exiting 0 while silently not
+    # creating --out leaves a pipeline to fail later on a missing file, and the
+    # summary would name a design_sheet that does not exist.
+    if not panel:
+        detail = ", ".join(
+            f"{cap}={n}" for cap, n in sorted(
+                (result.get("rejection_counts") or {}).items(), key=lambda kv: -kv[1]
+            )
+        )
+        raise SystemExit(
+            "refusing to report success: no candidate survived to the panel.\n"
+            f"  {len(rows)} candidate(s) in, {len(unranked)} unranked, "
+            f"{len(ranked)} reached selection.\n"
+            + (f"  rejected by: {detail}\n" if detail else "")
+            + "Nothing was written. Fix the pool upstream rather than shipping an empty sheet."
+        )
+
+    if args.out:
         cols, seen = [], set()
         for r in panel:
             for k in r:

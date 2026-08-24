@@ -38,6 +38,29 @@ The pose term is never relaxed per row. If the limb genuinely could not run, it 
 
 If even the last resort cannot reach the panel size, **ship the actual N. Padding with duplicates is forbidden.**
 
+## What the panel selector refuses
+
+`select_panel.py` will not rank a row it cannot audit, so a candidate file has
+to carry these or the row goes to the unranked section with its reason:
+
+| Field | Rule |
+|---|---|
+| `sequence` | drawn entirely from the residue alphabet — a path or status word is refused, never salvaged |
+| `liability_verdict`, `novelty_verdict`, `structural_plausibility_verdict`, `monomer_foldability_verdict`, `target_mimic_verdict` | present and one of PASS / REJECT / NOT_RUN. **Absent is not a pass**, and REJECT is refused |
+| `n_seeds` | a non-negative whole number. Absent reads as a deliberately shallow tier rather than a lost join |
+| `opt_round`, `parent_design_id`, `root_backbone_id` | lineage that closes — round 0 claims no parent, a later round names one, nothing is its own parent |
+| per-arm `ipsae_*` / `sc_DockQ_*` | numeric. A boolean is refused: `float(True)` is a fabricated perfect score |
+| `target` | one target across the whole file, or none at all. The rank score is per-target and transductive, so two targets pooled changes every z-score |
+
+Two whole-run refusals, distinct from per-row ones: it will not emit a panel
+whose distinct `structure_method` count is below the floor — that floor is
+absolute and no rung of the ladder goes under it — and it will not report
+success on an empty panel, because exiting cleanly without writing the sheet
+leaves whatever runs next to fail on a missing file.
+
+A short panel that clears the floor **does** ship. "Ship the actual N" is the
+instruction; padding with duplicates is what is forbidden.
+
 ## Rank key
 
 Order by: **full seed tier on all arms** descending, then **pose pass** descending, then **rank score** descending.

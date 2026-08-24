@@ -213,6 +213,9 @@ def _candidate(design_id: str, z: float, _index: int = 0, **over) -> dict:
         "seq_method": _SEQ_METHODS[_index % len(_SEQ_METHODS)],
         "tm_cluster": f"c-{design_id}",
         "target_mimic": "PASS", "opt_round": 0, "n_seeds": 5,
+        "liability_verdict": "PASS", "structural_plausibility_verdict": "PASS",
+        "target_mimic_verdict": "PASS", "novelty_verdict": "NOT_RUN",
+        "monomer_foldability_verdict": "NOT_RUN",
         "ipsae_ef2full": 0.5 + z / 100, "sc_DockQ_ef2full": 0.3 + z / 100,
     }
     row.update(over)
@@ -318,11 +321,12 @@ def test_a_path_in_the_sequence_field_is_refused_not_salvaged(tmp_path: Path) ->
 )
 def test_broken_optimization_lineage_is_refused(tmp_path: Path, over, expected) -> None:
     """A child that mints a fresh root escapes the per-root cap looking ordinary."""
-    row = _candidate("self", 1.0, **over)
+    rows = _population(3) + [_candidate("self", 1.0, _index=3, **over)]
     src = tmp_path / "c.json"
-    src.write_text(json.dumps([row]))
+    src.write_text(json.dumps(rows))
     done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
                 "--panel-size", "5", "--json")
+    assert done.returncode == 0, done.stderr
     summary = json.loads(done.stdout)
     assert summary["unranked"] == 1
     assert any(expected in r for r in summary["unranked_reasons"]), summary["unranked_reasons"]
@@ -487,3 +491,71 @@ def test_gates_report_structural_execution_separately_from_availability(
     assert summary["structural_gates_evaluated"] == {
         "structural_plausibility": 0, "target_mimic": 0
     }
+
+
+# ── round 3 codex findings: four shapes of "absence is a pass" ─────────────
+
+@pytest.mark.parametrize(
+    "column", ["liability_verdict", "novelty_verdict",
+               "structural_plausibility_verdict", "monomer_foldability_verdict"]
+)
+def test_a_missing_gate_verdict_is_not_a_pass(tmp_path: Path, column: str) -> None:
+    """An absent verdict is indistinguishable from a gate that ran and passed."""
+    bad = _candidate("nogate", 1.0, _index=3)
+    del bad[column]
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(_population(3) + [bad]))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "5", "--json")
+    assert done.returncode == 0, done.stderr
+    summary = json.loads(done.stdout)
+    assert any(f"{column} is absent" in r for r in summary["unranked_reasons"])
+    assert summary["panel_size_shipped"] == 3
+
+
+@pytest.mark.parametrize("value", [None, "", "many", -1])
+def test_an_unusable_seed_count_is_not_a_shallow_tier(tmp_path: Path, value) -> None:
+    """Coerced to 0 it reads as a deliberately shallow result, not a lost join."""
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(_population(3) + [_candidate("noseed", 1.0, _index=3, n_seeds=value)]))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "5", "--json")
+    assert done.returncode == 0, done.stderr
+    summary = json.loads(done.stdout)
+    assert any("n_seeds" in r for r in summary["unranked_reasons"]), summary["unranked_reasons"]
+
+
+def test_two_targets_in_one_pool_are_refused(tmp_path: Path) -> None:
+    """rank_zscore is per-target; pooling two changes every z-score."""
+    rows = _population(3)
+    for row in rows[:2]:
+        row["target"] = "PD-L1"
+    rows[2]["target"] = "TNF-alpha"
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)), "--panel-size", "3")
+    assert done.returncode != 0
+    assert "more than one target" in done.stderr
+
+    # Partially labelled is refused too: it cannot be shown to be single-target.
+    rows[2].pop("target")
+    src.write_text(json.dumps(rows))
+    assert "name none" in _run(
+        "select_panel.py", str(src), "--gate", str(_gate(tmp_path)), "--panel-size", "3"
+    ).stderr
+
+
+def test_an_empty_panel_fails_instead_of_reporting_a_sheet_it_never_wrote(
+    tmp_path: Path,
+) -> None:
+    """Exit 0 with no --out file leaves a pipeline to fail later on a missing path."""
+    bad = [_candidate(f"b{i}", float(i), _index=i, sequence="not/a/sequence.pdb")
+           for i in range(3)]
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(bad))
+    out = tmp_path / "sheet.csv"
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(out))
+    assert done.returncode != 0
+    assert "no candidate survived" in done.stderr
+    assert not out.exists()
