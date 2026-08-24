@@ -68,8 +68,8 @@ def test_mcp_plugin_is_listed_separately_in_both_marketplaces() -> None:
     codex_entries = {entry["name"]: entry for entry in codex["plugins"]}
     claude_entries = {entry["name"]: entry for entry in claude["plugins"]}
 
-    assert set(codex_entries) == {"tamarind", "tamarind-mcp"}
-    assert set(claude_entries) == {"tamarind", "tamarind-mcp"}
+    assert set(codex_entries) == {"tamarind-cli", "tamarind-mcp"}
+    assert set(claude_entries) == {"tamarind-cli", "tamarind-mcp"}
     assert codex_entries["tamarind-mcp"]["source"]["path"] == "./plugins/tamarind-mcp"
     assert claude_entries["tamarind-mcp"]["source"] == "./plugins/tamarind-mcp"
 
@@ -166,7 +166,7 @@ def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
 
 
 def test_cli_plugin_remains_cli_only() -> None:
-    cli_plugin = ROOT / "plugins/tamarind"
+    cli_plugin = ROOT / "plugins/tamarind-cli"
     manifest = json.loads(
         (cli_plugin / ".codex-plugin/plugin.json").read_text()
     )

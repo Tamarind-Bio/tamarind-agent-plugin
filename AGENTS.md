@@ -45,7 +45,7 @@ This repository packages Tamarind Bio workflows as Codex and Claude Code skills.
 ## Layout
 
 ```text
-plugins/tamarind/
+plugins/tamarind-cli/
   .codex-plugin/plugin.json
   .claude-plugin/plugin.json
   skills/

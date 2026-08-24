@@ -17,7 +17,21 @@ This skill owns the stage graph, the frozen values, the gates and the selection 
 
 Route away when the request is smaller or different: one generate-and-filter round is `tamarind-binder-design`; antibody, nanobody or VHH engineering is `tamarind-antibody` and is **out of scope here** — outputs stay single-chain miniproteins, and known binders are not starting points or grafts.
 
-**State this once, at the start, and then honor it.** The platform stores no campaign plan for you, assembles no scoring batch, and has no gate that refuses a submission because an earlier check has not run. Every guarantee below is therefore a procedure you run and show, not a mechanism that stops you. A campaign that reports a check it did not run is worse than one that reports the gap.
+## 0b. The gates are code, not prose — run them
+
+Two bundled scripts carry every frozen number in this campaign. **Do not re-derive their formulas.** Each one has a plausible wrong version that fails in the permissive direction and that nothing downstream can detect: drop the `+1` in novelty coverage and every hit under-reports, which errs toward *admitting* a design at the reject threshold; take `sc_DockQ` at the best-agreement seed instead of the argmax-confidence seed and the number improves; make the pose term a mean instead of a minimum and more designs pass. Hand-deriving these is a defect, not diligence.
+
+```bash
+SKILL_DIR="/absolute/path/to/the/tamarind-miniprotein-campaign-skill"
+python3 "$SKILL_DIR/scripts/campaign_gates.py" pool.json --reference-chains refs.json --out gates.csv --rejects rejects.json
+python3 "$SKILL_DIR/scripts/select_panel.py" candidates.json --gate gate.json --panel-size 30 --out design_sheet.csv --trace trace.json
+```
+
+Resolve `SKILL_DIR` to the directory holding this `SKILL.md`; do not assume the shell starts there. The scripts need `numpy` for the structural gates — without it they report those gates **NOT_RUN**, which is honest, and they never report them passed.
+
+**Where each piece runs.** Put the scripts on the workspace's own compute and keep every artifact — the frozen plan, the gate verdict, the rejects ledger, each stage's surviving pool, the sheet — in workspace storage under stable names, because later stages read them back rather than re-deriving them. Where the workspace can run review passes as separate agents, use one per review in §8 and keep them strictly serial. Where it cannot, run them yourself in the same order and say so.
+
+**What is still on you.** `select_panel.py` refuses to emit a panel without a PASS gate artifact, and it halts on a row whose gates do not reproduce — those two are mechanical. Nothing, however, stops you from submitting a scoring job that skips the gate entirely. That boundary is yours to hold, and §5 is where it costs the most.
 
 ## 1. Freeze the plan before any compute
 
@@ -74,13 +88,13 @@ Record per design whether its method was aimed at the frozen site. Methods that 
 
 Every candidate is assessed before it is scored: novelty (sequence identity, local alignment, and structural similarity to any target or control chain), liability (cysteine parity, homopolymer runs, hydrophobic patches), monomer foldability (binder alone, mean pLDDT at or above the frozen floor), and structural plausibility. Cluster the pool at ~90% identity.
 
-Run the cheap sequence-level and geometric checks locally on downloaded artifacts, not through paid jobs. **Record every rejected design_id and verify its absence from every downstream pool** — a gate counts as run only when its rejects are traceably absent downstream. **A gate that passes everything, fails everything, or returns a constant is broken until investigated.**
+Run these with `campaign_gates.py` (§0b) over the downloaded artifacts, not by hand and not through paid jobs. It writes one evidence row per design carrying the numbers that decided each verdict, plus the rejects ledger. **Record every rejected design_id and verify its absence from every downstream pool** — a gate counts as run only when its rejects are traceably absent downstream. **A gate that passes everything, fails everything, or returns a constant is broken until investigated.**
 
 The mimic screen is the one that has no second falsifier downstream: a structure generator conditioned on the target complex, asked for a binder near a target chain's length, will happily reproduce that chain's fold, and every confidence arm will like it.
 
 ## 5. Validate the scoring on known answers before production scoring
 
-Score the control panel first — a genuine positive control, several negatives, and a target-self-pair control that exists specifically to falsify target-mimic inflation — confirm the scoring separates them, and **write the verdict to a file before submitting a single production scoring row.** Exclude published de novo miniprotein binders as controls: their separation is circular.
+Score the control panel first — a genuine positive control, several negatives, and a target-self-pair control that exists specifically to falsify target-mimic inflation — confirm the scoring separates them, and **write the verdict to `gate.json` before submitting a single production scoring row** — `{"status": "PASS", "separation": <value>, "controls": [...]}`. `select_panel.py` reads this file and refuses to rank anything unless `status` is PASS or PASS_REDUCED, so the artifact is the gate, not a note about it. Editing it to get past the refusal is falsifying the campaign's central claim. Exclude published de novo miniprotein binders as controls: their separation is circular.
 
 Nothing in the CLI will stop a production submission that skips this. The check is only real if you refuse to proceed without it.
 
@@ -100,7 +114,7 @@ Building these rows is the campaign's most error-prone submission. A scoring row
 
 At least five optimization rounds, continuing while the metrics improve. Feed the **predicted complex** back into sequence design, not the design's own structure — feeding the designed structure back is the previous round again. Every child keeps its parent's `root_backbone_id`; minting a fresh root escapes the per-root cap while looking like ordinary provenance. Promote to the full seed tier **before** selecting the next round's parents, so parents are chosen on settled numbers.
 
-Selection caps, the relaxation ladder, the rank key, the sheet columns and the deliverables are in [references/selection.md](references/selection.md). If the pool cannot fill the panel under the caps, fix it upstream — more designs, more methods. Relaxation is a disclosed last resort applied to thresholds, never by skipping a gate. **If even that cannot reach the panel size, ship the real N; padding with duplicates is forbidden.**
+`select_panel.py` (§0b) computes the score algebra, applies the caps and the ladder, sorts on the rank key and recomputes every gate against the row's own sequence — halting on any row that does not reproduce to 1e-4. Read its `rejection_counts`: a panel emptied by `missing_provenance_field` is a pipeline gap, one emptied by the caps is an under-diverse pool, and they have opposite repairs. The full tables are in [references/selection.md](references/selection.md). If the pool cannot fill the panel under the caps, fix it upstream — more designs, more methods. Relaxation is a disclosed last resort applied to thresholds, never by skipping a gate. **If even that cannot reach the panel size, ship the real N; padding with duplicates is forbidden.**
 
 ## 8. Speak to the user in their language
 

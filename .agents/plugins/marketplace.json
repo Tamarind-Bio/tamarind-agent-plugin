@@ -5,10 +5,10 @@
   },
   "plugins": [
     {
-      "name": "tamarind",
+      "name": "tamarind-cli",
       "source": {
         "source": "local",
-        "path": "./plugins/tamarind"
+        "path": "./plugins/tamarind-cli"
       },
       "policy": {
         "installation": "AVAILABLE",

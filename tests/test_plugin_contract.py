@@ -8,7 +8,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = ROOT / "plugins" / "tamarind"
+PLUGIN = ROOT / "plugins" / "tamarind-cli"
 SKILLS = PLUGIN / "skills"
 
 
@@ -27,8 +27,8 @@ def test_manifest_is_cli_first_and_valid_shape() -> None:
     claude_marketplace = json.loads(
         (ROOT / ".claude-plugin" / "marketplace.json").read_text()
     )
-    assert manifest["name"] == "tamarind"
-    assert manifest["version"] == "0.2.2"
+    assert manifest["name"] == "tamarind-cli"
+    assert manifest["version"] == "0.3.0"
     assert claude_manifest["version"] == manifest["version"]
     assert claude_marketplace["metadata"]["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"

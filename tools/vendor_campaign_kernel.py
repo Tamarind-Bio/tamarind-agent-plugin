@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Vendor the campaign science kernel from tamarind-agent into both plugins.
+
+The miniprotein campaign skill needs the frozen score algebra, the liability and
+plausibility gates, the target-mimic screen and the selection caps to run the
+SAME way every time. Re-deriving those formulas from prose is the defect this
+vendoring exists to prevent: the plausible wrong version of each one is silently
+wrong in the permissive direction (drop the +1 in novelty coverage and every hit
+under-reports, which errs toward ADMITTING a design at the reject threshold).
+
+Source of truth is tamarind-agent. This script copies the modules verbatim,
+rewrites their intra-package imports to relative ones, and writes a manifest
+naming the source commit so drift is detectable rather than silent.
+
+Usage:
+  python3 tools/vendor_campaign_kernel.py --agent-repo /path/to/tamarind-agent
+  python3 tools/vendor_campaign_kernel.py --agent-repo ... --ref pr-367 --check
+"""
+import argparse
+import hashlib
+import pathlib
+import re
+import subprocess
+import sys
+
+SRC_PREFIX = "campaign/cda/subagents"
+
+# Transitive closure of what the campaign skill calls, verified by tracing the
+# import graph: every module below is stdlib + numpy plus other members of this
+# list. Nothing here reaches the campaign app, the database or the network.
+MODULES = [
+    "qa_analysis_helpers",     # score algebra, liability gates, cif->pdb, DSSP fold class
+    "qa_tm_helpers",           # TM-score and the target-mimic gate
+    "prescoring_rejects",      # verdict tokens and the gate registry
+    "structure_plausibility",  # backbone geometry, clashes, core packing
+    "qa_selection_helpers",    # TM clustering and the diversity-cap selector
+    "local_alignment",         # gapped local identity
+    "novelty_gate",            # the novelty verdict over its subject sets
+    "screen_gate_metrics",     # monomer foldability and the ESM-C log-likelihood
+    "sheet_recompute",         # the write-time recompute that halts on a mismatch
+]
+
+# The only things the kernel needs from `campaign.cda.prompts.qa_rubrics`, which
+# is a 3,900-line prompt module we do not want. Values copied verbatim; the
+# manifest records the commit they were read at.
+RUBRIC_CONSTANTS = '''"""Constants the kernel needs from the campaign's QA rubrics.
+
+Copied verbatim rather than importing a 3,900-line prompt module. Values are
+frozen protocol thresholds, not tuning knobs -- change them here only when the
+source changes them, and re-vendor rather than editing by hand.
+"""
+
+ESMC_LL_TOOL = "esmc-6b:scan"
+MONOMER_CHECK_NOT_RUN_CODE = "MONOMER_FOLDABILITY_NOT_RUN"
+MONOMER_GATE_STAGE_TOKEN = "s1b_monomer"
+MONOMER_PLDDT_FLOOR_THRESHOLD = 0.70
+MONOMER_PLDDT_SEED_AGGREGATION = "max"
+MONOMER_ROW_MEASUREMENT_TERM = "monomer_plddt"
+'''
+
+INIT = '''"""Vendored campaign science kernel -- do not edit by hand.
+
+Regenerate with `python3 tools/vendor_campaign_kernel.py --agent-repo ...`.
+See VENDORED.md for the source commit.
+"""
+'''
+
+DESTS = [
+    "plugins/tamarind-mcp/skills/tamarind-mcp-miniprotein-campaign/scripts/_kernel",
+    "plugins/tamarind-cli/skills/tamarind-miniprotein-campaign/scripts/_kernel",
+]
+
+
+def rewrite(text: str) -> str:
+    """Point intra-package imports at the vendored copy."""
+    text = re.sub(
+        r"from campaign\.cda\.subagents\.(\w+) import", r"from ._\1_shim import", text
+    )
+    # `from ._X_shim import` is a placeholder so the two substitutions cannot
+    # collide; collapse it to the real relative form.
+    text = text.replace("from ._", "from .").replace("_shim import", " import")
+    text = re.sub(r"from \.(\w+) +import", r"from .\1 import", text)
+    text = text.replace(
+        "from campaign.cda.prompts.qa_rubrics import", "from ._rubric_constants import"
+    )
+    return text
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--agent-repo", required=True, help="path to a tamarind-agent checkout")
+    ap.add_argument("--ref", default="main", help="git ref to vendor from")
+    ap.add_argument("--check", action="store_true", help="fail if the tree is stale")
+    args = ap.parse_args()
+
+    repo = pathlib.Path(args.agent_repo).expanduser().resolve()
+    if not (repo / ".git").exists():
+        print(f"not a git checkout: {repo}", file=sys.stderr)
+        return 2
+
+    def git(*a: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), *a], check=True, capture_output=True, text=True
+        ).stdout
+
+    commit = git("rev-parse", args.ref).strip()
+    files = {"__init__.py": INIT, "_rubric_constants.py": RUBRIC_CONSTANTS}
+    for mod in MODULES:
+        files[f"{mod}.py"] = rewrite(git("show", f"{args.ref}:{SRC_PREFIX}/{mod}.py"))
+
+    digest = hashlib.sha256(
+        "".join(f"{k}\0{v}\0" for k, v in sorted(files.items())).encode()
+    ).hexdigest()
+    files["VENDORED.md"] = (
+        "# Vendored campaign kernel\n\n"
+        "Generated by `tools/vendor_campaign_kernel.py`. Do not edit these files by hand.\n\n"
+        f"- source: `Tamarind-Bio/tamarind-agent` `{SRC_PREFIX}/`\n"
+        f"- ref: `{args.ref}`\n"
+        f"- commit: `{commit}`\n"
+        f"- content digest: `{digest}`\n\n"
+        "Modules:\n\n"
+        + "".join(f"- `{m}.py`\n" for m in MODULES)
+        + "\nRe-vendor after any upstream change to the score algebra, the gates or the\n"
+        "selection caps. A stale kernel computes different numbers than the campaign\n"
+        "agent does, which is exactly the divergence the frozen instrument forbids.\n"
+    )
+
+    stale = []
+    for dest in DESTS:
+        d = pathlib.Path(dest)
+        for name, body in files.items():
+            p = d / name
+            if args.check:
+                if not p.exists() or p.read_text() != body:
+                    stale.append(str(p))
+                continue
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(body)
+
+    if args.check:
+        if stale:
+            print("stale vendored files:\n  " + "\n  ".join(stale), file=sys.stderr)
+            return 1
+        print(f"kernel is current at {commit}")
+        return 0
+
+    print(f"vendored {len(MODULES)} modules at {commit} into {len(DESTS)} plugins")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
