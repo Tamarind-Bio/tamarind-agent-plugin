@@ -158,6 +158,41 @@ def main():
             f"(first at index {shown}).\n"
             "A row with no durable identifier cannot be tracked into or out of a gate."
         )
+    # A multi-row pool in which every design carries the SAME sequence is not a
+    # design pool. The way this happens is measured, not hypothetical: a
+    # generator writes the binder and the target joined in one field, and the
+    # split takes the wrong half -- so every row becomes the target. RFdiffusion
+    # ships exactly that shape, and its own schema documents the two chains in
+    # the opposite order from the one it delivers, so following the
+    # documentation produces this pool. The target is of legal length and
+    # ordinary composition, so every other check here passes it.
+    #
+    # Fires ONLY on a pool that is otherwise perfectly well formed. A row with
+    # no id, a duplicate id, a missing sequence or an illegal length has its own
+    # refusal that says more, and those must win -- otherwise a two-row pool
+    # where one row simply lacks a sequence gets reported as a chain-split bug.
+    _seqs = [str(e.get("sequence") or "").strip().upper() for e in pool]
+    _ids = [str(e.get("design_id") or e.get("id") or "").strip() for e in pool]
+    well_formed = (
+        all(_seqs) and all(_ids) and len(set(_ids)) == len(_ids)
+        and all(BINDER_LEN_MIN <= len(s) <= BINDER_LEN_MAX for s in _seqs)
+    )
+    if len(pool) > 1 and well_formed and len(set(_seqs)) == 1:
+        only = _seqs[0]
+        raise SystemExit(
+            f"refusing the pool: all {len(pool)} designs carry an identical "
+            f"{len(only)}-residue sequence.\n"
+            "  A pool of one repeated sequence is not a design pool. The usual cause "
+            "is a joined\n"
+            "  sequence field (binder and target in one string) split on the wrong "
+            "side -- every row\n"
+            "  is then the TARGET, which is of legal length and passes every other "
+            "check here.\n"
+            "  Identify the binder by excluding your frozen target sequence and "
+            "asserting the\n"
+            "  designed length, not by taking a fixed position in the split."
+        )
+
     seen = set()
     for entry in pool:
         did = str(entry.get("design_id") or entry.get("id") or "").strip()

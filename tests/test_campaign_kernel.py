@@ -469,8 +469,15 @@ def test_gates_refuse_a_pool_row_with_no_sequence(tmp_path: Path) -> None:
 def test_gates_warn_when_a_gate_is_constant_across_the_pool(tmp_path: Path) -> None:
     """All-pass and all-reject are broken until investigated, same as all-NOT_RUN."""
     pool = tmp_path / "p.json"
+    # Distinct sequences on purpose: a pool of one repeated sequence is itself
+    # refused (it is the signature of a mis-split binder/target field), and a
+    # constant VERDICT does not need identical rows to reproduce.
     pool.write_text(json.dumps([
-        {"design_id": f"d{i}", "sequence": "MKKKKKKKKKKKKWWWWWWWWWWCAAAAAAAAAAAAAAAAAAAAAAAA"} for i in range(3)
+        {"design_id": f"d{i}", "sequence": seq} for i, seq in enumerate((
+            "MKKKKKKKKKKKKWWWWWWWWWWCAAAAAAAAAAAAAAAAAAAAAAAA",
+            "MEEEEEEEEEEEEWWWWWWWWWWCAAAAAAAAAAAAAAAAAAAAAAAA",
+            "MQQQQQQQQQQQQWWWWWWWWWWCAAAAAAAAAAAAAAAAAAAAAAAA",
+        ))
     ]))
     done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
     assert done.returncode == 0, done.stderr
@@ -899,3 +906,41 @@ def test_the_drift_check_defaults_to_the_ref_it_was_vendored_from() -> None:
     manifest = (MCP_SCRIPTS / "_kernel/VENDORED.md").read_text()
     assert f"- ref: `{module.recorded_ref()}`" in manifest
     assert module.recorded_ref() != "main"
+
+
+def test_a_pool_of_one_repeated_sequence_is_refused(tmp_path: Path) -> None:
+    """Measured on live prod, not hypothesised.
+
+    RFdiffusion's `seq` column joins binder and target, and its own schema
+    documents them in the OPPOSITE order from the one it delivers -- a real
+    PD-L1 run returned target-first while the description said binder-first.
+    Following the documentation therefore yields a pool in which every row is
+    the target: legal length, ordinary composition, and it passes every other
+    check in this script.
+    """
+    target = "FTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQ"
+    pool = tmp_path / "wrong_half.json"
+    pool.write_text(json.dumps(
+        [{"design_id": f"d{i}", "sequence": target} for i in range(8)]
+    ))
+
+    done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+
+    assert done.returncode != 0, "a pool of one repeated sequence must fail closed"
+    out = done.stdout + done.stderr
+    assert "identical" in out
+    assert "TARGET" in out, f"the refusal must name the cause: {out}"
+
+
+def test_a_legitimately_varied_pool_is_not_caught_by_that_check(tmp_path: Path) -> None:
+    """The guard must not fire on a real pool that happens to share some rows."""
+    rows = [{"design_id": f"d{i}", "sequence": seq}
+            for i, seq in enumerate(_SEQUENCES)]
+    rows.append({"design_id": "dup", "sequence": _SEQUENCES[0]})  # a legitimate repeat
+    pool = tmp_path / "varied.json"
+    pool.write_text(json.dumps(rows))
+
+    done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "identical" not in done.stdout

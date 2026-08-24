@@ -31,7 +31,7 @@ Call this **before** you conclude a method produced nothing. "This method produc
 
 | method | sequence column | design identifier |
 |---|---|---|
-| `rfdiffusion` | `seq` — **slash-joined `binder/target`** | `design` **+** `n` (composite) |
+| `rfdiffusion` | `seq` — slash-joined; **binder is the LAST field, not the first** (measured) | `design` **+** `n` (composite) |
 | `rfdiffusion3` | `Sequence_A` | `design_id` |
 | `freebindcraft` | `Sequence` (binder only) | `Design` |
 | `boltzgen` | `designed_chain_sequence` | `id` |
@@ -47,9 +47,26 @@ Call this **before** you conclude a method produced nothing. "This method produc
 
 ## Three ways this goes silently wrong
 
-**1. The chain-split convention is inverted between the two tools you are most likely to pair.** RFdiffusion writes `binder/target` — binder at index **0**. ProteinMPNN writes colon-joined with **the designed chain last** — binder at index **−1**. A split helper written for one hands you the *target* chain for the other, and a target chain of ordinary composition and legal length gates cleanly as if it were a binder. Nothing downstream can detect it. **Split by the separator the schema documents for that tool, and assert the length you get back is the length you designed.**
+**1. Taking the wrong half of a joined sequence — and the schema text will not save you.**
 
-The gates do catch the un-split string — `refusing the pool: design 'design0' has non-residue characters '/' in its sequence` — but that only saves you if you forgot to split, not if you split and took the wrong half.
+**Do not trust a schema's stated chain order. Measure it.** RFdiffusion's own `seq` column description reads *"for binder design the format is binder/target"*. On a real PD-L1 binder-design run — four independent jobs, checked against the frozen construct byte for byte — **index 0 was the target and the binder was last**. The documented order is the reverse of the delivered order. This was found by running the campaign, not by reading the catalog, and it is the reason this section exists.
+
+So the two tools you are most likely to pair are inverted *relative to each other*, and one of them is also inverted relative to its own documentation:
+
+- **RFdiffusion** `seq`, slash-joined — binder measured **last**.
+- **ProteinMPNN** `sequence`, colon-joined — "the designed chain is appended last", so binder **last**.
+
+A target chain of ordinary composition and legal length gates cleanly as if it were a design. Every row then carries the same target sequence, and the numbers that come back are a scoring method's opinion of the target against itself.
+
+**Identify the binder by what it is, not by its position.** You know the target sequence — it is in your frozen plan — and you know the length you asked for. Assert both:
+
+```python
+chains = row["seq"].split("/")
+binder = [c for c in chains if c != TARGET_SEQUENCE]
+assert len(binder) == 1 and LEN_MIN <= len(binder[0]) <= LEN_MAX
+```
+
+The gates catch two weaker versions of this — the un-split string (`has non-residue characters '/'`) and a pool that collapses to one distinct sequence (`every design carries an identical sequence`) — but neither fires if you split, took the wrong half, and the pool still varies. The assertion above is what actually closes it.
 
 **2. A composite identifier collapses.** RFdiffusion's `design` repeats across the several MPNN sequences sampled for one backbone; using it alone trips the duplicate-id refusal. Join `design` and `n`. Getting this wrong in the other direction — minting a fresh id per row — breaks `root_backbone_id` and lets one backbone's family escape the per-root cap.
 
