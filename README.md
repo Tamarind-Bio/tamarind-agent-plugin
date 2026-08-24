@@ -166,11 +166,16 @@ Scale and orchestration:
 - `tamarind-batch`: one tool across many inputs.
 - `tamarind-pipeline`: resumable, imperative multi-tool campaigns through CLI stages.
 
+Campaigns:
+
+- `tamarind-miniprotein-campaign`: a multi-method de novo miniprotein binder campaign against one target and epitope, scored on a three-arm instrument fixed before any design is seen and shipped as a ranked, diversity-capped panel.
+
 The MCP plugin provides the parallel `tamarind-mcp-*` set:
 
 - Core: `tamarind-mcp-setup`, `tamarind-mcp-tool-discovery`, `tamarind-mcp-submit-and-poll`, and `tamarind-mcp-results-analysis`.
 - Domains: `tamarind-mcp-structure-prediction`, `tamarind-mcp-antibody`, `tamarind-mcp-binder-design`, `tamarind-mcp-inverse-folding`, `tamarind-mcp-docking`, `tamarind-mcp-developability`, `tamarind-mcp-finetune`, and `tamarind-mcp-more-tools`.
 - Scale: `tamarind-mcp-batch` and `tamarind-mcp-pipeline`.
+- Campaigns: `tamarind-mcp-miniprotein-campaign`, a multi-method de novo miniprotein binder campaign against one target and epitope, scored on a three-arm instrument fixed before any design is seen and shipped as a ranked, diversity-capped panel.
 
 ## Agent contract
 

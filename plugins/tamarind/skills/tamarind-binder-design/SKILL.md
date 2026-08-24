@@ -9,7 +9,7 @@ Binder design is a generate-and-filter campaign, not a single deterministic answ
 
 ## Define the design problem
 
-Clarify the target structure or sequence, target chains/site/hotspots, binder class, length or chemistry constraints, desired candidate count, and required downstream filters. Use `tamarind-antibody` for antibody or nanobody CDR workflows.
+Clarify the target structure or sequence, target chains/site/hotspots, binder class, length or chemistry constraints, desired candidate count, and required downstream filters. Use `tamarind-antibody` for antibody or nanobody CDR workflows. Use `tamarind-miniprotein-campaign` when the request is a ranked miniprotein panel compared across several generation methods on a scoring method fixed in advance, rather than one generate-and-filter round.
 
 Query live:
 

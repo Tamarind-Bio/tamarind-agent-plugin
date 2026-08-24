@@ -63,6 +63,7 @@ plugins/tamarind/
     tamarind-more-tools/
     tamarind-batch/
     tamarind-pipeline/
+    tamarind-miniprotein-campaign/
 plugins/tamarind-mcp/
   .codex-plugin/plugin.json
   .claude-plugin/plugin.json
@@ -82,6 +83,7 @@ plugins/tamarind-mcp/
     tamarind-mcp-more-tools/
     tamarind-mcp-batch/
     tamarind-mcp-pipeline/
+    tamarind-mcp-miniprotein-campaign/
 ```
 
 ## Verification

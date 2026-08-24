@@ -30,5 +30,6 @@ Validation checks schema and character constraints, not scientific identity. Con
 - One known job: use the matching MCP domain skill plus `tamarind-mcp-submit-and-poll`.
 - One tool over many inputs: use `tamarind-mcp-batch`.
 - Dependent stages: use `tamarind-mcp-pipeline`.
+- A multi-method binder campaign ranked on a scoring method fixed in advance: use `tamarind-mcp-miniprotein-campaign`.
 
 Compute trivial local properties locally when a standard library can answer them quickly. Reserve Tamarind for managed inference, durable artifacts, or platform workflows.

@@ -9,7 +9,7 @@ Treat binder design as a generate-and-filter campaign, not a deterministic answe
 
 ## Define and select
 
-Clarify the target structure or sequence, target chains/site/hotspots, binder class, length or chemistry constraints, candidate count, and downstream filters. Use `tamarind-mcp-antibody` for antibody or VHH CDR workflows.
+Clarify the target structure or sequence, target chains/site/hotspots, binder class, length or chemistry constraints, candidate count, and downstream filters. Use `tamarind-mcp-antibody` for antibody or VHH CDR workflows. Use `tamarind-mcp-miniprotein-campaign` when the request is a ranked miniprotein panel compared across several generation methods on a scoring method fixed in advance, rather than one generate-and-filter round.
 
 Call `getAvailableTools(function="binder-design")`. For small-molecule generation, discover the exact current function with `listTags` before filtering. Inspect the chosen model with `getJobSchema`; do not assume a remembered name or field remains available.
 

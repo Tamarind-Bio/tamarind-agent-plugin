@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Miniprotein Campaign"
+  short_description: "Multi-method miniprotein binder campaign"
+  default_prompt: "Use $tamarind-mcp-miniprotein-campaign to design, score, and rank a miniprotein binder panel for this target."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"

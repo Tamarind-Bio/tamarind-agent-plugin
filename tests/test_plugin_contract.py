@@ -28,7 +28,7 @@ def test_manifest_is_cli_first_and_valid_shape() -> None:
         (ROOT / ".claude-plugin" / "marketplace.json").read_text()
     )
     assert manifest["name"] == "tamarind"
-    assert manifest["version"] == "0.2.1"
+    assert manifest["version"] == "0.2.2"
     assert claude_manifest["version"] == manifest["version"]
     assert claude_marketplace["metadata"]["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -41,7 +41,7 @@ def test_every_skill_has_minimal_frontmatter_and_ui_metadata() -> None:
     skill_dirs = sorted(
         path for path in SKILLS.iterdir() if (path / "SKILL.md").is_file()
     )
-    assert len(skill_dirs) == 14
+    assert len(skill_dirs) == 15
     for skill_dir in skill_dirs:
         skill_path = skill_dir / "SKILL.md"
         assert skill_path.is_file(), skill_dir
