@@ -130,6 +130,16 @@ def main():
     # A silently dropped row is an ungated design with no ledger entry proving
     # it stayed out -- indistinguishable downstream from one that passed. Name
     # the offender and refuse the pool.
+    # An empty pool exits 0 and names a gates.csv nobody wrote, so the stage
+    # reads as successful and whatever runs next fails on the missing file. It
+    # also means no constant-gate warning can fire, because there is nothing to
+    # be constant over.
+    if not pool:
+        raise SystemExit(
+            "refusing an empty pool: nothing to screen.\n"
+            "An empty gate stage cannot be distinguished from one that ran and rejected\n"
+            "everything. Fix the generation or the join upstream."
+        )
     nameless = [i for i, e in enumerate(pool)
                 if not str(e.get("design_id") or e.get("id") or "").strip()]
     if nameless:

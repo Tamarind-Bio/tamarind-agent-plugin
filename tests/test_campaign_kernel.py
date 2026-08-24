@@ -256,7 +256,7 @@ def test_candidates_are_sorted_before_the_caps_not_after(tmp_path: Path) -> None
     src.write_text(json.dumps(rows))
     out = tmp_path / "s.csv"
     done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
-                "--panel-size", "1", "--out", str(out))
+                "--panel-size", "1", "--out", str(out), "--allow-campaign-failure")
     assert done.returncode == 0, done.stderr
     shipped = [line.split(",")[0] for line in out.read_text().splitlines()[1:]]
     assert shipped == ["high"], f"input-order selection admitted {shipped}"
@@ -559,3 +559,77 @@ def test_an_empty_panel_fails_instead_of_reporting_a_sheet_it_never_wrote(
     assert done.returncode != 0
     assert "no candidate survived" in done.stderr
     assert not out.exists()
+
+
+# ── round 4 codex findings ─────────────────────────────────────────────────
+
+def test_method_token_variants_cannot_inflate_the_method_count(tmp_path: Path) -> None:
+    """`rfdiffusion3`, `RFdiffusion3` and `rfdiffusion-3` are ONE tool.
+
+    Counted raw they are three distinct structure methods, so one generator
+    satisfies the absolute floor and slips its per-method cap.
+    """
+    rows = _population(3)
+    for row, spelling in zip(rows, ("rfdiffusion3", "RFdiffusion3", "rfdiffusion-3")):
+        row["structure_method"] = spelling
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)), "--panel-size", "3")
+    assert done.returncode != 0
+    assert "structure method(s), and the floor is" in done.stderr
+
+
+def test_a_small_panel_size_cannot_buy_its_way_under_the_method_floor(
+    tmp_path: Path,
+) -> None:
+    """The kernel scales its floor to the requested size; the campaign's is absolute."""
+    rows = _population(2)
+    for row in rows:
+        row["structure_method"] = "boltzgen"
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)), "--panel-size", "2")
+    assert done.returncode != 0
+    assert "floor is 3" in done.stderr
+
+
+def test_losing_the_whole_pose_limb_must_be_declared(tmp_path: Path) -> None:
+    """Ranking on confidence alone is a disclosed reduction, not a smaller score."""
+    rows = _population(3)
+    for row in rows:
+        del row["sc_DockQ_ef2full"]
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    refused = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)), "--panel-size", "3")
+    assert refused.returncode != 0
+    assert "pose limb" in refused.stderr
+
+    allowed = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                   "--panel-size", "3", "--allow-reduced-instrument", "--json")
+    assert allowed.returncode == 0, allowed.stderr
+    assert json.loads(allowed.stdout)["panel_size_shipped"] == 3
+
+
+@pytest.mark.parametrize("length", [20, 200])
+def test_a_sequence_outside_the_frozen_length_policy_is_refused(
+    tmp_path: Path, length: int
+) -> None:
+    """A 200-residue target chain joined as the binder is valid protein text."""
+    bad = _candidate("wrong_len", 1.0, _index=3, sequence="A" * length)
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(_population(3) + [bad]))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "5", "--json")
+    assert done.returncode == 0, done.stderr
+    summary = json.loads(done.stdout)
+    assert any("outside the frozen policy" in r for r in summary["unranked_reasons"])
+
+
+def test_gates_refuse_an_empty_pool(tmp_path: Path) -> None:
+    """An empty screen cannot be distinguished from one that rejected everything."""
+    pool = tmp_path / "p.json"
+    pool.write_text(json.dumps([]))
+    done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+    assert done.returncode != 0
+    assert "empty pool" in done.stderr
+    assert not (tmp_path / "g.csv").exists()

@@ -57,6 +57,19 @@ NON_TERM_SUFFIXES = ("_mask", "_stamp", "_tool", "_job", "_path", "_reason", "_s
 # `RESULTSDESIGNPDB` and ship as a protein.
 AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWYXBZJUO")
 
+# The campaign's outer length bounds -- 50-120 nominal, 35-160 under the
+# motivated exception. A 200-residue chain accidentally joined as the binder is
+# syntactically valid protein and would otherwise rank. The >25%-away-from-the-
+# target-chain mimic band is NOT checkable here: it needs the frozen construct's
+# chain length, which is campaign state this script does not hold. The skill
+# owns that half.
+BINDER_LEN_MIN, BINDER_LEN_MAX = 35, 160
+
+# "at least 3 distinct structure_methods" is stated as an absolute, and the
+# relaxation ladder explicitly may not go under it. It does not scale with the
+# panel size the caller asked for.
+ABSOLUTE_STRUCTURE_METHOD_FLOOR = 3
+
 
 def _load_rows(path):
     with open(path) as fh:
@@ -156,6 +169,17 @@ def _bad_gate_verdicts(row):
     return None
 
 
+def _canonical_method(value):
+    """Fold a method token to its canonical form.
+
+    `rfdiffusion3`, `RFdiffusion3` and `rfdiffusion-3` are ONE tool. Counted raw
+    they are three distinct structure methods, so a single generator satisfies
+    the three-method floor and slips its per-method cap. The plan freezes a
+    closed one-token-per-tool vocabulary; this is the mechanical half of that.
+    """
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+
 def _bad_seed_count(row):
     """Reason this row's seed depth is unusable, or None.
 
@@ -201,6 +225,11 @@ def _bad_sequence(value):
     offenders = sorted({ch for ch in seq if ch not in AMINO_ACIDS})
     if offenders:
         return f"non-residue characters {''.join(offenders)!r} in sequence"
+    if not BINDER_LEN_MIN <= len(seq) <= BINDER_LEN_MAX:
+        return (
+            f"binder_len {len(seq)} is outside the frozen policy "
+            f"({BINDER_LEN_MIN}-{BINDER_LEN_MAX} even under the motivated exception)"
+        )
     return None
 
 
@@ -242,6 +271,8 @@ def main():
     ap.add_argument("--trace", help="write the cap/rejection/relaxation trace here")
     ap.add_argument("--allow-campaign-failure", action="store_true",
                     help="write the sheet even when the panel is below the structure-method floor; for inspection only, never to ship")
+    ap.add_argument("--allow-reduced-instrument", action="store_true",
+                    help="rank without the pose limb; a DISCLOSED reduction that must be\nreported on every row and in the deliverable")
     ap.add_argument("--skip-recompute", action="store_true",
                     help="emit the panel without the write-time gate recompute; DISCLOSE this")
     ap.add_argument("--json", action="store_true")
@@ -314,6 +345,21 @@ def main():
     ipsae_terms = [[_num(r.get(n)) for n in ipsae_names] for r in eligible]
     dockq_terms = [[_num(r.get(n)) for n in dockq_names] for r in eligible]
 
+    # An instrument that lost its whole self-consistency limb still ranks
+    # happily on interface confidence alone. The protocol treats that as an
+    # explicit reduction to be disclosed, not a smaller version of the same
+    # measurement: every remaining term is a confidence estimate from the same
+    # co-folder family, so a design whose arms agree on a WRONG pose stops being
+    # caught. Require it to be named rather than discovered.
+    if not dockq_names and not args.allow_reduced_instrument:
+        raise SystemExit(
+            "refusing to rank: no sc_DockQ_* column on any candidate, so the pose limb "
+            "did not run.\n"
+            "That limb is the instrument's only geometric check. Ranking without it is a\n"
+            "DISCLOSED REDUCTION, not a complete score -- pass --allow-reduced-instrument\n"
+            "and report the consequence on every row and in the deliverable."
+        )
+
     realized = list(ipsae_names) + list(dockq_names)
     if eligible:
         final = helpers.final_score_from_terms(ipsae_terms, dockq_terms)
@@ -348,6 +394,8 @@ def main():
     # name and the selector still sees the cluster. A row with neither is
     # refused as missing provenance -- absence of a cluster is not a pass.
     for row in ranked:
+        row["structure_method"] = _canonical_method(row.get("structure_method"))
+        row["seq_method"] = _canonical_method(row.get("seq_method"))
         if not row.get("tm_cluster") and row.get("tm90_cluster_id"):
             row["tm_cluster"] = row["tm90_cluster_id"]
 
@@ -495,7 +543,13 @@ def main():
     # cannot reach the panel size, ship the actual N; padding with duplicates is
     # forbidden". A short panel ships, loudly; an under-method one does not.
     distinct = result.get("distinct_structure_methods")
+    # The kernel scales its floor down for a small panel, so --panel-size 1 or 2
+    # would clear a one-method panel and report no failure. The campaign's floor
+    # is an absolute 3; take the stricter of the two so a small panel size
+    # cannot buy its way under it.
     floor = result.get("min_structure_methods")
+    if isinstance(floor, int):
+        floor = max(floor, ABSOLUTE_STRUCTURE_METHOD_FLOOR)
     if (
         panel
         and isinstance(distinct, int)

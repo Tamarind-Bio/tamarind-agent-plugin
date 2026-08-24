@@ -51,12 +51,18 @@ to carry these or the row goes to the unranked section with its reason:
 | `opt_round`, `parent_design_id`, `root_backbone_id` | lineage that closes — round 0 claims no parent, a later round names one, nothing is its own parent |
 | per-arm `ipsae_*` / `sc_DockQ_*` | numeric. A boolean is refused: `float(True)` is a fabricated perfect score |
 | `target` | one target across the whole file, or none at all. The rank score is per-target and transductive, so two targets pooled changes every z-score |
+| `structure_method`, `seq_method` | canonicalized before counting, so `rfdiffusion3` / `RFdiffusion3` / `rfdiffusion-3` count as ONE method rather than three |
+| binder length | 35-160 residues. The >25%-from-the-target-chain mimic band needs the frozen construct and is the skill's to enforce, not the script's |
 
 Two whole-run refusals, distinct from per-row ones: it will not emit a panel
-whose distinct `structure_method` count is below the floor — that floor is
-absolute and no rung of the ladder goes under it — and it will not report
-success on an empty panel, because exiting cleanly without writing the sheet
-leaves whatever runs next to fail on a missing file.
+whose distinct `structure_method` count is below **3** — that floor is absolute,
+does not scale down with a smaller `--panel-size`, and no rung of the ladder
+goes under it — and it will not report success on an empty panel, because
+exiting cleanly without writing the sheet leaves whatever runs next to fail on a
+missing file. It also refuses to rank at all when no `sc_DockQ_*` column
+survives: losing the whole pose limb is a **disclosed reduction** that must be
+named with `--allow-reduced-instrument` and reported, not a smaller version of
+the same score.
 
 A short panel that clears the floor **does** ship. "Ship the actual N" is the
 instruction; padding with duplicates is what is forbidden.
