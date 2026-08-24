@@ -34,7 +34,9 @@ The lowercase token is the job `type`; the name in parentheses is the only spell
 | `pxdesign` | `pxdesignMode` | **`generation`** | Raw backbones, **no ranked table and no output contract at all**. Only `extended` writes `summary.csv`. |
 | | `binderLength` | **10** | Below this campaign's own 35-residue floor; every row would be refused by the gate. |
 | `mosaic-hallucinate` | `binderLength` | **220** | Above the 160 ceiling. |
-| `freebindcraft` | `numDesigns` | **1** | It generates until this many designs *pass its filters*, and stops early on its runtime cap — so a run can end partial and silently short. |
+| `freebindcraft` | **`hotspotResidues`** | **optional — auto-selects** | **The one that breaks the campaign silently.** Its description reads *"If left empty suitable hotspots will be selected automatically."* Omit it and the tool picks its **own** epitope: no error, a normal-looking run, and a method aimed somewhere else. One frozen epitope across every method is this campaign's central invariant, and this is the only roster entry that can violate it without failing. Audit it afterwards on the `Target_Hotspot` output column, documented as *"empty if auto-selected"* — an empty value there means the epitope was not yours. |
+| | `numDesigns` | **1** | It generates until this many designs *pass its filters*, and stops early on its runtime cap — so a run can end partial and silently short. |
+| | `maxRunTime` | 16 h (free: 4 h) | The cap that makes a run end partial. |
 | `genie3` | `foldNumModels` | 5 | Rows are per predicted **model**, and `rank` is the AF2 model rank, not a design ordinal — there is no design identifier at all. See [pool_schema.md](pool_schema.md). |
 
 ## Aiming at the frozen epitope — the key per method
@@ -45,7 +47,7 @@ Five spellings and four value grammars. Submission validates against that type's
 |---|---|---|
 | `rfdiffusion` | `targetChains` + `binderHotspots` | `{"A": "20 21 23"}` — space |
 | `rfdiffusion3` | `targetChains` + `hotspots` | no example in schema |
-| `freebindcraft` | `chains` + `hotspotResidues` | `{"A": "1-10"}` — dash range |
+| `freebindcraft` | `chains` + `hotspotResidues` — **OPTIONAL, auto-selects** | `{"A": "1-10"}` — dash range |
 | `boltzgen` | `targetChains` + `bindingSite` / `notBindingSite` | no example in schema |
 | `pxdesign` | `targetChains` + `hotspots` | `{"A": "12-33"}` — dash range |
 | `proteina-complexa` | `targetChains` + `hotspotResidues` | `{"A": "37,39,49,98"}` — comma |
@@ -55,6 +57,8 @@ Five spellings and four value grammars. Submission validates against that type's
 | `protein-hunter` | **none** — sequence-conditioned | diversity arm |
 
 Three of these carry **no example** in the schema, so the value shape cannot be read off it. Validate a single job before committing a round to that method.
+
+**Check whether the aiming field is REQUIRED, and treat an optional one as the hazard it is.** A required field fails loudly when you forget it. An optional one does not — the job runs, and the method aims wherever it likes. `freebindcraft` is confirmed to work this way. Before you submit a method's first production round, confirm from its schema that the aiming field is required, or that you have supplied it; then confirm from the run's own output that the site it used is the site you froze. "Every method got the same epitope" is a claim about what came back, not about what you sent.
 
 **No method opens the campaign by default.** The protocol names them as peers and requires backbones from each, so a preferred first method is a finger on the scale of the very comparison the campaign exists to make. A method whose outputs will not parse is a gap to disclose and fix, never a reason to substitute a different method for it.
 
