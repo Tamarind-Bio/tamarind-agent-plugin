@@ -72,18 +72,20 @@ DESTS = [
 
 
 def rewrite(text: str) -> str:
-    """Point intra-package imports at the vendored copy."""
-    text = re.sub(
-        r"from campaign\.cda\.subagents\.(\w+) import", r"from ._\1_shim import", text
-    )
-    # `from ._X_shim import` is a placeholder so the two substitutions cannot
-    # collide; collapse it to the real relative form.
-    text = text.replace("from ._", "from .").replace("_shim import", " import")
-    text = re.sub(r"from \.(\w+) +import", r"from .\1 import", text)
+    """Point intra-package imports at the vendored copy.
+
+    Two independent substitutions on disjoint patterns. An earlier version
+    routed through a placeholder and then ran a global
+    `replace("from ._", "from .")`, which strips the leading underscore off ANY
+    relative import -- including the `._rubric_constants` one this function
+    itself introduces. Nothing upstream imports relatively today, so it never
+    fired, but a rewriter that corrupts its own output the moment upstream adds
+    one is a trap. Keep these as two plain, order-independent replacements.
+    """
     text = text.replace(
         "from campaign.cda.prompts.qa_rubrics import", "from ._rubric_constants import"
     )
-    return text
+    return re.sub(r"from campaign\.cda\.subagents\.(\w+) import", r"from .\1 import", text)
 
 
 def main() -> int:

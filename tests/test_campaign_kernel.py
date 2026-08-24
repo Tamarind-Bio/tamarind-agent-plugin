@@ -6,6 +6,7 @@ protocol states in prose and only code can enforce.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -138,3 +139,30 @@ def test_entry_points_run_from_an_unrelated_directory(
         cwd=tmp_path, capture_output=True, text=True,
     )
     assert done.returncode == 0, done.stderr
+
+
+def test_vendor_rewriter_does_not_corrupt_relative_imports() -> None:
+    """The rewriter must not eat the leading underscore off its own output.
+
+    An earlier version ran a global `replace("from ._", "from .")`, which turns
+    `from ._rubric_constants import` -- the import that function itself writes --
+    into `from .rubric_constants import`. Nothing upstream imports relatively
+    today, so it never fired; a rewriter that breaks the moment upstream adds one
+    is a trap worth pinning.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "vendor_tool", ROOT / "tools/vendor_campaign_kernel.py"
+    )
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+
+    assert tool.rewrite("from campaign.cda.subagents.novelty_gate import (") == (
+        "from .novelty_gate import ("
+    )
+    assert tool.rewrite("from campaign.cda.prompts.qa_rubrics import X") == (
+        "from ._rubric_constants import X"
+    )
+    # Untouched: unrelated imports, and any relative import already present.
+    for line in ("from dataclasses import dataclass", "import numpy as np",
+                 "from ._rubric_constants import X", "from ._foo import Y"):
+        assert tool.rewrite(line) == line, line
