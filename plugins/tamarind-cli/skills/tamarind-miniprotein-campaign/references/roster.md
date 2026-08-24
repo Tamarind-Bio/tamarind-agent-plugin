@@ -80,6 +80,8 @@ Neither errors, and the difference matters: the first is a *wrong* epitope, the 
 
 "Every method got the same epitope" is a claim about what came back, not about what you sent.
 
+**None of these defaults produce an error.** Measured: a `boltzgen` submission carrying only a target file and `targetChains` validates clean, and its normalized settings come back `binderType: "de-novo-nanobody"`, `numDesigns: 10`, `budget: 2`, `filterBindingSite: false`. A clean validation is not evidence that you submitted the campaign you meant to. **Read the normalized settings that `tamarind --json validate` returns and check them against your frozen plan** — it is the only place the platform tells you what it actually decided to run.
+
 **No method opens the campaign by default.** The protocol names them as peers and requires backbones from each, so a preferred first method is a finger on the scale of the very comparison the campaign exists to make. A method whose outputs will not parse is a gap to disclose and fix, never a reason to substitute a different method for it.
 
 **Per-method floor: at least 50 backbones into the scored pool from every starred method not proved UNAVAILABLE.** NOT_PROBED still owes them — the way to discharge that is to run the canary, not to assume the method is dead. Beyond the floor, reallocate toward whichever methods perform best on this target and epitope, while staying under the selection caps.

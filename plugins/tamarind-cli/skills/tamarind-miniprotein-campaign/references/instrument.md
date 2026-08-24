@@ -34,7 +34,17 @@ Three constructs are needed and they are different submissions:
 
 - **Interface confidence per arm** = minimum over both alignment directions, then **max over seeds**.
 
-  **Build it from the two directional columns; the `_max` column is not it.** A real arm row carries `ipSAE_AB`, `ipSAE_BA` **and** `ipSAE_AB_max`. That last one aggregates one direction — AB — over samples; it is *not* the cross-direction minimum this term is defined as. Reaching for the column whose name already says "max" skips the BA direction entirely, and it errs the permissive way: on a measured row, `min(AB, BA)` was 0.01294 while `ipSAE_AB_max` was 0.015362. Take `min(ipSAE_AB, ipSAE_BA)` yourself, then aggregate that across seeds.
+  **Build it from the two directional columns. The `_max` column is this term's exact opposite.** A real arm row carries `ipSAE_AB`, `ipSAE_BA` **and** `ipSAE_AB_max` — and measured across three real scoring rows, `ipSAE_AB_max` is the **maximum over the two alignment directions**, not an aggregate of the AB direction as its name suggests:
+
+  | row | `ipSAE_AB` | `ipSAE_BA` | `ipSAE_AB_max` | this term (`min`) |
+  |---|---|---|---|---|
+  | ESMFold2-Fast | 0.015362 | 0.012940 | 0.015362 | 0.012940 |
+  | ESMFold2 (full) | 0.012845 | 0.010349 | 0.012845 | 0.010349 |
+  | ESMFold2 (full) | 0.094172 | 0.129578 | **0.129578** | **0.094172** |
+
+  The last row is decisive: `_max` does not equal `AB`, it equals `BA`. So the column named `_max` gives you the **larger** direction exactly where this term is defined as the **smaller** one — on that row, 0.129578 against a true 0.094172, a 38% inflation, on every design, in the permissive direction, with a plausible number and no error. It is the single easiest way to silently loosen the instrument.
+
+  Compute `min(ipSAE_AB, ipSAE_BA)` yourself and aggregate *that* across seeds. Never read an interface term out of a `_max` column.
 - **Self-consistency per arm** = structural agreement between the designed complex and that arm's prediction **at the argmax-interface-confidence seed** — not the best-agreement seed. Record both argmax seeds per arm so seed concordance is auditable. Chain mapping is the best symmetric relabeling, which applies on monomeric targets too, since chain ids may differ between designed and predicted structures.
 - **Pose term** = the **minimum** over the arms that ran, passing at or above the frozen threshold (default 0.23). Because it is a minimum, it is comparable across designs only when the same arms ran for each: two arms of three reads **systematically higher** than three, so a row missing an arm's term is written NOT_RUN rather than given a minimum over what is left. Never approximate this term from the legs that did run.
 
