@@ -110,13 +110,36 @@ def _check_gate(path):
 
 
 def _num(value):
-    if value is None or value == "":
+    # `bool` is a subclass of `int`, so float(True) is 1.0 -- a fabricated
+    # perfect interface score that would promote a malformed row to the top of
+    # the panel. Reject it explicitly, as the vendored numeric helper does.
+    if value is None or value == "" or isinstance(value, bool):
         return None
     try:
         out = float(value)
     except (TypeError, ValueError):
         return None
     return None if out != out else out
+
+
+# Verdict columns a row may carry from the pre-scoring gates. A REJECT here is a
+# gate that already refused the design; the selector enforces only the
+# target-mimic ban, so without this a rejected design with a good score ranks.
+GATE_VERDICT_COLUMNS = (
+    "liability_verdict",
+    "novelty_verdict",
+    "structural_plausibility_verdict",
+    "monomer_foldability_verdict",
+    "target_mimic_verdict",
+)
+
+
+def _carried_reject(row):
+    """Reason a gate already rejected this row, or None."""
+    for column in GATE_VERDICT_COLUMNS:
+        if str(row.get(column) or "").strip().upper() == "REJECT":
+            return f"{column} is REJECT: a gate already refused this design"
+    return None
 
 
 def _term_matrix(rows, prefix):
@@ -184,6 +207,8 @@ def main():
                     help="frozen binder-alone mean-pLDDT floor, on the scale the arm emits")
     ap.add_argument("--out", help="write the design sheet here")
     ap.add_argument("--trace", help="write the cap/rejection/relaxation trace here")
+    ap.add_argument("--allow-campaign-failure", action="store_true",
+                    help="write the sheet even when the panel is below the structure-method floor; for inspection only, never to ship")
     ap.add_argument("--skip-recompute", action="store_true",
                     help="emit the panel without the write-time gate recompute; DISCLOSE this")
     ap.add_argument("--json", action="store_true")
@@ -200,39 +225,61 @@ def main():
     except ImportError as exc:
         raise SystemExit(f"vendored kernel unavailable: {exc}")
 
-    ipsae_names, ipsae_terms = _term_matrix(rows, IPSAE_PREFIX)
-    dockq_names, dockq_terms = _term_matrix(rows, SCDOCKQ_PREFIX)
+    # ── ELIGIBILITY FIRST, THEN THE ALGEBRA ─────────────────────────────────
+    # rank_zscore is TRANSDUCTIVE: the mean and spread come from the scored
+    # pool. A row that will be dropped for a bad sequence, broken lineage or a
+    # carried REJECT must not be in that population, or it moves the z-scores of
+    # every row that does ship. So the row-intrinsic checks -- none of which
+    # need a score -- run before the algebra, not after it.
+    eligible, unranked = [], []
+    for row in rows:
+        reason = _bad_sequence(row.get("sequence")) or _bad_lineage(row) or _carried_reject(row)
+        if reason:
+            row["unranked_reason"] = reason
+            unranked.append(row)
+        else:
+            eligible.append(row)
+
+    # Which columns exist is a property of the POOL's schema, so read the term
+    # names off every row -- otherwise a pool whose rows are all ineligible
+    # reports "no ipsae columns" and hides the real reason they were dropped.
+    # The VALUES, and therefore the transductive statistics, come from the
+    # eligible rows only.
+    ipsae_names, _ = _term_matrix(rows, IPSAE_PREFIX)
+    dockq_names, _ = _term_matrix(rows, SCDOCKQ_PREFIX)
     if not ipsae_names:
         raise SystemExit(
             f"no {IPSAE_PREFIX}* columns on the candidate rows: there is nothing to rank.\n"
             "Every co-folding stage runs all three arms; a pool with no interface-confidence\n"
             "terms has not been scored."
         )
+    ipsae_terms = [[_num(r.get(n)) for n in ipsae_names] for r in eligible]
+    dockq_terms = [[_num(r.get(n)) for n in dockq_names] for r in eligible]
 
-    final = helpers.final_score_from_terms(ipsae_terms, dockq_terms)
-    rank_z = helpers.rank_zscore_from_terms(ipsae_terms, dockq_terms)
     realized = list(ipsae_names) + list(dockq_names)
-    for row, fs, rz in zip(rows, final, rank_z):
-        row["final_score"] = fs
-        row["rank_zscore"] = rz
-        row["score_instrument"] = ",".join(realized)
+    if eligible:
+        final = helpers.final_score_from_terms(ipsae_terms, dockq_terms)
+        rank_z = helpers.rank_zscore_from_terms(ipsae_terms, dockq_terms)
+        for row, fs, rz in zip(eligible, final, rank_z):
+            row["final_score"] = fs
+            row["rank_zscore"] = rz
+            row["score_instrument"] = ",".join(realized)
 
-    # Refuse rows the algebra could not score, and rows whose sequence or
-    # lineage is malformed, BEFORE selection. The protocol reserves the unranked
-    # section for rows with missing scores and never relaxes a non-null
-    # final_score, so a null-score row that lands in the panel is a ranked row
-    # asserting a measurement nobody made.
-    ranked, unranked = [], []
-    for row in rows:
-        reason = None
+    # Now the score-dependent refusals. final_score non-null is never relaxed,
+    # and a null rank_zscore -- which the algebra returns when a term is
+    # constant across the pool, or fewer than two rows are eligible -- means the
+    # ranking metric is UNDEFINED for that row. Ranking it anyway would order it
+    # by file position while the sheet claims it was ranked on the instrument.
+    ranked = []
+    for row in eligible:
         if row.get("final_score") is None:
-            reason = "final_score is null: a realized term is missing or unparseable"
-        elif _bad_sequence(row.get("sequence")):
-            reason = _bad_sequence(row.get("sequence"))
-        elif _bad_lineage(row):
-            reason = _bad_lineage(row)
-        if reason:
-            row["unranked_reason"] = reason
+            row["unranked_reason"] = "final_score is null: a realized term is missing or unparseable"
+            unranked.append(row)
+        elif row.get("rank_zscore") is None:
+            row["unranked_reason"] = (
+                "rank_zscore is undefined: a realized term is constant across the pool, "
+                "or fewer than two rows are eligible"
+            )
             unranked.append(row)
         else:
             ranked.append(row)
@@ -377,6 +424,34 @@ def main():
                     + "\n".join(lines)
                     + "\nDo not ship a row whose gates you could not reproduce."
                 )
+
+    # The >=N-distinct-structure-methods floor is ABSOLUTE: §7 caps the
+    # relaxation ladder at "never fewer than 3 distinct structure_methods", so a
+    # panel below it is not shippable at any rung.
+    #
+    # Gate on that floor specifically, NOT on the kernel's `campaign_failure`
+    # flag, which is composite: it is set for any panel that could not be filled
+    # to the requested size, including one shortened by the Levenshtein or
+    # cluster caps while still carrying enough methods. Refusing on the flag
+    # would block the case the protocol explicitly sanctions -- "if even that
+    # cannot reach the panel size, ship the actual N; padding with duplicates is
+    # forbidden". A short panel ships, loudly; an under-method one does not.
+    distinct = result.get("distinct_structure_methods")
+    floor = result.get("min_structure_methods")
+    if (
+        panel
+        and isinstance(distinct, int)
+        and isinstance(floor, int)
+        and distinct < floor
+        and not args.allow_campaign_failure
+    ):
+        raise SystemExit(
+            f"refusing to write the sheet: the panel carries {distinct} distinct "
+            f"structure method(s), and the floor is {floor}.\n"
+            "That floor is absolute -- no rung of the relaxation ladder goes below it -- so\n"
+            "the repair is upstream: more designs from more methods. Re-run with\n"
+            "--allow-campaign-failure only to inspect the partial selection, never to ship it."
+        )
 
     if args.out and panel:
         cols, seen = [], set()

@@ -145,6 +145,16 @@ def main():
         if did in seen:
             raise SystemExit(f"refusing the pool: duplicate design_id {did!r}")
         seen.add(did)
+        # No sequence means liability cannot run, and the ledger records only
+        # REJECT -- so the row is reported as screened with no rejection entry,
+        # and a downstream pool built by removing ledger ids carries it into
+        # paid folding ungated. Fail closed, like a missing id.
+        if not str(entry.get("sequence") or "").strip():
+            raise SystemExit(
+                f"refusing the pool: design {did!r} carries no sequence.\n"
+                "Liability cannot run on it, and a row that is neither gated nor "
+                "rejected is one nothing downstream can keep out."
+            )
         pdb = entry.get("designed_structure_path") or entry.get("structure_path")
         chain = entry.get("binder_chain")
         row = {"design_id": did}
@@ -225,7 +235,16 @@ def main():
         "rejected": len(rejected_ids),
         "rejected_design_ids": rejected_ids,
         "verdict_counts": counts,
-        "structural_gates_ran": structural,
+        # Availability and execution are different claims. numpy importing says
+        # nothing about whether any row had a structure to screen, and a JSON
+        # consumer that reads one as the other treats a zero-row structural
+        # screen as a completed one.
+        "structural_gates_available": structural,
+        "structural_gates_evaluated": {
+            gate: sum(n for verdict, n in (counts.get(gate) or {}).items()
+                      if verdict != VERDICT_NOT_RUN)
+            for gate in ("structural_plausibility", "target_mimic")
+        },
         "evidence_csv": args.out,
         "rejects_ledger": args.rejects,
     }
@@ -238,10 +257,23 @@ def main():
             print(f"  {gate}: " + ", ".join(f"{k}={v}" for k, v in sorted(tally.items())))
         if not structural:
             print("  NOTE: numpy unavailable - plausibility and mimic gates are NOT_RUN, not passed")
-    # A gate that passes everything or fails everything is broken until investigated.
+    # A gate that passes everything, fails everything, or returns a constant is
+    # broken until investigated -- all three, not just the un-run case. The
+    # job-borne gates are legitimately all-NOT_RUN here, so they are exempt from
+    # that one arm and named as such in the row.
+    always_not_run = {"monomer_foldability", "novelty"}
     for gate, tally in counts.items():
-        if rows and tally.get(VERDICT_NOT_RUN, 0) == len(rows):
-            print(f"  WARNING: {gate} did not run on any design - it is NOT a passed gate", file=sys.stderr)
+        if not rows:
+            break
+        if tally.get(VERDICT_NOT_RUN, 0) == len(rows) and gate not in always_not_run:
+            print(f"  WARNING: {gate} did not run on any design - it is NOT a passed gate",
+                  file=sys.stderr)
+        elif tally.get(VERDICT_PASS, 0) == len(rows):
+            print(f"  WARNING: {gate} passed every one of {len(rows)} designs - "
+                  "a constant gate is broken until investigated", file=sys.stderr)
+        elif tally.get(VERDICT_REJECT, 0) == len(rows):
+            print(f"  WARNING: {gate} rejected every one of {len(rows)} designs - "
+                  "a constant gate is broken until investigated", file=sys.stderr)
     return 0
 
 

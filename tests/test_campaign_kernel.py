@@ -185,11 +185,33 @@ def _gate(tmp_path: Path, **over) -> Path:
     return p
 
 
-def _candidate(design_id: str, z: float, **over) -> dict:
+_METHODS = ("boltzgen", "rfdiffusion3", "genie3", "pxdesign")
+# The seq_method cap is two-thirds of the panel, so a population that shares
+# one sequence designer cannot fill a panel and then trips the method floor.
+_SEQ_METHODS = ("solublempnn", "solublecaliby", "proteinmpnn", "solublempnn")
+_SEQUENCES = (
+    "MSTQPWVKNGDFIRYTLEACHKMQDPNVFGSRYLAWDNKVIPCEQTMFHGRLSDAYVKNPEWQIFTRDGH",
+    "MRYKDLFVQNPWHSAECGITMKDLNVFRQYPAWSGKDVHTLECMFNRQIPDGYVKSAEWLTFQRNDHGVM",
+    "MDWKQNAFLRSHVGYTIPCEMKQDRNVFLAWSGHKTVIPDCEQMFNRYLSDAGVKNPEWQAFTIRDGHVM",
+    "MEHKRWDQVSANFLYTGIPCMKDQNRVFLWASGHKTVIPDCEQMFNRYLSDAGVKNPEWQAFTIRDGHVM",
+)
+
+
+def _population(n: int = 3) -> list[dict]:
+    """A pool with real spread and enough methods to clear the absolute floor.
+
+    rank_zscore is transductive, so a single-row pool has no spread and the
+    algebra correctly returns None -- every panel fixture needs a population.
+    """
+    return [_candidate(f"p{i}", float(i), _index=i) for i in range(n)]
+
+
+def _candidate(design_id: str, z: float, _index: int = 0, **over) -> dict:
     row = {
-        "design_id": design_id, "sequence": "MKQLEDKVEELLSKNYHLENEVARLKKLVGERGS",
-        "root_backbone_id": f"b-{design_id}", "structure_method": "boltzgen",
-        "seq_method": "solublempnn", "tm_cluster": f"c-{design_id}",
+        "design_id": design_id, "sequence": _SEQUENCES[_index % len(_SEQUENCES)],
+        "root_backbone_id": f"b-{design_id}", "structure_method": _METHODS[_index % len(_METHODS)],
+        "seq_method": _SEQ_METHODS[_index % len(_SEQ_METHODS)],
+        "tm_cluster": f"c-{design_id}",
         "target_mimic": "PASS", "opt_round": 0, "n_seeds": 5,
         "ipsae_ef2full": 0.5 + z / 100, "sc_DockQ_ef2full": 0.3 + z / 100,
     }
@@ -203,14 +225,16 @@ def test_the_ipsae_mask_stamp_is_not_treated_as_a_score_term(tmp_path: Path) -> 
     Swept into the algebra it parses to None and makes the whole row ineligible,
     so a correctly-stamped campaign scores nothing at all.
     """
-    rows = [_candidate("d1", 5.0, ipsae_mask="PER_PROTOMER_MAX(not UNION)")]
+    rows = _population(3)
+    for row in rows:
+        row["ipsae_mask"] = "PER_PROTOMER_MAX(not UNION)"
     src = tmp_path / "c.json"
     src.write_text(json.dumps(rows))
     done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
-                "--panel-size", "1", "--out", str(tmp_path / "s.csv"), "--json")
+                "--panel-size", "3", "--out", str(tmp_path / "s.csv"), "--json")
     assert done.returncode == 0, done.stderr
     summary = json.loads(done.stdout)
-    assert summary["panel_size_shipped"] == 1
+    assert summary["panel_size_shipped"] == 3, summary
     assert "ipsae_mask" not in summary["realized_terms"]
 
 
@@ -237,7 +261,7 @@ def test_candidates_are_sorted_before_the_caps_not_after(tmp_path: Path) -> None
 
 def test_a_null_score_row_is_never_ranked(tmp_path: Path) -> None:
     """final_score non-null is never relaxed; such rows are unranked, not shipped."""
-    rows = [_candidate("ok", 1.0), _candidate("broken", 1.0, ipsae_ef2full=None)]
+    rows = _population(3) + [_candidate("broken", 1.0, _index=3, ipsae_ef2full=None)]
     src = tmp_path / "c.json"
     src.write_text(json.dumps(rows))
     done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
@@ -245,7 +269,7 @@ def test_a_null_score_row_is_never_ranked(tmp_path: Path) -> None:
     assert done.returncode == 0, done.stderr
     summary = json.loads(done.stdout)
     assert summary["unranked"] == 1
-    assert summary["panel_size_shipped"] == 1
+    assert summary["panel_size_shipped"] == 3, summary
 
 
 def test_a_status_only_gate_artifact_is_refused(tmp_path: Path) -> None:
@@ -271,7 +295,9 @@ def test_a_path_in_the_sequence_field_is_refused_not_salvaged(tmp_path: Path) ->
     Fixed at this boundary rather than in the vendored kernel, which must stay
     byte-identical to upstream.
     """
-    rows = [_candidate("d1", 1.0), _candidate("bad", 1.0, sequence="results/design1.pdb")]
+    rows = _population(3) + [
+        _candidate("bad", 1.0, _index=3, sequence="results/design1.pdb")
+    ]
     src = tmp_path / "c.json"
     src.write_text(json.dumps(rows))
     done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
@@ -311,7 +337,8 @@ def test_gates_refuse_a_pool_row_with_no_durable_identifier(tmp_path: Path) -> N
     assert "no design_id or id" in done.stderr
 
     dupes = tmp_path / "d.json"
-    dupes.write_text(json.dumps([{"design_id": "d1"}, {"design_id": "d1"}]))
+    dupes.write_text(json.dumps([{"design_id": "d1", "sequence": "MKQL"},
+                                 {"design_id": "d1", "sequence": "MKQL"}]))
     assert "duplicate design_id" in _run("campaign_gates.py", str(dupes)).stderr
 
 
@@ -330,3 +357,133 @@ def test_gates_mark_the_job_borne_checks_not_run_rather_than_omitting_them(
     counts = json.loads(done.stdout)["verdict_counts"]
     assert counts["monomer_foldability"] == {"NOT_RUN": 1}
     assert counts["novelty"] == {"NOT_RUN": 1}
+
+
+# ── round 2 codex findings ─────────────────────────────────────────────────
+
+def test_a_row_a_gate_already_rejected_is_never_ranked(tmp_path: Path) -> None:
+    """The selector enforces only the target-mimic ban.
+
+    Without this check a design the liability or plausibility gate REJECTed
+    ranks on its score, and the recompute does not catch it: correctly-carried
+    REJECT evidence reproduces, so it is not a mismatch.
+    """
+    rows = _population(3) + [
+        _candidate("rejected", 99.0, _index=3, liability_verdict="REJECT")
+    ]
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "5", "--json")
+    assert done.returncode == 0, done.stderr
+    summary = json.loads(done.stdout)
+    assert any("liability_verdict is REJECT" in r for r in summary["unranked_reasons"])
+    assert summary["panel_size_shipped"] == 3
+
+
+def test_a_boolean_score_cell_is_not_read_as_a_number(tmp_path: Path) -> None:
+    """float(True) is 1.0 -- a fabricated perfect score that tops the panel."""
+    rows = _population(3) + [_candidate("boolish", 1.0, _index=3, ipsae_ef2full=True)]
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "5", "--json")
+    summary = json.loads(done.stdout)
+    assert summary["unranked"] == 1
+    assert summary["panel_size_shipped"] == 3
+
+
+def test_an_ineligible_row_cannot_move_the_transductive_z_scores(tmp_path: Path) -> None:
+    """rank_zscore's mean and spread come from the scored pool.
+
+    A malformed row with extreme terms must not be in that population, or it
+    changes the relative ordering of rows that do ship even though it never
+    does.
+    """
+    def ranks_for(rows):
+        src = tmp_path / f"c{len(rows)}.json"
+        src.write_text(json.dumps(rows))
+        out = tmp_path / f"s{len(rows)}.csv"
+        done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                    "--panel-size", "3", "--out", str(out))
+        assert done.returncode == 0, done.stderr
+        import csv as _csv
+        with out.open() as fh:
+            return {r["design_id"]: r["rank_zscore"] for r in _csv.DictReader(fh)}
+
+    clean = _population(3)
+    # Same population, plus an extreme row that is dropped for a bad sequence.
+    poisoned = _population(3) + [
+        _candidate("extreme", 0.0, _index=3, sequence="not/a/sequence.pdb",
+                   ipsae_ef2full=99.0, sc_DockQ_ef2full=99.0)
+    ]
+    assert ranks_for(clean) == ranks_for(poisoned)
+
+
+def test_a_panel_below_the_structure_method_floor_is_refused(tmp_path: Path) -> None:
+    """The floor is absolute; no rung of the ladder goes below it."""
+    rows = [_candidate(f"m{i}", float(i), _index=0) for i in range(3)]
+    for i, row in enumerate(rows):  # one method, distinct sequences and roots
+        row["sequence"] = _SEQUENCES[i]
+        row["root_backbone_id"] = f"b{i}"
+        row["tm_cluster"] = f"c{i}"
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(rows))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "s.csv"))
+    assert done.returncode != 0
+    assert "structure method(s), and the floor is" in done.stderr
+    assert not (tmp_path / "s.csv").exists(), "refused runs must not write a sheet"
+
+
+def test_a_short_panel_that_meets_the_floor_still_ships(tmp_path: Path) -> None:
+    """"Ship the actual N" is the protocol's instruction, not a failure.
+
+    campaign_failure is composite -- it is set for any underfilled panel -- so
+    gating on it would block the case the protocol explicitly sanctions.
+    """
+    src = tmp_path / "c.json"
+    src.write_text(json.dumps(_population(3)))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "30", "--json")
+    assert done.returncode == 0, done.stderr
+    summary = json.loads(done.stdout)
+    assert summary["panel_size_shipped"] == 3
+    assert summary["short_of_request"] == 27
+
+
+def test_gates_refuse_a_pool_row_with_no_sequence(tmp_path: Path) -> None:
+    """Liability cannot run on it, and the ledger records only REJECT."""
+    pool = tmp_path / "p.json"
+    pool.write_text(json.dumps([{"design_id": "d1", "sequence": "MKQL"},
+                                {"design_id": "d2"}]))
+    done = _run("campaign_gates.py", str(pool))
+    assert done.returncode != 0
+    assert "carries no sequence" in done.stderr
+
+
+def test_gates_warn_when_a_gate_is_constant_across_the_pool(tmp_path: Path) -> None:
+    """All-pass and all-reject are broken until investigated, same as all-NOT_RUN."""
+    pool = tmp_path / "p.json"
+    pool.write_text(json.dumps([
+        {"design_id": f"d{i}", "sequence": "MKKKKKKKKKKKKWWWWWWWWWWCA"} for i in range(3)
+    ]))
+    done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+    assert done.returncode == 0, done.stderr
+    assert "rejected every one of 3 designs" in done.stderr, done.stderr
+
+
+def test_gates_report_structural_execution_separately_from_availability(
+    tmp_path: Path,
+) -> None:
+    """numpy importing says nothing about whether any row had a structure."""
+    pool = tmp_path / "p.json"
+    pool.write_text(json.dumps([
+        {"design_id": "d1", "sequence": "MKQLEDKVEELLSKNYHLENEVARLKK"}
+    ]))
+    done = _run("campaign_gates.py", str(pool), "--json")
+    summary = json.loads(done.stdout)
+    assert summary["structural_gates_available"] is True
+    assert summary["structural_gates_evaluated"] == {
+        "structural_plausibility": 0, "target_mimic": 0
+    }
