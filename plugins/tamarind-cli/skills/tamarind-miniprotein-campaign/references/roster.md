@@ -56,7 +56,16 @@ Five spellings and four value grammars. Submission validates against that type's
 | `mosaic-hallucinate` | **none** — `targetSequence` only | — | — | cannot be aimed |
 | `protein-hunter` | **none** — `targetSequence`/`targetCCD` | — | — | cannot be aimed |
 
-Three carry **no example**, so the value shape cannot be read off the schema. The file field differs too — `genie3` takes `targetFile`, not `pdbFile`, and an unrecognized key fails the whole job. Validate one job per method before committing a round to it.
+Three carry **no example**, so the value shape cannot be read off the schema. The file field differs too — `genie3` takes `targetFile`, not `pdbFile`, and an unrecognized key fails the whole job.
+
+**Discover what is actually enforced with `tamarind --json validate`, which costs nothing.** Validating an empty payload returns the tool's *enforced* required-field list, which is the half a schema read can leave you guessing at:
+
+```
+tamarind --json validate genie3 --input empty.yaml --name probe
+  -> valid: false, missing_fields: [targetFile, hotspots]
+```
+
+That is how the `targetFile`/`pdbFile` difference above was found — a plausible-looking `pdbFile` came back under `unrecognized_settings`, which fails the whole job. Validate one payload per method before committing a round to it, and treat a `mutatedFields` warning as a failure: it means the validator silently altered your input.
 
 **Seven of the eight aimable methods accept no epitope without complaint.** Only `genie3` refuses — measured: omitting `hotspots` returns `valid: false` ("At least one residue is required"), while omitting `freebindcraft`'s `hotspotResidues` returns **`valid: true`** and runs. Forgetting the epitope is therefore a silent event on almost every method, and it fails in two different ways:
 
