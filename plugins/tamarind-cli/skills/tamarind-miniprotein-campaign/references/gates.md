@@ -79,50 +79,25 @@ UniRef90 arm only.
   against different subject sets and the row could not say which produced its
   verdict.
 
-  **The corpus's local-alignment arm is off on the hits route at EVERY size, and
-  off on the directory route above 17 entries.** The two routes suppress it for
-  different reasons, and only one of them is size-dependent:
+  **The corpus's local-alignment arm is suppressed at campaign scale, on both
+  routes.** `--known-binders` runs it only up to `CORPUS_LOCAL_ARM_MAX_ENTRIES`;
+  `--known-binder-hits` never runs it, since a hit row carries identity and coverage
+  and no alignment. Past the cap both screen the corpus on the global clause alone
+  (above 60% identity over more than 50% coverage) and stamp
+  `known_binder_corpus_local_arm_not_run=1` in `novelty_subjects_screened`. An
+  earlier version of this page presented the suppression as a cost of the hits path
+  specifically, which was wrong.
 
-  - `--known-binders` (a directory/FASTA) runs the local arm up to
-    `CORPUS_LOCAL_ARM_MAX_ENTRIES`; past it the kernel screens the corpus on the
-    global clause only (above 60% identity over more than 50% coverage).
-  - `--known-binder-hits` **never** runs it. The `corpus_hits` branch calls
-    `evaluate_precomputed_hits` unconditionally — a hit row carries identity and
-    coverage and no alignment, so there is nothing to align — and the size cap is
-    not consulted on that branch at all.
-
-  Both stamp `known_binder_corpus_local_arm_not_run=1` in
-  `novelty_subjects_screened`, so the row tells you it happened either way.
-
-  **The routes therefore converge only ABOVE the cap**, which is where a real
-  campaign's corpus sits — so for a campaign-size corpus the choice costs nothing on
-  this arm, and an earlier version of this page was wrong to present the suppression
-  as a cost of the hits path specifically. Below the cap the choice is real: a small
-  curated corpus screened through hits has strictly less coverage than the same
-  corpus screened as a directory. Measured on prod: at 17 entries the local arm runs
-  and rejects **4 of 4** designs including a clean de novo one; at 18 it is
-  suppressed and the same pool separates 1 PASS / 3 REJECT. That is the behaviour
-  the threshold exists to prevent — against thousands of curated binders a
-  30%-over-40-columns hit is reached by chance, and a gate that rejects the entire
-  pool is not a stricter gate.
-
-  **What this costs is real and belongs in the report either way.** A partial copy
-  at 100% identity over 40 aligned columns but only 33% coverage — precisely the
-  "short terminal extensions" shape the protocol calls out — clears the corpus arm
-  at any realistic corpus size. **Nothing downstream catches it.** The local arm
-  still runs against ubiquitin, the target chains and the controls — those are
-  curated sets small enough to keep it — so a partial copy OF ubiquitin or of a
-  target/control chain is still REJECTed. But a partial copy of an arbitrary
-  known-binder corpus entry is screened by the global clause alone, trips neither
-  arm, and PASSes. That is precisely the escape the corpus exists to detect, and at
-  campaign corpus sizes it is open.
-
-  Choose the hits path for scale on its own merits, set the search's thresholds to
-  surface short high-identity alignments — that is what puts the coverage back,
-  since the search does the local alignment the kernel then cannot — and say in the
-  report that the corpus was screened on the global clause alone, naming the
-  low-coverage partial copy as the uncovered shape rather than implying the other
-  subject sets cover it.
+  **The gap that leaves is real and belongs in the report.** A partial copy at 100%
+  identity over 40 aligned columns but only 33% coverage — the "short terminal
+  extensions" shape the protocol calls out — trips neither clause and PASSes. It is
+  still caught when the copied material is ubiquitin or a target/control chain,
+  because those curated sets keep the local arm; a partial copy of an arbitrary
+  corpus entry is not caught by anything. **Tightening the upstream search does not
+  close it** — `evaluate_precomputed_hits` judges every hit on the same global
+  clause, so a surfaced 33%-coverage row is discarded too. Say in the report that
+  the corpus was screened on the global clause alone and name the low-coverage
+  partial copy as the uncovered shape.
 - **`--uniref90-hits`** takes `{design_id: [hit, …]}` from a sequence-identity
   search job, with the search's own columns — `identity`/`fident`/`pident` and
   `coverage`/`qcov`/`cov`. Percentages and fractions are disambiguated by value;

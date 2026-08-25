@@ -33,14 +33,11 @@ The gates emit a CSV. Read it back with a plain reader and `target_mimic` is the
 
 Fail-closed is the right default here (an unreadable mimic score must never clear a design), which is exactly why it is quiet: nothing errors, the run just ends with an empty panel and a ban reason that reads like a real finding. Measured on the PD-L1 run; it cost a full debugging cycle before the ban was recognised as an artifact of the round-trip rather than a property of the designs.
 
-**Coerce the metrics back — and do NOT coerce the identifiers.** "Everything that parses as a float" is the wrong rule and breaks the pool a different way: `design_id` is frequently numeric (rank- and index-based generators emit `"3"`, `"001"`), so a blanket `float()` turns `"001"` into `1.0` and silently unjoins that row from its structure, its reject-ledger entry and its lineage. Two silent failures, opposite directions, same round trip. Protect the identity and lineage columns by name, then coerce the rest:
+**Coerce the metrics back — and do NOT coerce the identifiers.** "Everything that parses as a float" is the wrong rule and breaks the pool the opposite way: `design_id` is frequently numeric (rank- and index-based generators emit `"3"`, `"001"`), so a blanket `float()` turns `"001"` into `1.0` and silently unjoins that row from its structure and its lineage. Both directions fail silently, so protect identity and lineage by name and then check what you converted:
 
 ```python
-# NEVER coerced: identity + lineage + the genuinely-textual gate fields.
-KEEP_TEXT = {
-    "design_id", "id", "root_backbone_id", "structure_method", "seq_method",
-    "sequence", "designed_structure_path", "binder_chain",
-}
+KEEP_TEXT = {"design_id", "id", "root_backbone_id", "structure_method", "seq_method",
+             "sequence", "designed_structure_path", "binder_chain"}
 TEXT_SUFFIXES = ("_verdict", "_reason", "_tier", "_screened", "_not_run", "_kind")
 
 row = {}
@@ -52,14 +49,11 @@ for k, v in gate_row.items():
         except ValueError:
             pass
     row[k] = v
-```
 
-**Then assert, because both failure modes are silent.** A name this list misses is a gate switched off, not an error — so check the columns the verdict helpers actually consume as numbers before you rank anything:
-
-```python
+# A gate column this missed is a gate switched OFF, not an error. Fail loudly instead.
 for k in ("target_mimic", "lcp_score", "monomer_plddt"):   # + every ipsae_/sc_DockQ_ arm
     if k in row and not isinstance(row[k], (int, float)):
-        raise SystemExit(f"{k} survived the CSV round trip as {type(row[k]).__name__}: {row[k]!r}")
+        raise SystemExit(f"{k} survived the CSV round trip as {type(row[k]).__name__}")
 ```
 
 The general form: **a verdict function that fails closed on an unrecognised value turns a serialization bug into a scientific-looking rejection.** If a ban fires on the entire pool, check the TYPE of the column it names before you believe it — and if a design vanishes from a join instead, check the type of its ID.
