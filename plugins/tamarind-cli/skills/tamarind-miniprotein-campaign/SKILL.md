@@ -72,6 +72,8 @@ tamarind --json logs CANARY_NAME --max-lines 200
 
 Then name **which stage** lost the designs. "This method produced nothing" is a restatement, not a diagnosis, and it is the sentence that drops a working method.
 
+**A generator's own "success" table being empty is not the campaign's verdict.** Measured on a real run: Genie 3 returned an **empty** `success_info.csv` — zero designs passed its internal filter — while its actual result table held two perfectly usable designs at interface confidence up to 0.83, each engaging **all six** frozen epitope residues. Opening only the success file would have recorded RAN_NO_YIELD and dropped a method that worked. A method's internal acceptance criteria are its own, tuned for its own purpose; this campaign's gates are §4's. Read the result table its output contract names, and judge on your thresholds.
+
 **Check the job's status before you read absence as evidence.** An empty log and an empty file listing look identical whether the job has not started, is still running, or finished having produced nothing. Resolve the status with `tamarind --json status CANARY_NAME` first: only a *terminal* job supports a verdict. A queued job is NOT_PROBED, not RAN_NO_YIELD.
 
 When the diagnosis points at a setting, change that setting and re-run the canary. **At most two diagnosis-driven retries**, each changing something a diagnosis pointed at; then record the drop with its consequence and move that compute to methods that are producing. The common repairable shape is a generator whose own in-job sequence step rejects everything: turn that step off and route its backbones through this campaign's own sequence-design pass instead.

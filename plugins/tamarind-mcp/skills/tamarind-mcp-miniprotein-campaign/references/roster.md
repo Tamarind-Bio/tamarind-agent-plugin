@@ -74,6 +74,15 @@ That is how the `targetFile`/`pdbFile` difference above was found — a plausibl
 
 Neither errors, and the difference matters: the first is a *wrong* epitope, the second is *no* epitope.
 
+**Setting the key is not the same as hitting the site — measured.** Two methods given the *identical* frozen six-residue epitope on the same target, in the same campaign:
+
+| method | what it was given | what it delivered |
+|---|---|---|
+| `genie3` | `hotspots` (required) | `target_hotspot_coverage` = **1.0** on both designs — all 6 residues engaged |
+| `boltzgen` | `bindingSite` **plus `filterBindingSite: true`** | `bindsite_under_5rmsd` = **0.0** on 3 of 4 designs (0.167 on the fourth) |
+
+Same epitope, same target, opposite outcomes — and boltzgen had its post-filter switched on, which is the stricter setting. So the aim is genuinely a bias on some methods and a constraint on others, and **which one you got is only visible in the output.** Do not report a method as aimed at the frozen site because you set its key. Report the adherence number, per method, and treat a method that cannot reach the site as a diversity arm with that fact disclosed — not as a failure, and not silently as an aimed arm.
+
 **Audit adherence from the output, not from what you submitted.** Two methods hand you the check for free — `genie3` emits `target_hotspot_coverage` ("fraction of user-specified target hotspot residues the designed binder engages") and `boltzgen` emits `bindsite_under_*rmsd`. FreeBindCraft's `Target_Hotspot` is documented "empty if auto-selected", so a blank cell there means the epitope was not yours. For the rest, compute interface contacts against the frozen site yourself.
 
 **Setting `bindingSite` on `boltzgen` is necessary but not sufficient.** Its own `filterBindingSite` description states that "the soft bindingSite conditioning alone does not guarantee adherence" — so set `filterBindingSite: true` (default `false`) or accept that the aim is a bias rather than a constraint, and say which.

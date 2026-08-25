@@ -35,7 +35,7 @@ Call this **before** you conclude a method produced nothing. "This method produc
 | `rfdiffusion3` | `Sequence_A` | `design_id` |
 | `freebindcraft` | `Sequence` (binder only) | `Design` |
 | `boltzgen` | `designed_chain_sequence` | `id` |
-| `genie3` | `binder_seq` | **none** — `rank` is not an identifier |
+| `genie3` | `binder_seq` | **`name`** — but see the row explosion below; `rank` is a MODEL rank, not an identifier |
 | `mosaic-hallucinate` | `sequence` | `design_id` |
 | `protein-hunter` | `best_seq` | `run_id` |
 | `proteina-complexa` | **none** — backbone-only | `Rank`, job-local |
@@ -70,7 +70,9 @@ The gates catch two weaker versions of this — the un-split string (`has non-re
 
 **2. A composite identifier collapses.** RFdiffusion's `design` repeats across the several MPNN sequences sampled for one backbone; using it alone trips the duplicate-id refusal. Join `design` and `n`. Getting this wrong in the other direction — minting a fresh id per row — breaks `root_backbone_id` and lets one backbone's family escape the per-root cap.
 
-**3. A job-local identifier repeats across a batch.** `Rank` is unique within one job, and a fan-out launches many. Namespace every id with its job name before pooling.
+**3. One design can occupy several rows.** Measured: a `genie3` run for 2 designs returned **10 rows** — five AlphaFold models per design, differing only in `model_id` and `rank`. Taken at face value that is a fivefold phantom pool, and the duplicates carry the same sequence, so the identical-sequence guard will not catch it either (they are not *all* identical). Collapse to one row per design first: group by `name`, keep the best-ranked row, and check that the number of distinct sequences equals the number of designs you asked for. The same shape appears wherever a generator refolds each design with several models.
+
+**4. A job-local identifier repeats across a batch.** `Rank` is unique within one job, and a fan-out launches many. Namespace every id with its job name before pooling.
 
 ## Backbone-only methods carry lineage across the hop
 
