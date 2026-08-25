@@ -989,3 +989,51 @@ def test_matching_scored_sequences_pass_and_absence_warns(tmp_path: Path) -> Non
                 "--panel-size", "3", "--out", str(tmp_path / "b.csv"))
     assert done.returncode == 0, done.stdout + done.stderr
     assert "no row carries scored_sequence" in done.stderr
+
+
+def test_a_0_100_plddt_against_a_0_1_floor_halts(tmp_path: Path) -> None:
+    """The vacuous-gate case: a Protenix pLDDT judged by an ESMFold2 floor.
+
+    Measured on real rows for the same construct -- ESMFold2 reports mean pLDDT
+    on 0-1 (0.7884) and Protenix on 0-100 (86.75). Against the frozen 0.70
+    floor every 0-100 value clears, so the foldability gate reports PASS on
+    every design while rejecting nothing. Refuse rather than rescale: only the
+    campaign knows which arm produced the column.
+    """
+    rows = _population(3)
+    for row, value in zip(rows, (86.75, 91.2, 78.4)):
+        row["monomer_plddt"] = value
+    src = tmp_path / "hundreds.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+
+    assert done.returncode != 0
+    out = done.stdout + done.stderr
+    assert "monomer_plddt exceeds 1.0" in out, out
+    assert "p0" in out, f"the halt must name the rows: {out}"
+
+
+def test_the_plddt_scale_halt_leaves_a_consistent_pool_alone(tmp_path: Path) -> None:
+    """It must fire on the MISMATCH, not on either scale used consistently."""
+    on_0_1 = _population(3)
+    for row, value in zip(on_0_1, (0.7884, 0.81, 0.74)):
+        row["monomer_plddt"] = value
+    src = tmp_path / "unit.json"
+    src.write_text(json.dumps(on_0_1))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "a.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+
+    # The same 0-100 values are fine once the floor is declared on that scale.
+    on_0_100 = _population(3)
+    for row, value in zip(on_0_100, (86.75, 91.2, 78.4)):
+        row["monomer_plddt"] = value
+    src = tmp_path / "hundreds-ok.json"
+    src.write_text(json.dumps(on_0_100))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--monomer-floor", "70",
+                "--out", str(tmp_path / "b.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "monomer_plddt exceeds 1.0" not in done.stdout + done.stderr
