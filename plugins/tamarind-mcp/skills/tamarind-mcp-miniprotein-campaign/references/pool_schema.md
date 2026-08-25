@@ -104,7 +104,15 @@ So treat that NOT_RUN as a live liability, not a formality: run the database nov
 
 `designed_structure_path` decides what the plausibility and mimic gates measure, and a generator usually writes several structures per design. Point it at the design's **final, relaxed** complex, name the binder chain explicitly in `binder_chain`, and record which file you used.
 
-Measured, so you know the shape of the risk: two real RFdiffusion designs taken straight from the generator's `designability/` output were **both REJECTed** on backbone geometry — 5 of 69 peptide C–N bonds outside the frozen band (worst 1.2033 Å against a 1.229 Å floor) plus one severe clash — while the mimic gate on the same structures passed cleanly with TM 0.28–0.31. Unrelaxed predicted backbones routinely carry bond-length and side-chain-packing deviations at that scale.
+Measured across three methods, one design each, every structure taken straight from its generator's own output:
+
+| method | structure used | plausibility | mimic |
+|---|---|---|---|
+| `rfdiffusion` | `designability/` output | **REJECT** — 5 of 69 peptide C–N bonds out of band (worst 1.2033 Å vs a 1.229 Å floor), 1 severe clash | PASS, TM 0.31 |
+| `boltzgen` | refolded final design | **REJECT** | PASS, TM 0.34 |
+| `genie3` | `unrelaxed_` AF2-multimer model | **PASS** | PASS, TM 0.34 |
+
+So this is not simply "unrelaxed rejects" — an explicitly unrelaxed AF2-multimer structure passed while a refolded one did not. The gate discriminates on the actual geometry, and which file a generator hands you varies more than its label suggests.
 
 So when plausibility rejects everything, **investigate the input before the threshold.** The thresholds are vendored frozen values and retuning them to admit your pool is the defect this campaign exists to prevent; the honest fixes are to relax the structures first, or to feed the gate the co-folded complex rather than the raw generator output, or to disclose the gate as NOT_RUN. The skill's "a gate that passes everything, fails everything, or returns a constant is broken until investigated" rule fires here exactly as intended — and on a two-design pool it fires on sample size alone, so read it as a prompt, not a verdict.
 
