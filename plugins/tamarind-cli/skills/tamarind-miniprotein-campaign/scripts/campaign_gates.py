@@ -253,15 +253,31 @@ def main():
         row["structural_plausibility_verdict"] = pv
         row.update(pev)
         row["target_mimic_verdict"] = mv
-        # ALSO under the kernel's own name. `select_with_diversity_caps` resolves
-        # the ban from `row["target_mimic"]`, falling back to the bare
-        # `target_mimic_tm_max` number -- so writing only the verdict under a
-        # name it does not read meant a NOT_RUN row shipped on the strength of
-        # its number, and the run summary counted zero NOT_RUN mimic rows.
-        # Measured against a PASS control: both shipped 3 of 3. The kernel is
-        # right and its docstring says so ("Put the returned dict straight onto
-        # the candidate row"); this port was handing it half.
-        row["target_mimic"] = mv
+        # ALSO under the kernel's own name, because `select_with_diversity_caps`
+        # resolves the ban from `row["target_mimic"]` and falls back to the bare
+        # `target_mimic_tm_max` only when that key is absent. Writing the verdict
+        # under a name the ban does not read let a NOT_RUN row ship on the
+        # strength of its number; measured against a PASS control, both arms
+        # shipped 3 of 3.
+        #
+        # WHICH value goes there is the whole question, because the kernel
+        # prefers a verdict WORD over the number. Neither one alone is safe:
+        #
+        #   - the word alone lets a stale or misjoined PASS override a measured
+        #     TM at or above the ban threshold, and nothing downstream re-runs
+        #     the mimic screen to catch it;
+        #   - the number alone reads the `failures` shape -- one reference
+        #     scored low, another could not be scored -- as a PASS, which is
+        #     the NOT_RUN this whole block exists to preserve.
+        #
+        # So: NOT_RUN dominates everything, and where the screen did produce a
+        # measurement that MEASUREMENT decides, exactly as selection.md says
+        # ("the ban reads the measurement, not the verdict").
+        tm_measured = mev.get("target_mimic_tm_max")
+        if mv == VERDICT_NOT_RUN or tm_measured is None:
+            row["target_mimic"] = mv
+        else:
+            row["target_mimic"] = tm_measured
         row.update(mev)
 
         # Fold class feeds the >=10% non-all-alpha diversity target. Reported,

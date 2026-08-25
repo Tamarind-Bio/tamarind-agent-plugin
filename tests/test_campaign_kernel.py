@@ -1323,7 +1323,70 @@ def test_the_gate_writes_the_mimic_verdict_where_the_kernel_reads_it(tmp_path: P
     ])
     assert rows
     for row in rows:
-        assert row.get("target_mimic") == row["target_mimic_verdict"], (
-            f"{row['design_id']}: the kernel reads `target_mimic`, so the gate must "
-            f"write it: {row.get('target_mimic')!r} vs {row['target_mimic_verdict']!r}"
+        carried = str(row.get("target_mimic") or "")
+        assert carried, f"{row['design_id']}: the kernel reads `target_mimic` and it is absent"
+        # No reference chains in this fixture, so the screen did not run and the
+        # verdict word -- not a number -- has to be what the ban sees.
+        assert carried == "NOT_RUN" == row["target_mimic_verdict"], (
+            f"{row['design_id']}: an un-run screen must carry NOT_RUN, got {carried!r}"
         )
+
+
+def _helix_3d_pdb(path: Path, n: int = 40, chain: str = "B") -> Path:
+    """A real 3-D helix, so TM-align has something to superpose."""
+    import math
+    lines = [f"HELIX    1   1 ALA {chain}   1  ALA {chain}  {n:>3}  1{' ':>36}{n:>5}"]
+    for i in range(1, n + 1):
+        t = i * 100.0 * math.pi / 180.0
+        x, y, z = 2.3 * math.cos(t), 2.3 * math.sin(t), 1.5 * i
+        lines.append(
+            f"ATOM  {i:>5}  CA  ALA {chain}{i:>4}    "
+            f"{x:>8.3f}{y:>8.3f}{z:>8.3f}  1.00 50.00           C"
+        )
+    lines.append("END")
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def test_the_measurement_not_the_word_goes_where_the_ban_reads(tmp_path: Path) -> None:
+    """The regression the previous fix introduced, pinned at the GATE.
+
+    The kernel prefers a verdict WORD in `target_mimic` over the numeric
+    fallback, so writing the word there let a stale or misjoined PASS outrank a
+    measured TM at or above the ban threshold -- and nothing downstream re-runs
+    the mimic screen to catch it. Where the screen produced a measurement, that
+    measurement is what must reach the ban.
+
+    Scoring a design against ITSELF is the cheap way to force a real number:
+    TM = 1.0, verdict REJECT, so the two candidate values are distinguishable.
+    """
+    pdb = _helix_3d_pdb(tmp_path / "design.pdb")
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps([[str(pdb), "B"]]))
+    pool = tmp_path / "pool.json"
+    pool.write_text(json.dumps([{
+        "design_id": "d0", "sequence": _SEQUENCES[0],
+        "designed_structure_path": str(pdb), "binder_chain": "B",
+    }]))
+    out = tmp_path / "gates.csv"
+    done = _run("campaign_gates.py", str(pool), "--reference-chains", str(refs),
+                "--out", str(out))
+    assert out.exists(), done.stdout + done.stderr
+
+    import csv as _csv
+
+    def number(value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    row = next(iter(_csv.DictReader(out.open())))
+    assert row["target_mimic_verdict"] == "REJECT", row
+    assert number(row["target_mimic_tm_max"]) is not None, row
+    carried = row["target_mimic"]
+    assert number(carried) is not None, (
+        "the ban must receive the MEASUREMENT, not the verdict word: "
+        f"target_mimic={carried!r}"
+    )
+    assert number(carried) == number(row["target_mimic_tm_max"]), row
