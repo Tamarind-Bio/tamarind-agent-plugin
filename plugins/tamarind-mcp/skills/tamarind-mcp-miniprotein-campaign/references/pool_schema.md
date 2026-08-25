@@ -37,9 +37,9 @@ Call this **before** you conclude a method produced nothing. "This method produc
 | `boltzgen` | `designed_chain_sequence` | `id` |
 | `genie3` | `binder_seq` | **`name`** — but see the row explosion below; `rank` is a MODEL rank, not an identifier |
 | `mosaic-hallucinate` | `sequence` | `design_id` |
-| `protein-hunter` | `best_seq` | `run_id` |
+| `protein-hunter` | `best_seq` — **undetermined**, confirm on the canary | `run_id` |
 | `proteina-complexa` | **none** — backbone-only | `Rank`, job-local |
-| `boltzdesign` | **none** — backbone-only | `target` + `iteration` |
+| `boltzdesign` | **undetermined** — read its canary table before assuming either | `target` + `iteration` |
 | `pxdesign` | **none** — backbone-only | — |
 | *(`proteinmpnn`)* | `sequence` — **colon-joined, designed chain LAST** | `sequence_index` |
 
@@ -51,7 +51,7 @@ Call this **before** you conclude a method produced nothing. "This method produc
 
 **Do not trust a schema's stated chain order. Measure it.** RFdiffusion's own `seq` column description reads *"for binder design the format is binder/target"*. On a real PD-L1 binder-design run — four independent jobs, checked against the frozen construct byte for byte — **index 0 was the target and the binder was last**. The documented order is the reverse of the delivered order. This was found by running the campaign, not by reading the catalog, and it is the reason this section exists.
 
-So the two tools you are most likely to pair are inverted *relative to each other*, and one of them is also inverted relative to its own documentation:
+So the two tools you are most likely to pair actually **agree** — both put the binder last. What is inverted is RFdiffusion against its own documentation, and that is the trap: the agreement holds only if you take it from the measurement rather than from the schema text:
 
 - **RFdiffusion** `seq`, slash-joined — binder measured **last**.
 - **ProteinMPNN** `sequence`, colon-joined — "the designed chain is appended last", so binder **last**.
@@ -76,7 +76,7 @@ The gates catch two weaker versions of this — the un-split string (`has non-re
 
 ## Backbone-only methods carry lineage across the hop
 
-`proteina-complexa`, `pxdesign` and `boltzdesign` emit no sequence, so they route through sequence design — and that job indexes its own rows in a new id space. Carry the origin across explicitly: `root_backbone_id` and `structure_method` keep naming the **generator**; `seq_method` names the sequence designer. Losing this is how a method contributes zero ranked backbones while appearing to have run.
+`proteina-complexa` and `pxdesign` emit no sequence, so they route through sequence design (`boltzdesign` and `protein-hunter` are **undetermined** in [roster.md](roster.md) — read the method's own per-design table on its canary and treat it as backbone-only only when that table genuinely has no sequence column, because the extra hop mints a second id space for nothing) — and that job indexes its own rows in a new id space. Carry the origin across explicitly: `root_backbone_id` and `structure_method` keep naming the **generator**; `seq_method` names the sequence designer. Losing this is how a method contributes zero ranked backbones while appearing to have run.
 
 ## `binder_chain` is not the same letter on every method
 
