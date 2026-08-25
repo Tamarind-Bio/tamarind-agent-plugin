@@ -176,6 +176,12 @@ def main():
     well_formed = (
         all(_seqs) and all(_ids) and len(set(_ids)) == len(_ids)
         and all(BINDER_LEN_MIN <= len(s) <= BINDER_LEN_MAX for s in _seqs)
+        # The alphabet too, and this one is not hypothetical: an UN-SPLIT
+        # `TARGET/BINDER` string is identical on every row and of legal
+        # length, so without this it collected the chain-split diagnosis
+        # below instead of the sharper "has non-residue characters '/'" that
+        # names the actual repair.
+        and all(not (set(s) - AMINO_ACIDS) for s in _seqs)
     )
     if len(pool) > 1 and well_formed and len(set(_seqs)) == 1:
         only = _seqs[0]

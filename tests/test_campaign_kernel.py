@@ -1258,3 +1258,23 @@ def test_one_catastrophic_prediction_is_not_a_units_mismatch(tmp_path: Path) -> 
                 "--skip-recompute", "--out", str(tmp_path / "sheet.csv"))
     assert done.returncode == 0, done.stdout + done.stderr
     assert "at or below 1.0" not in done.stdout + done.stderr
+
+
+def test_an_unsplit_pool_gets_the_alphabet_refusal_not_the_split_one(tmp_path: Path) -> None:
+    """The sharper refusal has to win, exactly as the guard's comment claims.
+
+    An UN-SPLIT `TARGET/BINDER` string is identical on every row and of legal
+    length, so the identical-sequence check (which runs first) would diagnose a
+    chain split -- true in spirit, but it names the wrong repair and hides the
+    stray `/` that says what actually happened.
+    """
+    unsplit = "MKQLEDKVEELLSKNYHLENEVARLKKLVGERG/FTVTVPKDLYVVEYGSNMTIECKFPVEKQ"
+    pool = tmp_path / "unsplit.json"
+    pool.write_text(json.dumps(
+        [{"design_id": f"d{i}", "sequence": unsplit} for i in range(4)]
+    ))
+    done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+    assert done.returncode != 0
+    out = done.stdout + done.stderr
+    assert "non-residue characters" in out, out
+    assert "identical" not in out, f"the sharper refusal must win: {out}"
