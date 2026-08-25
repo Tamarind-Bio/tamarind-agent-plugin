@@ -236,6 +236,19 @@ def _bad_gate_verdicts(row):
             return f"{column} is {verdict!r}, which is not one of {'/'.join(RECOGNIZED_VERDICTS)}"
         if verdict == "REJECT":
             return f"{column} is REJECT: a gate already refused this design"
+        # NOT_RUN is a pass for no gate, but for THIS one it is disqualifying
+        # rather than merely undisclosed: the mimic screen is the only gate
+        # with no second falsifier downstream, and the kernel's own contract
+        # is that a NOT_RUN row "is NOT cleared". The kernel enforces that
+        # from `row["target_mimic"]`; a pool assembled by hand may carry only
+        # the verdict column and a number, and the number alone would clear it.
+        if column == "target_mimic_verdict" and verdict == "NOT_RUN":
+            return (
+                "target_mimic_verdict is NOT_RUN: the mimic screen is the one gate "
+                "with no second falsifier downstream, so it cannot be satisfied by "
+                "absence -- run target_mimic_screen on this row, or declare the gate "
+                "unavailable campaign-wide and say so in the report"
+            )
     return None
 
 

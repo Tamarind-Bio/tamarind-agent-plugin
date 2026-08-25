@@ -1278,3 +1278,52 @@ def test_an_unsplit_pool_gets_the_alphabet_refusal_not_the_split_one(tmp_path: P
     out = done.stdout + done.stderr
     assert "non-residue characters" in out, out
     assert "identical" not in out, f"the sharper refusal must win: {out}"
+
+
+def test_a_not_run_mimic_verdict_cannot_reach_the_panel(tmp_path: Path) -> None:
+    """The absolute gate was bypassed by a column-name mismatch.
+
+    `select_with_diversity_caps` resolves the ban from `row["target_mimic"]`,
+    falling back to the bare `target_mimic_tm_max` number. The port wrote the
+    verdict as `target_mimic_verdict` -- a name the ban never reads -- so a row
+    whose mimic screen explicitly did NOT run shipped on the strength of its
+    number, and the summary counted zero NOT_RUN mimic rows.
+
+    Measured before the fix, against the PASS control below: both arms shipped
+    3 of 3. The control is what makes this a test and not a coincidence.
+    """
+    def arm(verdict):
+        rows = _population(3)
+        for row in rows:
+            row["target_mimic"] = verdict
+            row["target_mimic_verdict"] = verdict
+            row["target_mimic_tm_max"] = 0.31        # below the ban threshold
+        src = tmp_path / f"{verdict}.json"
+        src.write_text(json.dumps(rows))
+        return _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                    "--panel-size", "3", "--out", str(tmp_path / f"{verdict}.csv"),
+                    "--json")
+
+    control = arm("PASS")
+    assert control.returncode == 0, control.stdout + control.stderr
+    assert json.loads(control.stdout)["panel_size_shipped"] == 3
+
+    done = arm("NOT_RUN")
+    assert done.returncode != 0, (
+        "a NOT_RUN mimic gate must not ship: " + done.stdout + done.stderr
+    )
+    assert "NOT_RUN" in done.stdout + done.stderr
+
+
+def test_the_gate_writes_the_mimic_verdict_where_the_kernel_reads_it(tmp_path: Path) -> None:
+    """The other half: the gate has to emit the kernel's own column name."""
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    assert rows
+    for row in rows:
+        assert row.get("target_mimic") == row["target_mimic_verdict"], (
+            f"{row['design_id']}: the kernel reads `target_mimic`, so the gate must "
+            f"write it: {row.get('target_mimic')!r} vs {row['target_mimic_verdict']!r}"
+        )

@@ -196,7 +196,13 @@ def main():
             "check here.\n"
             "  Identify the binder by excluding your frozen target sequence and "
             "asserting the\n"
-            "  designed length, not by taking a fixed position in the split."
+            "  designed length, not by taking a fixed position in the split.\n"
+            "  If instead these rows genuinely converged on one binder from "
+            "different backbones,\n"
+            "  that pool cannot make a panel either -- the selector rejects "
+            "exact-sequence duplicates,\n"
+            "  so it would collapse to a single design. Screen the distinct "
+            "sequence once."
         )
 
     seen = set()
@@ -247,6 +253,15 @@ def main():
         row["structural_plausibility_verdict"] = pv
         row.update(pev)
         row["target_mimic_verdict"] = mv
+        # ALSO under the kernel's own name. `select_with_diversity_caps` resolves
+        # the ban from `row["target_mimic"]`, falling back to the bare
+        # `target_mimic_tm_max` number -- so writing only the verdict under a
+        # name it does not read meant a NOT_RUN row shipped on the strength of
+        # its number, and the run summary counted zero NOT_RUN mimic rows.
+        # Measured against a PASS control: both shipped 3 of 3. The kernel is
+        # right and its docstring says so ("Put the returned dict straight onto
+        # the candidate row"); this port was handing it half.
+        row["target_mimic"] = mv
         row.update(mev)
 
         # Fold class feeds the >=10% non-all-alpha diversity target. Reported,
