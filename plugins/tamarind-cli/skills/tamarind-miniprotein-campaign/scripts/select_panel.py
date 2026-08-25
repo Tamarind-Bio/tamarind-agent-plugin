@@ -253,6 +253,19 @@ def _mismatch_id(entry):
     return str(entry)
 
 
+def _folded_chains(value):
+    """The chains of the construct a scoring job actually folded.
+
+    A complex is submitted as one joined value -- `TARGET:BINDER` on the FASTA
+    route this skill recommends -- and comes back from the platform that way.
+    A monomer fold yields the single chain. Both separators in use are
+    accepted, since the generation tables join with `/` and the scoring
+    submissions with `:`.
+    """
+    joined = str(value).replace("/", ":")
+    return [c.strip().upper() for c in joined.split(":") if c.strip()]
+
+
 def _canonical_method(value):
     """Fold a method token to its canonical form.
 
@@ -393,21 +406,31 @@ def main():
     # So carry `scored_sequence` -- the sequence the scoring job actually
     # received, read back from the platform, not from the notes you submitted
     # from -- and check it here.
-    scored = [r for r in rows if str(r.get("scored_sequence") or "").strip()]
+    # The scoring construct is a COMPLEX. The recommended route folds a FASTA
+    # record holding the joined `TARGET:BINDER` value, so the stored input read
+    # back from the platform carries BOTH chains while the row's `sequence` is
+    # the binder alone. Compare against the CHAINS of what was folded, not
+    # against the whole construct: plain equality refuses every correctly
+    # scored complex, turning this halt on the good case.
+    scored = [
+        r for r in rows
+        if str(r.get("scored_sequence") or "").strip() and str(r.get("sequence") or "").strip()
+    ]
     mismatched = [
         r for r in scored
-        if str(r["scored_sequence"]).strip().upper() != str(r.get("sequence") or "").strip().upper()
+        if str(r.get("sequence")).strip().upper() not in _folded_chains(r["scored_sequence"])
     ]
     if mismatched:
         lines = []
         for r in mismatched[:5]:
+            folded = _folded_chains(r["scored_sequence"])
             lines.append(
                 f"  {r.get('design_id')}: row carries {len(str(r.get('sequence') or ''))} aa, "
-                f"the scoring job folded {len(str(r['scored_sequence']))} aa"
+                f"the scoring job folded {'+'.join(str(len(c)) for c in folded)} aa"
             )
         raise SystemExit(
-            f"HALTED: {len(mismatched)} row(s) were scored on a different sequence "
-            "than they carry:\n" + "\n".join(lines) + "\n"
+            f"HALTED: {len(mismatched)} row(s) carry a sequence that is not among the "
+            "chains the scoring job folded:\n" + "\n".join(lines) + "\n"
             "  These rows rank on numbers that belong to another molecule, and every "
             "gate still reproduces\n"
             "  because the gates read the row's own sequence. Rebuild the scoring "
@@ -447,6 +470,40 @@ def main():
             "  This usually means two pools were concatenated, or a "
             "sequence-design pass minted a second id space over the same "
             "backbones."
+        )
+
+    # The arms do NOT agree on the pLDDT scale. Measured on real rows for the
+    # same construct: ESMFold2 reports 0-1 (0.7884) and Protenix 0-100 (86.75).
+    # Against a 0-1 floor a 0-100 value clears for EVERY design -- the
+    # foldability gate stops rejecting anything while still reporting PASS on
+    # every row. That is a vacuous gate, which is worse than an absent one, so
+    # refuse rather than rescale: only the campaign knows which arm produced
+    # the column.
+    #
+    # This is a comparison of two numbers and needs NOTHING from the kernel, so
+    # it runs HERE rather than beside the recompute. Sited there it was inside
+    # `if sr is not None`, which is False on exactly the stock machine with no
+    # numpy that SKILL.md calls the common case -- the guard was absent from
+    # every run that most needed it, and the sheet shipped with the mismatch
+    # disclosed only as a skipped recompute.
+    over = sorted(
+        str(r.get("design_id"))
+        for r in rows
+        if (_num(r.get("monomer_plddt")) or 0) > 1.0
+    )
+    if over and args.monomer_floor <= 1.0:
+        raise SystemExit(
+            f"HALTED: monomer_plddt exceeds 1.0 on {len(over)} row(s) while "
+            f"--monomer-floor is {args.monomer_floor} (a 0-1 scale).\n"
+            f"  first: {', '.join(over[:5])}\n"
+            "  The arms disagree on this scale -- ESMFold2 reports pLDDT on "
+            "0-1 and Protenix on 0-100.\n"
+            "  Against a 0-1 floor a 0-100 value passes for every design, so "
+            "the foldability gate\n"
+            "  would report PASS on every row while rejecting nothing. Put the "
+            "column and the floor on\n"
+            "  the same scale in the pool, and record which arm's convention "
+            "the frozen floor is in."
         )
 
     # ── ELIGIBILITY FIRST, THEN THE ALGEBRA ─────────────────────────────────
@@ -693,30 +750,6 @@ def main():
                 for r in panel
                 if _num(r.get("monomer_plddt")) is not None
             }
-            # The arms do NOT agree on the pLDDT scale. Measured on real rows for
-            # the same construct: ESMFold2 reports 0-1 (0.7884) and Protenix
-            # reports 0-100 (86.75). Compared against a 0-1 floor, a 0-100 value
-            # clears it for EVERY design -- the foldability gate stops rejecting
-            # anything while still reporting PASS on every row. That is a vacuous
-            # gate, which is worse than an absent one, so refuse rather than
-            # rescale: only the campaign knows which arm produced the column.
-            over = sorted(
-                (did for did, v in plddt.items() if v is not None and v > 1.0)
-            )
-            if over and args.monomer_floor <= 1.0:
-                raise SystemExit(
-                    f"HALTED: monomer_plddt exceeds 1.0 on {len(over)} row(s) while "
-                    f"--monomer-floor is {args.monomer_floor} (a 0-1 scale).\n"
-                    f"  first: {', '.join(over[:5])}\n"
-                    "  The arms disagree on this scale -- ESMFold2 reports pLDDT on "
-                    "0-1 and Protenix on 0-100.\n"
-                    "  Against a 0-1 floor a 0-100 value passes for every design, so "
-                    "the foldability gate\n"
-                    "  would report PASS on every row while rejecting nothing. Put the "
-                    "column and the floor on\n"
-                    "  the same scale in the pool, and record which arm's convention "
-                    "the frozen floor is in."
-                )
             if plddt:
                 try:
                     reports["monomer"] = sr.monomer_recompute(

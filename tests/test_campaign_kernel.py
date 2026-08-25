@@ -967,7 +967,7 @@ def test_a_row_scored_on_a_different_sequence_halts(tmp_path: Path) -> None:
 
     assert done.returncode != 0
     out = done.stdout + done.stderr
-    assert "scored on a different sequence" in out
+    assert "not among the chains" in out
     assert "p1" in out, f"the halt must name the row: {out}"
 
 
@@ -981,7 +981,7 @@ def test_matching_scored_sequences_pass_and_absence_warns(tmp_path: Path) -> Non
     done = _run("select_panel.py", str(good), "--gate", str(_gate(tmp_path)),
                 "--panel-size", "3", "--out", str(tmp_path / "a.csv"))
     assert done.returncode == 0, done.stdout + done.stderr
-    assert "scored on a different sequence" not in done.stdout + done.stderr
+    assert "not among the chains" not in done.stdout + done.stderr
 
     silent = tmp_path / "nocol.json"
     silent.write_text(json.dumps(_population(3)))
@@ -1061,3 +1061,114 @@ def test_a_missing_ref_is_diagnosed_not_a_traceback(tmp_path: Path) -> None:
     assert "Traceback" not in out, out
     assert "campaign/cda/subagents" in out, out
     assert "--ref" in out, out
+
+
+def _helix_pdb(path: Path, n: int = 30, chain: str = "B", annotated: bool = True) -> Path:
+    """A minimal CA-only chain, optionally carrying its own HELIX record.
+
+    The kernel resolves secondary structure from HELIX/SHEET records when the
+    file has them and returns "unknown" when nothing resolves, so this builds
+    both the classifiable and the unclassifiable case without any structure
+    dependency.
+    """
+    lines = []
+    if annotated:
+        lines.append(f"HELIX    1   1 ALA {chain}   1  ALA {chain}  {n:>3}  1{' ':>36}{n:>5}")
+    for i in range(1, n + 1):
+        lines.append(
+            f"ATOM  {i:>5}  CA  ALA {chain}{i:>4}    "
+            f"{i * 1.5:>8.3f}{0.0:>8.3f}{0.0:>8.3f}  1.00 50.00           C"
+        )
+    lines.append("END")
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def test_a_classified_fold_keeps_its_label(tmp_path: Path) -> None:
+    """`dssp_fold_class` returns a STRING, not an object.
+
+    Reading it through `getattr(fold, "fold_class", ...)` yields None for every
+    real classification, so the whole column collapsed to NOT_RUN and took the
+    evidence for the >=10% non-all-alpha diversity target with it.
+    """
+    pdb = _helix_pdb(tmp_path / "design.pdb")
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq,
+         "designed_structure_path": str(pdb), "binder_chain": "B"}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    assert rows, "the gate wrote no rows"
+    for row in rows:
+        assert row["fold_class"] == "all_alpha", (
+            f"{row['design_id']}: a classified fold must keep its label, got "
+            f"{row['fold_class']!r}"
+        )
+        assert not row.get("fold_class_not_run_reason"), row
+
+
+def test_an_unclassifiable_structure_is_still_not_run(tmp_path: Path) -> None:
+    """The other half: "unknown" is a non-classification and must say so.
+
+    The kernel returns it rather than raising, so the except branch never fires
+    and a reasonless fourth token would otherwise reach the sheet.
+    """
+    pdb = _helix_pdb(tmp_path / "flat.pdb", annotated=False)
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq,
+         "designed_structure_path": str(pdb), "binder_chain": "B"}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    assert rows
+    for row in rows:
+        assert row["fold_class"] == "NOT_RUN", row
+        assert row["fold_class_not_run_reason"], f"{row['design_id']}: NOT_RUN with no reason"
+
+
+def test_a_complex_scored_sequence_matches_its_binder_chain(tmp_path: Path) -> None:
+    """The recommended scoring route folds `TARGET:BINDER` as one record.
+
+    So the stored input read back from the platform carries both chains while
+    the row carries the binder alone. A plain equality check calls every
+    correctly scored complex a mismatch and halts on the good case.
+    """
+    target = "FTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQ"
+    rows = _population(3)
+    for row in rows:
+        row["scored_sequence"] = f"{target}:{row['sequence']}"
+    src = tmp_path / "complex.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+
+    # ...and a binder that is in NO chain of what was folded still halts.
+    wrong = _population(3)
+    for row in wrong:
+        row["scored_sequence"] = f"{target}:{_SEQUENCES[0]}"
+    bad = tmp_path / "wrong.json"
+    bad.write_text(json.dumps(wrong))
+    done = _run("select_panel.py", str(bad), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "b.csv"))
+    assert done.returncode != 0
+    assert "not among the chains" in done.stdout + done.stderr
+
+
+def test_the_plddt_scale_halt_does_not_need_numpy(tmp_path: Path) -> None:
+    """It compares two numbers, so it must not sit behind the kernel import.
+
+    Sited beside the recompute it was inside `if sr is not None`, which is
+    False on exactly the stock machine with no numpy that SKILL.md calls the
+    common case -- absent from every run that most needed it.
+    """
+    rows = _population(3)
+    for row, value in zip(rows, (86.75, 91.2, 78.4)):
+        row["monomer_plddt"] = value
+    src = tmp_path / "hundreds.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--skip-recompute",
+                "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode != 0, done.stdout + done.stderr
+    assert "monomer_plddt exceeds 1.0" in done.stdout + done.stderr

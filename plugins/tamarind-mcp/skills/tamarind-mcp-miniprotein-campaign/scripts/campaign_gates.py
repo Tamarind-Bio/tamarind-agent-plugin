@@ -248,15 +248,24 @@ def main():
         if pdb and os.path.exists(pdb):
             try:
                 fold = helpers.dssp_fold_class(pdb, chain=chain)
-                label = getattr(fold, "fold_class", None) or getattr(fold, "label", None)
-                helical = getattr(fold, "helical_fraction", None)
-                # The kernel does NOT raise when it cannot classify -- it hands
-                # back a FoldClass whose `.fold_class` is None and whose str()
-                # is "unknown". Falling through to str(fold) minted a fourth
-                # token beside PASS/REJECT/NOT_RUN, carrying no reason, which
-                # `references/selection.md` forbids. An unclassifiable fold is
-                # a gate that did not run, and it has to say why.
-                if not label or str(label).strip().lower() == "unknown":
+            except Exception as exc:
+                row["fold_class"] = VERDICT_NOT_RUN
+                row["fold_class_not_run_reason"] = f"{type(exc).__name__}: {exc}"
+            else:
+                # `dssp_fold_class` returns a STRING -- `FoldClass` is a Literal
+                # of "all_alpha" | "all_beta" | "alpha_beta" | "other" |
+                # "unknown", not an object. Reading it through getattr yields
+                # None for every real classification and turns the whole column
+                # into NOT_RUN, which deletes the evidence for the >=10%
+                # non-all-alpha diversity target.
+                #
+                # Only "unknown" is a non-classification: the kernel returns it
+                # when no secondary structure could be resolved, and its own
+                # docstring says it must not count toward the diversity target
+                # and must be reported NOT_RUN. It does not raise to say so,
+                # which is why this branch exists at all.
+                label = str(fold).strip()
+                if not label or label.lower() == "unknown":
                     row["fold_class"] = VERDICT_NOT_RUN
                     row["fold_class_not_run_reason"] = (
                         "the fold classifier returned no class for this structure "
@@ -264,11 +273,6 @@ def main():
                     )
                 else:
                     row["fold_class"] = label
-                if helical is not None:
-                    row["fold_helical_fraction"] = helical
-            except Exception as exc:
-                row["fold_class"] = VERDICT_NOT_RUN
-                row["fold_class_not_run_reason"] = f"{type(exc).__name__}: {exc}"
         else:
             row["fold_class"] = VERDICT_NOT_RUN
             row["fold_class_not_run_reason"] = "no designed structure on this row"
