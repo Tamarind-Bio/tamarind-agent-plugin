@@ -50,36 +50,62 @@ the 50-backbone floor, which belongs to the starred set.
 |---|---|---|---|
 | `rfdiffusion` | `task` | **`Motif Scaffolding`** | **Not binder design.** All of `targetChains`, `binderLength`, `binderHotspots` are scoped to `Binder Design` and are ignored otherwise. Set `task: "Binder Design"`. |
 | | `binderLength` | required | A **string** range (`"60-80"`), not a number. |
+| `rfdiffusion3` | `task` | `protein-binder-design` | **Correct by default here — but a different task vocabulary from `rfdiffusion`'s, and that is the trap.** Omitting it autofills the right task; *copying `rfdiffusion`'s* `task: "Binder Design"` is REFUSED. The options are `protein-binder-design`, `enzyme-design`, `na-binder-design`, `small-molecule-binder-design`, `json`. Keeping the two method tokens distinct is not enough; the TASK tokens are distinct too. |
+| | `binderLength` | `"100,150"` | **COMMA-separated here, and the key name is the same as `rfdiffusion`'s, which is DASH-separated.** Declared `type: "range"`; the schema's own default and `exampleJob` are both `"100,150"`. Both `"60-80"` and `"60,80"` return `valid: true` and are stored VERBATIM, so validation cannot tell you which one the worker parses — see the note under the aiming table. The default also sits inside the mimic band. |
+| | `numDesigns` | returns MORE than you ask | Measured: `numDesigns: 4` came back as **8** model rows. The mechanism is `diffusionBatchSize` (default **8**), whose own description says *"Extra designs may be generated if the leaf count does not divide evenly"* — so the request is rounded UP to a multiple of the batch. This is the one entry that overshoots rather than undershoots: count the rows in the result table, never assume the request. |
+| | `diffusionBatchSize` | **8** | **Designs in one GPU pass SHARE the sampled binder length** (the schema says so). At the default, a 50-design round samples ~7 lengths, not 50 — a length-diversity collapse that no output column reports. Lower it when length diversity is part of the panel. |
 | `boltzgen` | `binderType` | **`de-novo-nanobody`** | **The default designs a nanobody** — the modality §0 puts out of scope. Set `binderType: "protein"`. |
 | | `budget` | **2** | Caps designs *returned* regardless of `numDesigns`. Left alone, a request for 50 backbones yields **2**, and the per-method floor silently goes undischarged. |
 | | `lengthRange` | protein `"100,150"` | Exists **only** on the `protein`/`peptide` tasks — so length is unsettable until `binderType` is right. The default also sits inside the mimic band. |
 | | `filterBindingSite` | **false** | Supplying `bindingSite` does **not** filter on it; the conditioning is soft and the schema says so. |
 | `pxdesign` | `pxdesignMode` | **`generation`** | Raw backbones, **no ranked table and no output contract at all**. Only `extended` writes `summary.csv`. |
 | | `binderLength` | **10** | Below this campaign's own 35-residue floor; every row would be refused by the gate. |
-| `mosaic-hallucinate` | `binderLength` | **220** | Above the 160 ceiling. |
+| `mosaic-hallucinate` | `binderLength` | **220** | Above the 160 ceiling. A plain NUMBER, like `pxdesign`'s — not a range. |
+| | `numDesigns` | **1** | Same silent-single-run trap. |
 | `freebindcraft` | **`hotspotResidues`** | **optional — auto-selects** | **The one that breaks the campaign silently.** Its description reads *"If left empty suitable hotspots will be selected automatically."* Omit it and the tool picks its **own** epitope: no error, a normal-looking run, and a method aimed somewhere else. One frozen epitope across every method is this campaign's central invariant, and this is the only roster entry that answers a missing epitope by choosing **another one**. Six more violate the invariant just as silently by dropping the constraint and designing unaimed — see the adherence section below — but their designs at least are not aimed somewhere you did not pick. Audit it afterwards on the `Target_Hotspot` output column, documented as *"empty if auto-selected"* — an empty value there means the epitope was not yours. |
 | | `numDesigns` | **1** | It generates until this many designs *pass its filters*, and stops early on its runtime cap — so a run can end partial and silently short. |
 | | `maxRunTime` | 16 h (free: 4 h) | The cap that makes a run end partial. |
 | `genie3` | `foldNumModels` | 5 | Rows are per predicted **model**, and `rank` is the AF2 model rank, not a design ordinal — there is no design identifier at all. See [pool_schema.md](pool_schema.md). |
+| | `minBinderLength` / `maxBinderLength` | 80 / 120 | **Two separate required numbers, not a range string** — the only roster entry that splits length across two keys. A `binderLength` borrowed from a neighbour lands in `unrecognized_settings` and fails the job. |
+| `proteina-complexa` | `numDesigns` | **1** | "Number of independent Proteina-Complexa jobs to launch." Like FreeBindCraft's, a request for 50 backbones yields **one** run unless you set it, and the per-method floor silently goes undischarged. |
+| | `binderLengthRange` | protein-binder `"70,150"` | The upper end is above this campaign's 120 band, and for a mid-size target it reaches into the mimic band. |
+| `boltzdesign` | `numDesigns` | **1** | Same silent-single-run trap. |
+| | `inputFormat` | required — no default | `"pdb"` is what makes `pdbFile`/`targetChains` the active inputs; `"sequence"` and `"small_molecule"` are the other enums. |
+| | `binderLengthRange` | **`"100,150"`** | Comma range. Above this campaign's band at both ends. |
+| `protein-hunter` | `numDesigns` | **1** | Same silent-single-run trap. |
+| | `lengthRange` | **`"90,150"`** | Comma range, and a THIRD spelling of "binder length" (`binderLength` / `binderLengthRange` / `lengthRange` / `min`+`max` are all in use across this roster). |
+| | `numCycles` | **7** | Per-design optimization depth — it multiplies GPU time per design, so it is the cost knob to check before scaling `numDesigns`. |
 
 ## Aiming at the frozen epitope — the key per method
 
 Five spellings and four value grammars. Submission validates against that type's own schema and rejects the whole job on the first unrecognized key, so a spelling borrowed from a neighbour costs the entire round.
 
-| method | chain field | aiming field | required? | value shape |
-|---|---|---|---|---|
-| `rfdiffusion` | `targetChains` | `binderHotspots` | optional | `{"A": "20 21 23"}` — space |
-| `rfdiffusion3` | `targetChains` | `hotspots` | optional | no example in schema |
-| `freebindcraft` | `chains` | `hotspotResidues` | **optional — AUTO-SELECTS** | `{"A": "1-10"}` — dash range |
-| `boltzgen` | `targetChains` | `bindingSite` / `notBindingSite` | optional | no example in schema |
-| `pxdesign` | `targetChains` | `hotspots` | optional | `{"A": "12-33"}` — dash range |
-| `proteina-complexa` | `targetChains` | `hotspotResidues` | optional | `{"A": "37,39,49,98"}` — comma |
-| `genie3` | `targetChains` | `hotspots` | **REQUIRED** | `{"A": "261 263 264"}` — space |
-| `boltzdesign` | `targetChains` (+ `constraintChain` scopes the picker) | `constraintResidues` | optional | comma-separated |
-| `mosaic-hallucinate` | **none** — `targetSequence` only | — | — | cannot be aimed |
-| `protein-hunter` | **none** — `targetSequence`/`targetCCD` | — | — | cannot be aimed |
+**Three keys move together and all three differ per method: the target file, the chain list, and the aiming field.** A campaign that gets the aiming field right and the file field wrong loses the round exactly as completely.
 
-Three carry **no example**, so the value shape cannot be read off the schema. The file field differs too — `genie3` takes `targetFile`, not `pdbFile`, and an unrecognized key fails the whole job.
+| method | target file | chain field | aiming field | required? | value shape | binder length |
+|---|---|---|---|---|---|---|
+| `rfdiffusion` | `pdbFile` | `targetChains` | `binderHotspots` | optional | `{"A": "20 21 23"}` — space | `binderLength` — STRING range `"60-80"` |
+| `rfdiffusion3` | `pdbFile` | `targetChains` | `hotspots` | optional | `{"A": "185 213 216 217 247 248"}` — space | `binderLength` — COMMA range `"60,80"` (same key name as `rfdiffusion`, opposite separator) |
+| `freebindcraft` | `pdbFile` | `chains` | `hotspotResidues` | **optional — AUTO-SELECTS** | `{"A": "1-10"}` — dash range; discrete residues go in as `"185-185,213-213,216-217"` | `binderLengthRange` — `"60,80"` |
+| `boltzgen` | `targetFile` | `targetChains` | `bindingSite` / `notBindingSite` | optional | `{"A": "185,213,216,217,247,248"}` — comma | `lengthRange` — `"60,80"` |
+| `pxdesign` | `targetFile` | `targetChains` | `hotspots` | optional | `{"A": "12-33"}` — dash range | `binderLength` — a NUMBER, not a range |
+| `proteina-complexa` | `pdbFile` | `targetChains` | `hotspotResidues` | optional | `{"A": "37,39,49,98"}` — comma | `binderLengthRange` — `"60,80"` |
+| `genie3` | `targetFile` | `targetChains` | `hotspots` | **REQUIRED** | `{"A": "261 263 264"}` — space | `minBinderLength` **and** `maxBinderLength` — two separate numbers |
+| `boltzdesign` | `pdbFile` (needs `inputFormat: "pdb"`) | `targetChains` (+ `constraintChain` scopes the picker) | `constraintResidues` | optional — set both or neither | comma-separated, on the ONE `constraintChain` — **not** a `{chain: …}` map like every other entry | `binderLengthRange` — `"100,150"` |
+| `mosaic-hallucinate` | **none** — `targetSequence` only | — | — | — | cannot be aimed | `binderLength` — a NUMBER (220), not a range |
+| `protein-hunter` | **none** — `targetSequence`/`targetCCD` | — | — | — | cannot be aimed | `lengthRange` — `"90,150"` |
+
+Every cell above was resolved on 2026-08-25 against the live catalog: the aiming keys by submitting to prod and reading back `valid: true` against a two-chain target with a six-residue epitope, and the length keys and their defaults from each tool's own schema.
+
+**`valid: true` is evidence the key is ACCEPTED. It is not evidence the VALUE is well-formed, and it is not evidence the method aimed where you asked.** Three separate limits, and the middle one bit this page:
+
+- A range value is stored **verbatim**. `rfdiffusion3` takes `binderLength: "60-80"` and `binderLength: "60,80"` with equal cheer and normalizes neither, so the separator is settled by the WORKER, not the validator. An earlier version of this table recorded the dash for `rfdiffusion3` on exactly that evidence and was wrong: the schema declares `type: "range"` with `"100,150"` as both its default and its `exampleJob`. **For any `type: "range"` field, take the separator from the schema's own default — never from a validation that passed.** `rfdiffusion` really is dash (`"20-30"` is its declared example); `rfdiffusion3`, `boltzgen`, `freebindcraft`, `proteina-complexa`, `boltzdesign` and `protein-hunter` are all comma.
+- A key can be accepted and then ignored — see the adherence section below, which is a different question with a different answer per method.
+- A missing key can be *filled in for you*: `freebindcraft` picks its own epitope, and `rfdiffusion3`'s task autofills correctly. Absence of an error says nothing about which of those two happened.
+
+**Four of the seven starred methods take a key this table did not previously carry**, which is four failed submissions for a campaign that reads only the aiming column: `pxdesign` and `boltzgen` want `targetFile` where `rfdiffusion` wants `pdbFile`, `genie3` splits its length into two numbers, and `rfdiffusion3` needs a `task` the other diffusion entry spells differently (see the defaults table above).
+
+Three carried **no example in the schema** — `rfdiffusion3`, `boltzgen`, and FreeBindCraft's discrete-residue form. The shapes in the table for those three are measured from accepted submissions, not read off the schema, so re-probe them rather than trusting this page if a round fails.
 
 **Probe what is actually enforced with `tamarind --json validate`, which costs nothing — but read the `error`, not just `missing_fields`.** Validating an empty payload names what the tool refuses to run without:
 
@@ -134,6 +160,8 @@ Getting this wrong costs designs in both directions.
 
 - **Sequence-carrying** — `boltzgen`, `rfdiffusion`, `rfdiffusion3`, `genie3`, `mosaic-hallucinate`, `freebindcraft`. Their per-design table already contains the binder sequence, so they feed a scoring pool directly. **Do not route them through a sequence-design job.** The unnecessary hop mints a second, job-local id space over the same backbones, which is how a shipped design ends up carrying another backbone's sequence. Run a redesign only when you deliberately want the co-design comparison, and then record it as a new design row that keeps the original `root_backbone_id`.
 - **Backbone-only** — `proteina-complexa`, `pxdesign`. Their per-design table drops every upstream sequence column, so there is nothing to score. Submit a sequence-design job on the generator's output structures, then build the pool from **that** job. `root_backbone_id` and `structure_method` still name the original generator; `seq_method` names the sequence designer. Skipping this is how a method contributes zero ranked backbones.
+**`proteina-complexa` publishes per-design `ss_alpha`/`ss_beta` fractions** — the only roster entry that does. `ss_alpha < 0.70` settles non-all-alpha on its own; a helix-rich row still needs residue-level `ss_codes`, since an aggregate fraction cannot show the run of three consecutive strand residues the other half of the definition asks for.
+
 - **Undetermined** — `boltzdesign`, `protein-hunter`. Read the method's own per-design table on its canary and check for a sequence column. Treat it as backbone-only only when the table genuinely has none, and record which way you resolved it.
 
 The same two-step route applies to any method you deliberately run **without** its in-job sequence step.

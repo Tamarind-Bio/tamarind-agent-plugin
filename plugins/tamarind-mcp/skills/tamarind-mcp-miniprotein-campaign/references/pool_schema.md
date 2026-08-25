@@ -27,6 +27,18 @@ Call this **before** you conclude a method produced nothing. "This method produc
 
 `select_panel.py` additionally requires the lineage and gate columns in [selection.md](selection.md): `root_backbone_id`, `structure_method`, `seq_method`, `opt_round`, `tm_cluster`, `n_seeds`, the five `*_verdict` columns, and the `ipsae_<arm>` / `sc_DockQ_<arm>` score terms.
 
+### Carrying gate evidence forward: `campaign_gates.py` writes CSV, so every value comes back a STRING
+
+The gates emit a CSV. Read it back with a plain reader and `target_mimic` is the string `"0.3906…"`, not the float `0.3906…`. `target_mimic_verdict()` accepts **a number or a verdict word** — a numeric string is neither, so it is *unrecognised*, and unrecognised is `NOT_RUN`. `NOT_RUN` on a novelty-family gate does not rank. Copy the CSV row straight into the candidates file and **every design is banned under `target_mimic_ban`** — the gate is silently switched off while still reporting a verdict for every row.
+
+Fail-closed is the right default here (an unreadable mimic score must never clear a design), which is exactly why it is quiet: nothing errors, the run just ends with an empty panel and a ban reason that reads like a real finding. Measured on the PD-L1 run; it cost a full debugging cycle before the ban was recognised as an artifact of the round-trip rather than a property of the designs.
+
+**Coerce only the columns you actually consume as numbers, and read their types from the source rather than a list copied from here.** Three attempts at a general recipe on this page were each wrong in a different way, and the reason is the same every time: the column semantics live in `campaign_gates.py` (`_liability`, `_novelty`, `_target_mimic`) and in `sheet_recompute.py`, and any list reproduced away from them goes stale or was never right. `"everything that parses as a float"` corrupts numeric IDENTIFIERS — `design_id` `"001"` becomes `1.0` and unjoins the row from its structure, `novelty_top_subject` loses the record of WHICH binder rejected it. An allowlist gets it wrong the other way: `liability_cys_parity` is the token `"odd"`/`"even"`, so a `float()` over it aborts pool construction outright.
+
+So: convert the two or three fields your verdict call is about to read — `target_mimic`, `monomer_plddt`, and the `ipsae_`/`sc_DockQ_` score terms — at the point you read them, and leave the rest of the row exactly as the CSV gave it to you. Then assert the conversion happened, because a gate that quietly stayed a string is a gate switched off.
+
+The general form: **a verdict function that fails closed on an unrecognised value turns a serialization bug into a scientific-looking rejection.** If a ban fires on the entire pool, check the TYPE of the column it names before you believe it — and if a design vanishes from a join instead, check the type of its ID.
+
 ## The mapping, per generation method
 
 | method | sequence column | design identifier |

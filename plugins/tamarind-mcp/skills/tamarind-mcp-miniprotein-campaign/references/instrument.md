@@ -41,6 +41,61 @@ Three constructs are needed and they are different submissions:
 - **monomer binder** — the binder alone, for the foldability gate.
 - **target only** — the target alone, for the fold-recapitulation check at validation.
 
+**MEASURED PLATFORM DEFECT — repeated identical chains are submitted SQUARED, and
+validation does not reproduce it.** A construct whose chain string repeats the same
+sequence N times arrives at the runner with **N x N** copies of it. Measured on prod
+2026-08-25, on a homodimeric target:
+
+| what was submitted | what the job actually ran |
+|---|---|
+| target x2 (the native dimer) | **4 copies** — completed, and every column looked normal |
+| target x3 | **9 copies** — 2394 residues, over the 2000-residue cap, Stopped |
+| barnase + barstar (2 DISTINCT chains) | 2 copies — correct |
+| target + lysozyme (2 DISTINCT chains) | 2 copies — correct |
+
+Distinct chains are unaffected; only repeats are expanded. Each copy is replaced **in
+place** by itself repeated `count(chain)` times, so `A:B:A` arrives as `A:A:B:A:A` —
+position order preserved, which is what distinguishes this from a plain duplication.
+
+**IT IS GATED, AND MOST CAMPAIGNS WILL NEVER SEE IT. Check before you design around
+it.** The expansion is not in the submit path at all — submit *removes* the sequence,
+files the chains into the molecule database, and leaves a reference behind; the
+squaring happens when that reference is resolved back into a sequence at dispatch.
+That whole route is behind two feature flags (`molecules` and `tools-ingestion`,
+nested), both off by default and off for ordinary accounts. Root-caused and fixed in
+tamarind-website#4378 — a chain-membership join that did not correlate on the
+per-copy ordinal, so N copies met N rows and produced N x N.
+
+Measured the same day, same tool, same input, flag as the only variable:
+
+| molecule ingestion | stored construct | chains the job folded |
+|---|---|---|
+| **off** (the default) | `A:A:B` — verbatim | 3 — pairs AB, AC, BC |
+| on | `A:A:A:A:B` | 5 — pairs through E, at 2.5x the compute |
+
+So: **with ingestion off, submit a repeated chain normally.** With it on, the
+construct is corrupted until the fix ships. One caller is not flag-gated — a
+submission claiming the design-agent origin forces ingestion on regardless — so
+"the flags are off" is a statement about *your* submissions, not about the platform.
+
+**Validation cannot answer this either way.** Validating the same three-chain string
+returns it normalized with exactly three chains, on both settings of the flag. The
+expansion happens long after validation, so a clean validate is never evidence that
+the runner got your construct.
+
+**Which is why the read-back stays, regardless of the flag.** It costs one call, it
+is the discipline this page already requires for a different reason, and it is also
+how you *discover* which side of the flag you are on. Reconcile every scored row
+against the job's stored input **by sequence**, and assert the chain count and each
+chain's length against the frozen construct. If they disagree, fail the row rather
+than ranking it — and treat the affected construct as unsubmittable and say so. On a
+homo-oligomeric target that is the complex and the target-only control, both of which
+repeat the target chain. It is NOT the binder-alone monomer fold: that construct is a
+single chain, repeats nothing, and stays submittable — a blanket refusal there would
+leave `monomer_foldability_verdict` at NOT_RUN for no reason. Do not silently score a
+monomeric crop in place of an affected construct either: that is a different construct
+and the protocol forbids the swap.
+
 ## Score algebra — fix it, then never touch it
 
 - **Interface confidence per arm** = minimum over both alignment directions, then **max over seeds**.

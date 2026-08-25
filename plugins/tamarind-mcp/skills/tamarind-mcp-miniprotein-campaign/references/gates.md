@@ -79,16 +79,25 @@ UniRef90 arm only.
   against different subject sets and the row could not say which produced its
   verdict.
 
-  **The hits path is a DISCLOSED REDUCTION of the corpus arm, and you must say so.**
-  Precomputed rows are judged on the global clause only — above 60% identity over
-  more than 50% coverage. The **local-alignment arm does not run**: a partial copy
-  at 100% identity over 40 aligned columns but only 33% coverage — precisely the
-  "short terminal extensions" shape the protocol calls out — is rejected by the
-  in-process arm and **passes** on the hits path. The row discloses it
-  (`known_binder_corpus_local_arm_not_run=1` in `novelty_subjects_screened`), so the
-  gap is auditable rather than silent, but it is a real difference between the two
-  routes. Choose the hits path for scale, then set the search's own thresholds to
-  surface short high-identity alignments, and name the reduction in the report.
+  **The corpus's local-alignment arm is suppressed at campaign scale, on both
+  routes.** `--known-binders` runs it only up to `CORPUS_LOCAL_ARM_MAX_ENTRIES`;
+  `--known-binder-hits` never runs it, since a hit row carries identity and coverage
+  and no alignment. Past the cap both screen the corpus on the global clause alone
+  (above 60% identity over more than 50% coverage) and stamp
+  `known_binder_corpus_local_arm_not_run=1` in `novelty_subjects_screened`. An
+  earlier version of this page presented the suppression as a cost of the hits path
+  specifically, which was wrong.
+
+  **The gap that leaves is real and belongs in the report.** A partial copy at 100%
+  identity over 40 aligned columns but only 33% coverage — the "short terminal
+  extensions" shape the protocol calls out — trips neither clause and PASSes. It is
+  still caught when the copied material is ubiquitin or a target/control chain,
+  because those curated sets keep the local arm; a partial copy of an arbitrary
+  corpus entry is not caught by anything. **Tightening the upstream search does not
+  close it** — `evaluate_precomputed_hits` judges every hit on the same global
+  clause, so a surfaced 33%-coverage row is discarded too. Say in the report that
+  the corpus was screened on the global clause alone and name the low-coverage
+  partial copy as the uncovered shape.
 - **`--uniref90-hits`** takes `{design_id: [hit, …]}` from a sequence-identity
   search job, with the search's own columns — `identity`/`fident`/`pident` and
   `coverage`/`qcov`/`cov`. Percentages and fractions are disambiguated by value;
