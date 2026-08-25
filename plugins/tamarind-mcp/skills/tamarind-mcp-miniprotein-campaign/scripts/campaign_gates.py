@@ -396,7 +396,7 @@ def main():
     except ImportError:
         novelty = lcp = None
 
-    refs, target_seqs, control_seqs = [], [], []
+    refs, target_seqs, control_seqs, refs_without_sequence = [], [], [], []
     if args.reference_chains:
         with open(args.reference_chains) as fh:
             raw_refs = json.load(fh)
@@ -410,10 +410,18 @@ def main():
                     (control_seqs if role.startswith("control") else target_seqs).append(
                         (label, sequence)
                     )
+                if not sequence:
+                    refs_without_sequence.append(
+                        f"{os.path.basename(str(pdb_path or 'ref'))}:{chain_id or '?'}"
+                    )
                 if pdb_path and chain_id:
                     refs.append((pdb_path, chain_id))
             else:
-                refs.append(tuple(item))
+                pair = tuple(item)
+                refs.append(pair)
+                refs_without_sequence.append(
+                    f"{os.path.basename(str(pair[0]))}:{pair[1] if len(pair) > 1 else '?'}"
+                )
 
     if novelty is not None and (target_seqs or control_seqs):
         # Judge every reference ONCE, here, for exactly the reason the hits file
@@ -437,7 +445,15 @@ def main():
                 )
 
     corpus = None
-    if novelty is not None:
+    # Precomputed hits REPLACE the in-process corpus arm, so the corpus is not
+    # resolved at all when they are supplied. Testing only `args.known_binders`
+    # missed the environment route: with $CAMPAIGN_KNOWN_BINDER_CORPUS staged,
+    # `load_known_binder_corpus(None)` still finds it, and the row then reports
+    # BOTH `known_binder_corpus=1` and `known_binder_corpus_hits_are_precomputed=1`
+    # -- the arm run twice against different subject sets, which is exactly what
+    # the exclusivity check exists to prevent. Worse at protocol scale: the
+    # aggregate cap then refuses the very path that was supposed to scale.
+    if novelty is not None and not args.known_binder_hits:
         # Loading it here rather than per row: `load_known_binder_corpus` RAISES
         # on a staged corpus it cannot parse (a corpus being silently read as
         # empty is the failure wearing a success's clothes) and that belongs at
@@ -521,17 +537,24 @@ def main():
         novelty.NOVELTY_REQUIRED_SUBJECTS_FINAL if args.novelty_tier == "final"
         else novelty.NOVELTY_REQUIRED_SUBJECTS_DISPATCH
     ) if novelty is not None else ()
-    if args.novelty_tier == "final" and not target_seqs:
+    if args.novelty_tier == "final" and (not target_seqs or refs_without_sequence):
+        missing = ", ".join(refs_without_sequence[:4]) or "(none supplied)"
         raise SystemExit(
-            "--novelty-tier final requires target chain SEQUENCES in "
+            "--novelty-tier final requires a SEQUENCE on every reference chain in "
             "--reference-chains.\n"
+            f"Missing on: {missing}\n"
             "The final tier certifies that the whole novelty gate ran, and its "
-            "self-similarity arm\n"
-            "aligns against the target's sequence. With the [pdb, chain] pair "
-            "form there are no\n"
-            "sequences to align, so `final` would promise an arm that never ran. "
-            "Use the object form\n"
-            '({"pdb": ..., "chain": ..., "sequence": ..., "role": "target"}).'
+            "self-similarity arm aligns\n"
+            "against sequences. A reference in the [pdb, chain] pair form supplies "
+            "none, so the kernel\n"
+            "records that arm in `arms_not_run` while the row still stamps `final` "
+            "-- promising a comparison\n"
+            "against a target or control that never happened. Controls count here "
+            "as much as targets: a\n"
+            "campaign that never compared its designs to its own controls has not "
+            "run this gate.\n"
+            'Use the object form ({"pdb": ..., "chain": ..., "sequence": ..., '
+            '"role": "target"|"control"}).'
         )
     if args.novelty_tier == "final" and not args.uniref90_hits:
         raise SystemExit(

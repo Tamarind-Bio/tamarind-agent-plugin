@@ -2074,7 +2074,23 @@ def test_the_final_tier_requires_target_sequences_not_just_chain_ids(
         "--reference-chains", str(refs), "--novelty-tier", "final",
     )
     assert done.returncode != 0
-    assert "requires target chain SEQUENCES" in (done.stdout + done.stderr)
+    assert "requires a SEQUENCE on every reference chain" in (done.stdout + done.stderr)
+
+    # Controls count as much as targets: a campaign that never compared its
+    # designs against its own controls has not run this gate either, and the
+    # kernel records `control_chain` in arms_not_run without blocking on it.
+    refs.write_text(json.dumps([
+        {"pdb": "t.pdb", "chain": "A", "sequence": _TARGET_PDL1, "role": "target"},
+        ["ctrl.pdb", "C"],
+    ]))
+    done, _ = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--reference-chains", str(refs), "--novelty-tier", "final",
+    )
+    assert done.returncode != 0
+    combined = done.stdout + done.stderr
+    assert "requires a SEQUENCE on every reference chain" in combined
+    assert "ctrl.pdb:C" in combined          # names the offender
 
 
 def test_the_novelty_escape_covers_the_tier_but_never_a_not_run(
@@ -2219,3 +2235,40 @@ def test_an_entirely_coil_assignment_is_data_not_an_empty_field(
     done = run(" ")
     assert done.returncode != 0
     assert "supplies 1 ss_codes" in (done.stdout + done.stderr)
+
+
+def test_precomputed_corpus_hits_suppress_the_environment_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hits REPLACE the in-process arm, including the environment route.
+
+    Testing only `--known-binders` missed `$CAMPAIGN_KNOWN_BINDER_CORPUS`: with
+    one staged, the corpus still resolved and the row reported BOTH
+    `known_binder_corpus=1` and `known_binder_corpus_hits_are_precomputed=1` --
+    the arm run twice against different subject sets. At protocol scale it is
+    worse than redundant, because the aggregate alignment cap then refuses the
+    very path that was supposed to scale.
+    """
+    corpus = tmp_path / "kb.fasta"
+    corpus.write_text(">kb1\n" + "ACDEFGHIKLMNPQRSTVWY" * 4 + "\n")
+    hits = tmp_path / "kbh.json"
+    hits.write_text(json.dumps({"d1": [{"target": "kb1", "fident": 0.2,
+                                        "qcov": 0.2}]}))
+    monkeypatch.setenv("CAMPAIGN_KNOWN_BINDER_CORPUS", str(corpus))
+
+    pool = tmp_path / "pool.json"
+    pool.write_text(json.dumps([{"design_id": "d1", "sequence": _SEQUENCES[1]}]))
+    out = tmp_path / "g.csv"
+    done = subprocess.run(
+        [sys.executable, str(MCP_SCRIPTS / "campaign_gates.py"), str(pool),
+         "--known-binder-hits", str(hits), "--out", str(out)],
+        capture_output=True, text=True,
+    )
+    assert done.returncode == 0, done.stderr
+    import csv
+
+    row = list(csv.DictReader(out.read_text().splitlines()))[0]
+    screened = row["novelty_subjects_screened"]
+    assert "known_binder_corpus_hits_are_precomputed=1" in screened
+    assert "known_binder_corpus_local_arm_not_run=1" in screened
+    assert "known_binder_corpus=1" not in screened

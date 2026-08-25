@@ -4,27 +4,42 @@
 
 ## 1. The design sheet
 
-One CSV, **exactly the panel size** (default 30) ranked rows, and only those, with
-explicit rank and full metadata. `select_panel.py` writes it.
+One CSV, **at most the panel size** (default 30) ranked rows, and only those, with
+explicit rank and full metadata. `select_panel.py` writes it. The panel size is a
+ceiling, not a quota — see **Row count** below, and never describe a sheet as holding
+exactly N until you have counted its rows.
 
 **Never null**, on every row: identity, provenance, rank, `rank_zscore`,
-`final_score`, the instrument that produced them, `pose_PASS`, `pose_dockq`, and the
-designed-structure path. A row that cannot fill these is not a ranked row.
+`final_score`, the instrument that produced them, `pose_PASS` and `pose_dockq`. A row
+that cannot fill these is not a ranked row.
 
-**Recomputed at write time.** The writer recomputes liability, monomer foldability,
-structural plausibility, `pose_dockq` and `final_score` from the row's own sequence
-and predicted structure at the **same thresholds**, and admits the row only when the
-recomputed value matches the carried one to within 1e-4. A mismatch halts the writer
-with the row id. This is what makes the sheet a claim rather than a copy of one.
+**What the writer actually reproduces, and what it only carries.** This distinction
+is the sheet's whole evidentiary value, so state it precisely rather than describing
+the sheet as verified.
 
-**Novelty is the exception, and the sheet says so.** Reproducing it would need the
-staged corpus and every reference chain inside the writer, and the in-process aligner
-is O(pool x corpus) — measured at ~0.5 ms per alignment, the protocol's own corpus
-against a protocol-scale pool is tens of hours. So the novelty verdict and tier are
-**carried, not reproduced**: the writer lists novelty under its skipped recomputes at
-run time, and enforces the tier instead (a `NOT_RUN` verdict, or a `PASS` earned only
-at the dispatch tier, does not rank). Do not describe a shipped sheet's novelty column
-as independently verified by the writer.
+| column | at write time |
+|---|---|
+| liability | **recomputed** from the row's own sequence |
+| structural plausibility | **recomputed**, when the row names a structure and its binder chain |
+| monomer foldability | **recomputed** from `monomer_plddt` against the frozen floor |
+| `pose_dockq`, `sc_DockQ_*` | **carried** — the minimum over the cells the row already holds |
+| `final_score`, `rank_zscore` | **carried** |
+| novelty verdict and tier | **carried**; the tier is *enforced* instead |
+| `designed_structure_path` | **not enforced** — used when present |
+
+A recomputed column is matched against the carried value to within 1e-4 and a
+mismatch halts the writer with the row id; that is what makes those three a claim
+rather than a copy of one. The carried columns are not independently checked, so a
+row holding a stale or misjoined `sc_DockQ_*` cell can rank on a pose measurement
+belonging to another structure — reconcile scoring rows by sequence when you build
+them, because the sheet writer will not catch it for you.
+
+**Novelty is carried for a measured reason.** Reproducing it needs the staged corpus
+and every reference chain inside the writer, and the in-process aligner is
+O(pool x corpus) — ~0.5 ms per alignment, so the protocol's own corpus against a
+protocol-scale pool is tens of hours. The writer lists novelty under its skipped
+recomputes at run time and enforces the tier instead: a `NOT_RUN` verdict, or a `PASS`
+earned only at the dispatch tier, does not rank.
 
 **Row count.** If the gates leave fewer than the panel size rank-eligible after
 upstream regeneration, ship the real N and say so. Padding with duplicates, or
