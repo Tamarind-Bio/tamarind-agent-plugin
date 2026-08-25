@@ -66,7 +66,7 @@ binder = [c for c in chains if c != TARGET_SEQUENCE]
 assert len(binder) == 1 and LEN_MIN <= len(binder[0]) <= LEN_MAX
 ```
 
-The gates catch two weaker versions of this — the un-split string (`has non-residue characters '/'`) and a pool that collapses to one distinct sequence (`every design carries an identical sequence`) — but neither fires if you split, took the wrong half, and the pool still varies. The assertion above is what actually closes it.
+The gates catch two weaker versions of this — the un-split string (`has non-residue characters '/'`) and a pool that collapses to one distinct sequence (`every design carries an identical sequence`) — but neither fires if you split, took the wrong half, and the pool still varies. Nor does `select_panel.py`'s `scored_sequence` check: it asks whether the row's sequence is **one of the chains** the scoring job folded, and the target is a chain of every scoring construct, so a row carrying the target passes it. That is deliberate — the script is never given the frozen target, and a script that guessed which chain was the design would be asserting something only the campaign knows. **The assertion above is what actually closes it, and it is yours to write.**
 
 **2. A composite identifier collapses.** RFdiffusion's `design` repeats across the several MPNN sequences sampled for one backbone; using it alone trips the duplicate-id refusal. Join `design` and `n`. Getting this wrong in the other direction — minting a fresh id per row — breaks `root_backbone_id` and lets one backbone's family escape the per-root cap.
 

@@ -446,6 +446,26 @@ def main():
             "reproduces every gate.",
             file=sys.stderr,
         )
+    elif scored and len(scored) < len(rows):
+        # Partial coverage is MORE suspicious than none: the read-back ran, and
+        # these rows escaped it. A non-empty `scored` silenced the warning
+        # above, so an unverified row shipped with no disclosure at all.
+        # Identity, not equality: `r not in scored` compares dicts by VALUE, so
+        # two rows that happen to be equal would mask each other.
+        checked = {id(r) for r in scored}
+        missing = sorted(
+            str(r.get("design_id")) for r in rows if id(r) not in checked
+        )
+        print(
+            f"  WARNING: {len(missing)} of {len(rows)} row(s) carry no scored_sequence, "
+            "so nothing verifies\n"
+            f"  that their scores came from their designs: {', '.join(missing[:5])}"
+            + (" ..." if len(missing) > 5 else "") + "\n"
+            "  The other rows were checked. These were not, and a row scored on "
+            "another molecule ranks\n"
+            "  normally and reproduces every gate.",
+            file=sys.stderr,
+        )
 
     # A repeated design_id is a WHOLE-RUN refusal, not a per-row unranking:
     # nothing here can tell which row is the real one, and the caps, the

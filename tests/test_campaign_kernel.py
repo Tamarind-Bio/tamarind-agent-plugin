@@ -1172,3 +1172,23 @@ def test_the_plddt_scale_halt_does_not_need_numpy(tmp_path: Path) -> None:
                 "--out", str(tmp_path / "sheet.csv"))
     assert done.returncode != 0, done.stdout + done.stderr
     assert "monomer_plddt exceeds 1.0" in done.stdout + done.stderr
+
+
+def test_partial_scored_sequence_coverage_is_disclosed(tmp_path: Path) -> None:
+    """A non-empty `scored` silenced the "nothing verifies this" warning.
+
+    Partial coverage is MORE suspicious than none -- the read-back ran and
+    these rows escaped it -- so it must not be quieter than an unannotated
+    pool.
+    """
+    rows = _population(3)
+    rows[0]["scored_sequence"] = rows[0]["sequence"]
+    src = tmp_path / "partial.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "2 of 3 row(s) carry no scored_sequence" in done.stderr, done.stderr
+    for did in ("p1", "p2"):
+        assert did in done.stderr, f"the warning must name {did}: {done.stderr}"
