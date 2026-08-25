@@ -286,6 +286,100 @@ def test_release_docs_install_latest_cli_and_enforce_minimum_contract() -> None:
     assert "CLI 0.2.0 is not published yet" not in readme
 
 
+ROSTER_TWINS = (
+    ROOT / "plugins/tamarind-cli/skills/tamarind-miniprotein-campaign/references/roster.md",
+    ROOT
+    / "plugins/tamarind-mcp/skills/tamarind-mcp-miniprotein-campaign/references/roster.md",
+)
+
+# Every spelling of "binder length" in the roster. A method declares exactly one.
+LENGTH_KEYS = (
+    "binderLengthRange",
+    "minBinderLength",
+    "maxBinderLength",
+    "binderLength",
+    "lengthRange",
+)
+
+
+def _roster_rows(text: str) -> list[tuple[str, str]]:
+    """(method, setting) for the defaults table, resolving blank continuation cells.
+
+    A markdown table row whose FIRST cell is empty continues the method above it. That
+    is what makes this table fragile to edit: inserting a row between a method and its
+    continuation silently re-parents the continuation onto the new method.
+    """
+    rows: list[tuple[str, str]] = []
+    current = ""
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 4:
+            continue
+        method, setting = cells[0], cells[1]
+        if method.lower() == "method" or (method and set(method) <= set("- :")):
+            continue
+        if method:
+            current = method.strip("`*")
+        if setting and current:
+            rows.append((current, setting.strip("`*")))
+    return rows
+
+
+def _aiming_length_keys(text: str) -> dict[str, set[str]]:
+    """method -> the length key(s) the AIMING table's last column names for it."""
+    out: dict[str, set[str]] = {}
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 7:
+            continue
+        method = cells[0].strip("`*")
+        if not method or method.lower() == "method" or set(method) <= set("- :"):
+            continue
+        found = {k for k in LENGTH_KEYS if k in cells[6]}
+        if found:
+            out[method] = found
+    return out
+
+
+def test_roster_defaults_table_agrees_with_the_aiming_table_on_each_length_key() -> None:
+    """The two roster tables must not prescribe different binder-length keys.
+
+    This is a STRUCTURAL check, not a spelling one. The defaults table resolves a
+    method through blank continuation cells, so inserting a row between a method and
+    its continuation re-parents that continuation — which is how `proteina-complexa`'s
+    `binderLengthRange` row once ended up attributed to `protein-hunter`, a tool that
+    declares `lengthRange` and would 400 on the other key. Reading the table cannot
+    catch that; resolving it can.
+    """
+    for path in ROSTER_TWINS:
+        text = path.read_text()
+        aiming = _aiming_length_keys(text)
+        assert aiming, f"{path}: no aiming-table rows parsed — the table shape changed"
+        for method, setting in _roster_rows(text):
+            if setting not in LENGTH_KEYS or method not in aiming:
+                continue
+            assert setting in aiming[method], (
+                f"{path.name}: the defaults table gives `{method}` a length key "
+                f"`{setting}`, but the aiming table names {sorted(aiming[method])}. "
+                "One of them is wrong, or a continuation row was re-parented."
+            )
+
+
+def test_roster_twins_resolve_to_the_same_tables() -> None:
+    """The twins are transport-mirrored prose; their TABLES must be identical.
+
+    A correction applied to one twin and not the other ships a plugin that contradicts
+    its sibling, and the tables are the part an agent copies payloads from.
+    """
+    cli, mcp = (p.read_text() for p in ROSTER_TWINS)
+    assert _roster_rows(cli) == _roster_rows(mcp)
+    assert _aiming_length_keys(cli) == _aiming_length_keys(mcp)
+
+
 def test_prodigy_reference_uses_prodigy_schema() -> None:
     tools = (SKILLS / "tamarind-docking/references/tools.md").read_text()
     prodigy = tools.split("## prodigy (PRODIGY)", 1)[1].split("\n---", 1)[0]
