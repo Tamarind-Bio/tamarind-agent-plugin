@@ -50,8 +50,10 @@ the 50-backbone floor, which belongs to the starred set.
 |---|---|---|---|
 | `rfdiffusion` | `task` | **`Motif Scaffolding`** | **Not binder design.** All of `targetChains`, `binderLength`, `binderHotspots` are scoped to `Binder Design` and are ignored otherwise. Set `task: "Binder Design"`. |
 | | `binderLength` | required | A **string** range (`"60-80"`), not a number. |
-| `rfdiffusion3` | `task` | **none — rejects the submission** | **A different task vocabulary from `rfdiffusion`'s.** Keeping the two method tokens distinct is not enough; the TASK tokens are distinct too, and `"Binder Design"` is refused here. The options are `protein-binder-design`, `enzyme-design`, `na-binder-design`, `small-molecule-binder-design`, `json`. Set `task: "protein-binder-design"`. |
-| | `numDesigns` | returns MORE than you ask | Measured: `numDesigns: 4` came back as **8** model rows, with `diffusionBatchSize: 8` in the normalized settings. This is the one entry that overshoots rather than undershoots — count the rows in the result table, never assume the request. |
+| `rfdiffusion3` | `task` | `protein-binder-design` | **Correct by default here — but a different task vocabulary from `rfdiffusion`'s, and that is the trap.** Omitting it autofills the right task; *copying `rfdiffusion`'s* `task: "Binder Design"` is REFUSED. The options are `protein-binder-design`, `enzyme-design`, `na-binder-design`, `small-molecule-binder-design`, `json`. Keeping the two method tokens distinct is not enough; the TASK tokens are distinct too. |
+| | `binderLength` | `"100,150"` | **COMMA-separated here, and the key name is the same as `rfdiffusion`'s, which is DASH-separated.** Declared `type: "range"`; the schema's own default and `exampleJob` are both `"100,150"`. Both `"60-80"` and `"60,80"` return `valid: true` and are stored VERBATIM, so validation cannot tell you which one the worker parses — see the note under the aiming table. The default also sits inside the mimic band. |
+| | `numDesigns` | returns MORE than you ask | Measured: `numDesigns: 4` came back as **8** model rows. The mechanism is `diffusionBatchSize` (default **8**), whose own description says *"Extra designs may be generated if the leaf count does not divide evenly"* — so the request is rounded UP to a multiple of the batch. This is the one entry that overshoots rather than undershoots: count the rows in the result table, never assume the request. |
+| | `diffusionBatchSize` | **8** | **Designs in one GPU pass SHARE the sampled binder length** (the schema says so). At the default, a 50-design round samples ~7 lengths, not 50 — a length-diversity collapse that no output column reports. Lower it when length diversity is part of the panel. |
 | `boltzgen` | `binderType` | **`de-novo-nanobody`** | **The default designs a nanobody** — the modality §0 puts out of scope. Set `binderType: "protein"`. |
 | | `budget` | **2** | Caps designs *returned* regardless of `numDesigns`. Left alone, a request for 50 backbones yields **2**, and the per-method floor silently goes undischarged. |
 | | `lengthRange` | protein `"100,150"` | Exists **only** on the `protein`/`peptide` tasks — so length is unsettable until `binderType` is right. The default also sits inside the mimic band. |
@@ -65,6 +67,12 @@ the 50-backbone floor, which belongs to the starred set.
 | `genie3` | `foldNumModels` | 5 | Rows are per predicted **model**, and `rank` is the AF2 model rank, not a design ordinal — there is no design identifier at all. See [pool_schema.md](pool_schema.md). |
 | | `minBinderLength` / `maxBinderLength` | 80 / 120 | **Two separate required numbers, not a range string** — the only roster entry that splits length across two keys. A `binderLength` borrowed from a neighbour lands in `unrecognized_settings` and fails the job. |
 | `proteina-complexa` | `numDesigns` | **1** | "Number of independent Proteina-Complexa jobs to launch." Like FreeBindCraft's, a request for 50 backbones yields **one** run unless you set it, and the per-method floor silently goes undischarged. |
+| `boltzdesign` | `numDesigns` | **1** | Same silent-single-run trap. |
+| | `inputFormat` | required — no default | `"pdb"` is what makes `pdbFile`/`targetChains` the active inputs; `"sequence"` and `"small_molecule"` are the other enums. |
+| | `binderLengthRange` | **`"100,150"`** | Comma range. Above this campaign's band at both ends. |
+| `protein-hunter` | `numDesigns` | **1** | Same silent-single-run trap. |
+| | `lengthRange` | **`"90,150"`** | Comma range, and a THIRD spelling of "binder length" (`binderLength` / `binderLengthRange` / `lengthRange` / `min`+`max` are all in use across this roster). |
+| | `numCycles` | **7** | Per-design optimization depth — it multiplies GPU time per design, so it is the cost knob to check before scaling `numDesigns`. |
 | | `binderLengthRange` | protein-binder `"70,150"` | The upper end is above this campaign's 120 band, and for a mid-size target it reaches into the mimic band. |
 
 ## Aiming at the frozen epitope — the key per method
@@ -82,11 +90,17 @@ Five spellings and four value grammars. Submission validates against that type's
 | `pxdesign` | `targetFile` | `targetChains` | `hotspots` | optional | `{"A": "12-33"}` — dash range | `binderLength` — a NUMBER, not a range |
 | `proteina-complexa` | `pdbFile` | `targetChains` | `hotspotResidues` | optional | `{"A": "37,39,49,98"}` — comma | `binderLengthRange` — `"60,80"` |
 | `genie3` | `targetFile` | `targetChains` | `hotspots` | **REQUIRED** | `{"A": "261 263 264"}` — space | `minBinderLength` **and** `maxBinderLength` — two separate numbers |
-| `boltzdesign` | not resolved in this run | `targetChains` (+ `constraintChain` scopes the picker) | `constraintResidues` | optional | comma-separated | not resolved in this run |
+| `boltzdesign` | `pdbFile` (needs `inputFormat: "pdb"`) | `targetChains` (+ `constraintChain` scopes the picker) | `constraintResidues` | optional — set both or neither | comma-separated, on the ONE `constraintChain` — **not** a `{chain: …}` map like every other entry | `binderLengthRange` — `"100,150"` |
 | `mosaic-hallucinate` | **none** — `targetSequence` only | — | — | — | cannot be aimed | `binderLength` |
-| `protein-hunter` | **none** — `targetSequence`/`targetCCD` | — | — | — | cannot be aimed | not resolved in this run |
+| `protein-hunter` | **none** — `targetSequence`/`targetCCD` | — | — | — | cannot be aimed | `lengthRange` — `"90,150"` |
 
-Every cell above except the four marked "not resolved in this run" was submitted to prod and came back `valid: true` on 2026-08-25 against a two-chain target with a six-residue epitope. That is evidence the key is **accepted**, not that the method aimed where you asked — the adherence section below is what settles that, and it is a different question with a different answer per method.
+Every cell above was resolved on 2026-08-25 against the live catalog: the aiming keys by submitting to prod and reading back `valid: true` against a two-chain target with a six-residue epitope, and the length keys and their defaults from each tool's own schema.
+
+**`valid: true` is evidence the key is ACCEPTED. It is not evidence the VALUE is well-formed, and it is not evidence the method aimed where you asked.** Three separate limits, and the middle one bit this page:
+
+- A range value is stored **verbatim**. `rfdiffusion3` takes `binderLength: "60-80"` and `binderLength: "60,80"` with equal cheer and normalizes neither, so the separator is settled by the WORKER, not the validator. An earlier version of this table recorded the dash for `rfdiffusion3` on exactly that evidence and was wrong: the schema declares `type: "range"` with `"100,150"` as both its default and its `exampleJob`. **For any `type: "range"` field, take the separator from the schema's own default — never from a validation that passed.** `rfdiffusion` really is dash (`"20-30"` is its declared example); `rfdiffusion3`, `boltzgen`, `freebindcraft`, `proteina-complexa`, `boltzdesign` and `protein-hunter` are all comma.
+- A key can be accepted and then ignored — see the adherence section below, which is a different question with a different answer per method.
+- A missing key can be *filled in for you*: `freebindcraft` picks its own epitope, and `rfdiffusion3`'s task autofills correctly. Absence of an error says nothing about which of those two happened.
 
 **Four of the seven starred methods take a key this table did not previously carry**, which is four failed submissions for a campaign that reads only the aiming column: `pxdesign` and `boltzgen` want `targetFile` where `rfdiffusion` wants `pdbFile`, `genie3` splits its length into two numbers, and `rfdiffusion3` needs a `task` the other diffusion entry spells differently (see the defaults table above).
 
@@ -145,6 +159,8 @@ Getting this wrong costs designs in both directions.
 
 - **Sequence-carrying** — `boltzgen`, `rfdiffusion`, `rfdiffusion3`, `genie3`, `mosaic-hallucinate`, `freebindcraft`. Their per-design table already contains the binder sequence, so they feed a scoring pool directly. **Do not route them through a sequence-design job.** The unnecessary hop mints a second, job-local id space over the same backbones, which is how a shipped design ends up carrying another backbone's sequence. Run a redesign only when you deliberately want the co-design comparison, and then record it as a new design row that keeps the original `root_backbone_id`.
 - **Backbone-only** — `proteina-complexa`, `pxdesign`. Their per-design table drops every upstream sequence column, so there is nothing to score. Submit a sequence-design job on the generator's output structures, then build the pool from **that** job. `root_backbone_id` and `structure_method` still name the original generator; `seq_method` names the sequence designer. Skipping this is how a method contributes zero ranked backbones.
+**`proteina-complexa` reports fold class directly.** Its per-design table declares `ss_alpha` and `ss_beta` — "fraction of binder residues in alpha-helix / beta-sheet secondary structure". The protocol's non-all-alpha objective is an accounting question over exactly those two numbers, so read the column rather than recomputing DSSP over the backbones. It is the only roster entry that publishes them; for every other method the fold class still has to be measured. It also declares `designability_scRMSD` (binder monomer refolded with ESMFold vs the generated structure) and `codesignability_scRMSD` (after a ProteinMPNN redesign), which answer the structural-plausibility gate without a separate job.
+
 - **Undetermined** — `boltzdesign`, `protein-hunter`. Read the method's own per-design table on its canary and check for a sequence column. Treat it as backbone-only only when the table genuinely has none, and record which way you resolved it.
 
 The same two-step route applies to any method you deliberately run **without** its in-job sequence step.

@@ -27,6 +27,28 @@ Call this **before** you conclude a method produced nothing. "This method produc
 
 `select_panel.py` additionally requires the lineage and gate columns in [selection.md](selection.md): `root_backbone_id`, `structure_method`, `seq_method`, `opt_round`, `tm_cluster`, `n_seeds`, the five `*_verdict` columns, and the `ipsae_<arm>` / `sc_DockQ_<arm>` score terms.
 
+### Carrying gate evidence forward: `campaign_gates.py` writes CSV, so every value comes back a STRING
+
+The gates emit a CSV. Read it back with a plain reader and `target_mimic` is the string `"0.3906…"`, not the float `0.3906…`. `target_mimic_verdict()` accepts **a number or a verdict word** — a numeric string is neither, so it is *unrecognised*, and unrecognised is `NOT_RUN`. `NOT_RUN` on a novelty-family gate does not rank. Copy the CSV row straight into the candidates file and **every design is banned under `target_mimic_ban`** — the gate is silently switched off while still reporting a verdict for every row.
+
+Fail-closed is the right default here (an unreadable mimic score must never clear a design), which is exactly why it is quiet: nothing errors, the run just ends with an empty panel and a ban reason that reads like a real finding. Measured on the PD-L1 run; it cost a full debugging cycle before the ban was recognised as an artifact of the round-trip rather than a property of the designs.
+
+Coerce the numerics back before you hand the row on — everything except the `*_verdict`, `*_reason` and `*_tier` columns, which are genuinely text:
+
+```python
+row = {}
+for k, v in gate_row.items():
+    if isinstance(v, str) and v.strip() and not k.endswith(("_verdict", "_reason", "_tier")):
+        try:
+            row[k] = float(v)
+            continue
+        except ValueError:
+            pass
+    row[k] = v
+```
+
+The general form: **a verdict function that fails closed on an unrecognised value turns a serialization bug into a scientific-looking rejection.** If a ban fires on the entire pool, check the TYPE of the column it names before you believe it.
+
 ## The mapping, per generation method
 
 | method | sequence column | design identifier |
