@@ -1408,16 +1408,43 @@ def test_supplied_dssp_codes_reach_the_fold_classifier(tmp_path: Path) -> None:
     to P-SEA or to NOT_RUN no matter what DSSP the campaign had in hand.
     """
     pdb = _helix_pdb(tmp_path / "plain.pdb", n=40, annotated=False, chain="B")
-    strand = "E" * 40                      # DSSP 8-state: an all-beta chain
+    # BOTH shapes a pool can carry. A DSSP tool -- and biotite's own
+    # annotate_sse -- emits per-residue codes as a LIST, and str() on that
+    # yields "['E', 'E', ...]", whose punctuation the kernel reads as coil:
+    # measured, 40 strand residues give all_beta as a list and `other` once
+    # coerced. The scalar string is what a CSV pool carries.
+    for tag, codes in (("scalar", "E" * 40), ("list", ["E"] * 40)):
+        rows = _gated(tmp_path, [
+            {"design_id": f"{tag}-d{i}", "sequence": seq,
+             "designed_structure_path": str(pdb), "binder_chain": "B", "ss_codes": codes}
+            for i, seq in enumerate(_SEQUENCES)
+        ])
+        assert rows, tag
+        for row in rows:
+            assert row["fold_class"] == "all_beta", (
+                f"{tag} {row['design_id']}: supplied DSSP codes must decide the class, "
+                f"got {row['fold_class']!r}"
+            )
+            assert row.get("fold_ss_method") == "supplied", row
+
+
+def test_every_classified_row_names_the_method_that_resolved_it(tmp_path: Path) -> None:
+    """A diversity figure with no method beside it is not evidence.
+
+    The target is defined under DSSP; the classifier's last resort is P-SEA.
+    Stamping the method only when the pool supplied codes left the fallback
+    cases unlabelled, so a P-SEA class could be reported as DSSP-derived.
+    """
+    annotated = _helix_pdb(tmp_path / "withrecords.pdb", chain="B")          # HELIX present
     rows = _gated(tmp_path, [
-        {"design_id": f"d{i}", "sequence": seq, "designed_structure_path": str(pdb),
-         "binder_chain": "B", "ss_codes": strand}
+        {"design_id": f"r{i}", "sequence": seq,
+         "designed_structure_path": str(annotated), "binder_chain": "B"}
         for i, seq in enumerate(_SEQUENCES)
     ])
     assert rows
     for row in rows:
-        assert row["fold_class"] == "all_beta", (
-            f"{row['design_id']}: supplied DSSP codes must decide the class, got "
-            f"{row['fold_class']!r}"
+        assert row["fold_class"] == "all_alpha", row
+        assert row["fold_ss_method"] == "pdb-records", (
+            f"{row['design_id']}: a class resolved from the file's own records must say so, "
+            f"got {row.get('fold_ss_method')!r}"
         )
-        assert row.get("fold_ss_method") == "supplied", row

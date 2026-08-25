@@ -107,6 +107,20 @@ def _mimic(tm, pdb, refs, chain):
     return screen.get("verdict", VERDICT_NOT_RUN), {"target_mimic_tm_max": screen.get("tm_max")}, ""
 
 
+def _has_ss_records(pdb_path):
+    """Does this file carry its own HELIX/SHEET annotation?
+
+    Decides whether the classifier read the file's own secondary structure or
+    fell through to biotite's P-SEA, which is a different assignment from the
+    DSSP the fold-diversity target is written in.
+    """
+    try:
+        with open(pdb_path, "r", errors="ignore") as handle:
+            return any(line.startswith(("HELIX", "SHEET")) for line in handle)
+    except OSError:
+        return False
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pool", help="JSON or CSV design pool")
@@ -290,9 +304,16 @@ def main():
         # this the canonical path was unreachable from here: generator PDBs
         # carry no HELIX/SHEET records, so the run silently fell to P-SEA or
         # to NOT_RUN no matter what DSSP the campaign had in hand.
-        ss_codes = str(entry.get("ss_codes") or "").strip() or None
-        if ss_codes:
-            row["fold_ss_method"] = "supplied"
+        # Preserve an ITERABLE as-is. A DSSP tool -- and biotite's own
+        # annotate_sse -- emits per-residue codes as a list, and str() on that
+        # yields "['E', 'E', ...]", whose brackets, quotes and commas the
+        # kernel reads as coil: 40 strand residues classify all_beta passed
+        # directly and `other` after coercion. Only a scalar needs trimming.
+        raw_ss = entry.get("ss_codes")
+        if isinstance(raw_ss, (list, tuple)):
+            ss_codes = list(raw_ss) or None
+        else:
+            ss_codes = str(raw_ss or "").strip() or None
         if pdb and os.path.exists(pdb):
             try:
                 fold = helpers.dssp_fold_class(pdb, chain=chain, ss_codes=ss_codes)
@@ -321,6 +342,16 @@ def main():
                     )
                 else:
                     row["fold_class"] = label
+                    # WHICH method produced it. The diversity target is defined
+                    # under DSSP and the classifier's last resort is P-SEA, so a
+                    # class with no method beside it cannot be reported against
+                    # that target. Derived from the kernel's own resolver order.
+                    if ss_codes is not None:
+                        row["fold_ss_method"] = "supplied"
+                    elif _has_ss_records(pdb):
+                        row["fold_ss_method"] = "pdb-records"
+                    else:
+                        row["fold_ss_method"] = "biotite-psea"
         else:
             row["fold_class"] = VERDICT_NOT_RUN
             row["fold_class_not_run_reason"] = "no designed structure on this row"
