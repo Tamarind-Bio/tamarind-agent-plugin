@@ -20,9 +20,20 @@ Three traps, each of which produces a campaign that looks complete and is not:
 - **`esmfold2-binder-design` is a different tool** — a binder *generator*, not a co-folder. A catalog search for "esmfold" returns it beside the two you want. Select on the exact token, never on name similarity.
 - **The fast checkpoint has no MSA encoder.** `useMSA` is conditional on `model == "esmfold2"` and does not apply to the fast model, which always runs single-sequence. Never claim the fast arm used an MSA.
 
+**The arms do not agree on the pLDDT scale, and the monomer gate is where that bites.** Measured on real rows for the same construct: ESMFold2 reports mean pLDDT on **0–1** (0.7884) and Protenix on **0–100** (86.75). The frozen monomer-foldability floor is a 0–1 number (default 0.70), so a Protenix-derived pLDDT compared against it clears for **every design** — the gate keeps reporting PASS while rejecting nothing, which is worse than not running it. Fix the column, not the floor: put whichever arm you read the monomer fold from onto the floor's scale in the pool, and record in the plan which convention the frozen floor is written in. `select_panel.py` halts on a `monomer_plddt` above 1.0 against a 0–1 floor rather than ranking through it.
+
 **The per-chain MSA policy is not expressible on this platform, and that is a disclosed instrument reduction.** `useMSA` is a single global boolean over the whole prediction; Protenix exposes no MSA toggle at all. There is no way to give the target chain an MSA while holding the binder single-sequence. Record what you actually ran — MSA on or off for the entire complex — and never describe the run in per-chain terms the settings could not have produced.
 
 All three compute the interface confidence term in-job (`ipSAE_*`, per ordered chain pair plus a `_max` aggregate), but it degrades to a soft warning rather than a job failure, and it is correctly skipped for a monomer construct. **Verify the column per arm on the rows in hand.** A missing column is silent and is caught by checking, not by trusting.
+
+**How far the arms actually disagree, measured.** The same designed complex, scored on two arms in the same campaign:
+
+| design | ESMFold2-Fast | Protenix-v2 |
+|---|---|---|
+| an RFdiffusion binder | ipSAE **0.025**, ipTM 0.42 | ipSAE **0.586**, ipTM 0.84 |
+| a BoltzGen binder | ipSAE 0.014 | ipSAE 0.299 |
+
+A **23-fold** spread on the term the ranking is built from, on the same molecule. Neither arm is wrong; they are different models with different failure modes, and that is the entire reason the arm axis is never tiered. A campaign that screened on ESMFold2 alone would have discarded the strongest design in this pool before Protenix ever saw it — on evidence the frozen method never agreed with.
 
 Three constructs are needed and they are different submissions:
 

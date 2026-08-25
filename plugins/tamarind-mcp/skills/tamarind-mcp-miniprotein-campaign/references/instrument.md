@@ -26,6 +26,15 @@ Three traps, each of which produces a campaign that looks complete and is not:
 
 All three compute the interface confidence term in-job (`ipSAE_*`, per ordered chain pair plus a `_max` aggregate), but it degrades to a soft warning rather than a job failure, and it is correctly skipped for a monomer construct. **Verify the column per arm on the rows in hand.** A missing column is silent and is caught by checking, not by trusting.
 
+**How far the arms actually disagree, measured.** The same designed complex, scored on two arms in the same campaign:
+
+| design | ESMFold2-Fast | Protenix-v2 |
+|---|---|---|
+| an RFdiffusion binder | ipSAE **0.025**, ipTM 0.42 | ipSAE **0.586**, ipTM 0.84 |
+| a BoltzGen binder | ipSAE 0.014 | ipSAE 0.299 |
+
+A **23-fold** spread on the term the ranking is built from, on the same molecule. Neither arm is wrong; they are different models with different failure modes, and that is the entire reason the arm axis is never tiered. A campaign that screened on ESMFold2 alone would have discarded the strongest design in this pool before Protenix ever saw it — on evidence the frozen method never agreed with.
+
 Three constructs are needed and they are different submissions:
 
 - **complex** — binder plus target. The ranking construct.
