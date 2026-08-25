@@ -55,6 +55,11 @@ So the two tools you are most likely to pair actually **agree** — both put the
 
 - **RFdiffusion** `seq`, slash-joined — binder measured **last**.
 - **ProteinMPNN** `sequence`, colon-joined — "the designed chain is appended last", so binder **last**.
+- **Genie 3's per-design FASTA** `sequences/<name>.fasta`, colon-joined — binder measured **FIRST**. Different delimiter, opposite order, same campaign.
+
+So "the binder is last" is a rule about ONE tool's ONE file, not about this platform. Measured on the same PD-L1 run: RFdiffusion's CSV put the target at index 0 on 18 of 18 rows, while Genie 3's FASTA put it at index 1. Carry the rule per FILE, never per campaign — and prefer Genie 3's `binder_seq` CSV column, which is the binder alone and needs no split.
+
+**Do not compare against Genie 3's `target_seq` to check the tool used your construct.** That cell is a stringified Python list, brackets and quotes included — literally `"['AFTVTVPKDLY…']"` — so an equality test against the frozen target fails silently while the run was perfectly correct. `binder_seq` is a clean sequence; `target_seq` is not.
 
 A target chain of ordinary composition and legal length gates cleanly as if it were a design. Every row then carries the same target sequence, and the numbers that come back are a scoring method's opinion of the target against itself.
 

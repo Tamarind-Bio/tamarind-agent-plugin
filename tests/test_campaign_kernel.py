@@ -1111,11 +1111,18 @@ def test_an_unclassifiable_structure_is_still_not_run(tmp_path: Path) -> None:
 
     The kernel returns it rather than raising, so the except branch never fires
     and a reasonless fourth token would otherwise reach the sheet.
+
+    The unclassifiable input has to be unclassifiable for EVERY resolver. An
+    earlier version used a helix with its HELIX record stripped, which is only
+    unreadable when biotite is absent -- so it passed in CI (which installs
+    numpy but not biotite) and failed the moment biotite was installed. That
+    is a test pinned to a missing dependency rather than to behaviour. Naming
+    a chain the file does not contain leaves nothing to resolve either way.
     """
-    pdb = _helix_pdb(tmp_path / "flat.pdb", annotated=False)
+    pdb = _helix_pdb(tmp_path / "flat.pdb", annotated=False, chain="B")
     rows = _gated(tmp_path, [
         {"design_id": f"d{i}", "sequence": seq,
-         "designed_structure_path": str(pdb), "binder_chain": "B"}
+         "designed_structure_path": str(pdb), "binder_chain": "Z"}   # no chain Z in the file
         for i, seq in enumerate(_SEQUENCES)
     ])
     assert rows

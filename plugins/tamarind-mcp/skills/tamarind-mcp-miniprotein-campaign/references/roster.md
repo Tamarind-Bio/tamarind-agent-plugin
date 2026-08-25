@@ -58,12 +58,22 @@ Five spellings and four value grammars. Submission validates against that type's
 
 Three carry **no example**, so the value shape cannot be read off the schema. The file field differs too — `genie3` takes `targetFile`, not `pdbFile`, and an unrecognized key fails the whole job.
 
-**Discover what is actually enforced with `validateJob`, which costs nothing.** Calling it with empty settings returns the tool's *enforced* required-field list, which is the half a schema read can leave you guessing at:
+**Probe what is actually enforced with `validateJob`, which costs nothing — but read the `error`, not just `missing_fields`.** Calling it with empty settings names what the tool refuses to run without:
 
 ```
 validateJob(jobName="probe", type="genie3", settings={})
-  -> valid: false, missing_fields: [targetFile, hotspots]
+  -> valid: false, missing_fields: [targetFile, targetChains, hotspots]
+
+validateJob(jobName="probe", type="rfdiffusion", settings={})
+  -> valid: false, missing_fields: []      <- EMPTY
+     error: 'Missing required rfdiffusion field "pdbFile"'
+
+validateJob(jobName="probe", type="boltzgen", settings={})
+  -> valid: false, missing_fields: []      <- EMPTY
+     error: 'Missing required boltzgen field "targetFile"'
 ```
+
+**`missing_fields` is populated for some tools and empty for others, and it is empty on the two most complicated ones.** Measured on prod: genie3 and freebindcraft list their fields; rfdiffusion and boltzgen return `[]` and name only the FIRST missing field, in the `error` string. boltzgen has 25 task-gated required parameters and rfdiffusion's requirements shift across its 8 tasks, so an empty `missing_fields` means *this surface did not answer*, never *this tool needs one field*. Treat the probe as best-effort discovery: fix the field the `error` names, call it again, and keep going until it validates — the list is not a checklist you can read once.
 
 That is how the `targetFile`/`pdbFile` difference above was found — a plausible-looking `pdbFile` came back under `unrecognized_settings`, which fails the whole job. Validate one payload per method before committing a round to it, and treat a `mutatedFields` warning as a failure: it means the validator silently altered your input.
 
