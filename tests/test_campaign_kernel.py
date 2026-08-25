@@ -1796,20 +1796,20 @@ def test_ss_codes_for_a_chain_that_does_not_exist_refuse_the_pool(
     assert "has no residues in its structure" in (done.stdout + done.stderr)
 
 
-def test_a_stringified_ss_code_list_is_refused_by_the_alphabet_check(
+def test_a_stringified_ss_code_list_is_refused_on_its_length(
     tmp_path: Path,
 ) -> None:
-    """A second, independent guard on the trap round 3 introduced.
+    """The trap round 3 introduced, caught by the check that was already there.
 
-    Preserving iterables fixed the one path that produced `"['E', 'E', ...]"`.
-    This refuses the shape wherever it arrives from, because the brackets,
-    quotes and commas are read as coil -- and an all-coil design is `other`,
-    which COUNTS toward the non-all-alpha diversity target. The misjoin does
-    not destroy the evidence, it manufactures it.
+    An alphabet check used to catch this too, and it was deleted: the kernel
+    owns the secondary-structure alphabet, a second copy in the wrapper went
+    stale against it (no `P`, which current DSSP emits), and it was redundant
+    anyway -- a stringified list of 60 codes is 300 characters against a
+    60-residue chain, so the length check refuses it on those grounds alone.
     """
     done = _ss_pool(tmp_path, str(["E"] * 60))
     assert done.returncode != 0
-    assert "not secondary-structure codes" in (done.stdout + done.stderr)
+    assert "supplies 300 ss_codes" in (done.stdout + done.stderr)
 
 
 def test_well_formed_ss_codes_still_reach_the_classifier(tmp_path: Path) -> None:
@@ -2272,3 +2272,57 @@ def test_precomputed_corpus_hits_suppress_the_environment_corpus(
     assert "known_binder_corpus_hits_are_precomputed=1" in screened
     assert "known_binder_corpus_local_arm_not_run=1" in screened
     assert "known_binder_corpus=1" not in screened
+
+
+def test_current_dssp_polyproline_codes_are_not_refused(tmp_path: Path) -> None:
+    """DSSP 4 emits `P` for polyproline-II, and the kernel takes it in its stride.
+
+    A wrapper-side alphabet check refused the whole pool on it, because the
+    kernel's `_SS_ANY_CODES` has no `P` and the wrapper had made its own copy of
+    a rule the kernel owns. That is the shape of guard worth deleting rather
+    than extending: it broke ordinary output from current DSSP while duplicating
+    a length check that already caught the case it was added for.
+    """
+    res = 60
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{
+            "design_id": "d1",
+            "sequence": _SEQUENCES[1][:res].ljust(res, "A"),
+            "ss_codes": "H" * 30 + "P" * 6 + "H" * 24,
+        }])
+    )
+    out = tmp_path / "g.csv"
+    done = _run("campaign_gates.py", str(pool), "--out", str(out))
+    assert done.returncode == 0, done.stdout + done.stderr
+    import csv
+
+    row = list(csv.DictReader(out.read_text().splitlines()))[0]
+    assert row["fold_class"] == "all_alpha"
+    assert row["fold_ss_method"] == "supplied"
+
+
+def test_supplied_codes_classify_without_a_structure_file(tmp_path: Path) -> None:
+    """`dssp_fold_class(None, ss_codes=...)` returns a real class; expose it.
+
+    Gating the whole classification block on a structure path blocked a kernel
+    capability the wrapper exists to reach, and it cost the fold-diversity
+    column on exactly the rows that had already done the DSSP work.
+    """
+    res = 60
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{
+            "design_id": "d1",
+            "sequence": _SEQUENCES[2][:res].ljust(res, "A"),
+            "ss_codes": "E" * 8 + "C" * 4 + "E" * 8 + "C" * 40,
+        }])
+    )
+    out = tmp_path / "g.csv"
+    done = _run("campaign_gates.py", str(pool), "--out", str(out))
+    assert done.returncode == 0, done.stdout + done.stderr
+    import csv
+
+    row = list(csv.DictReader(out.read_text().splitlines()))[0]
+    assert row["fold_class"] == "all_beta"      # a real class, not NOT_RUN
+    assert row["fold_ss_method"] == "supplied"

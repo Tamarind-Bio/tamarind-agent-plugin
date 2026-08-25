@@ -294,18 +294,16 @@ def _check_ss_codes(helpers, did, codes, body, chain, seq):
     left. Fails the pool rather than the row: a misjoin is a bug in how the
     pool was assembled, and the neighbouring rows were assembled the same way.
     """
-    text = "".join(str(c).strip()[:1] or "-" for c in codes)
-    unknown = sorted({c for c in text if c not in helpers._SS_ANY_CODES})
-    if unknown:
-        raise SystemExit(
-            f"refusing the pool: design {did!r} has ss_codes containing "
-            f"{''.join(unknown)!r}, which are not secondary-structure codes.\n"
-            "Every unrecognized character is read as coil, and an all-coil design "
-            "classifies as `other`,\n"
-            "which COUNTS toward the >=10% non-all-alpha diversity target. Pass DSSP "
-            "8-state (HGIEBTSC-)\n"
-            "or biotite 3-state codes, one per residue."
-        )
+    # NO ALPHABET CHECK HERE. One lived here and it was a mistake twice over.
+    # The kernel owns the secondary-structure alphabet, and a second copy in the
+    # wrapper goes stale against it: `_SS_ANY_CODES` has no `P`, so DSSP 4's
+    # polyproline-II assignment -- ordinary output from current DSSP -- refused
+    # the entire pool, while the kernel itself takes `P` in its stride and
+    # normalises it to coil. And it was redundant: the shape it was added to
+    # catch, a stringified list, is 300 characters against a 60-residue chain
+    # and the length check below refuses it on those grounds. A guard that
+    # breaks valid input while duplicating a check that already works is worse
+    # than no guard.
     expected, source = None, ""
     if body is not None:
         try:
@@ -787,9 +785,18 @@ def main():
         body = _pdb_body(pdb) if pdb and os.path.exists(pdb) else None
         if ss_codes is not None:
             _check_ss_codes(helpers, did, ss_codes, body, chain, seq)
-        if pdb and os.path.exists(pdb):
+        # Supplied codes classify on their own -- the kernel takes
+        # `dssp_fold_class(None, ss_codes=...)` and returns a real class. Gating
+        # the whole block on a structure file blocked a kernel capability the
+        # wrapper is meant to expose, and it cost the fold-diversity column on
+        # exactly the rows that had done the work: a pool carrying DSSP but no
+        # per-design PDB path came back NOT_RUN.
+        if ss_codes is not None or (pdb and os.path.exists(pdb)):
             try:
-                fold = helpers.dssp_fold_class(pdb, chain=chain, ss_codes=ss_codes)
+                fold = helpers.dssp_fold_class(
+                    pdb if pdb and os.path.exists(pdb) else None,
+                    chain=chain, ss_codes=ss_codes,
+                )
             except Exception as exc:
                 row["fold_class"] = VERDICT_NOT_RUN
                 row["fold_class_not_run_reason"] = f"{type(exc).__name__}: {exc}"
