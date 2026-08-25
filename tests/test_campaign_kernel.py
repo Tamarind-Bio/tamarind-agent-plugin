@@ -1192,3 +1192,48 @@ def test_partial_scored_sequence_coverage_is_disclosed(tmp_path: Path) -> None:
     assert "2 of 3 row(s) carry no scored_sequence" in done.stderr, done.stderr
     for did in ("p1", "p2"):
         assert did in done.stderr, f"the warning must name {did}: {done.stderr}"
+
+
+def test_a_0_1_plddt_against_a_0_100_floor_also_halts(tmp_path: Path) -> None:
+    """The mirror of the units halt.
+
+    It fails loudly rather than silently -- every design lands under the floor
+    -- so it is the less dangerous direction. But with `--skip-recompute`, or
+    no numpy, nothing recomputes the floor at all and the rows ship on carried
+    verdicts with the declared floor never reconciled against the column.
+    """
+    rows = _population(3)
+    for row, value in zip(rows, (0.7884, 0.81, 0.74)):
+        row["monomer_plddt"] = value
+    src = tmp_path / "units.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--monomer-floor", "70",
+                "--skip-recompute", "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode != 0, done.stdout + done.stderr
+    out = done.stdout + done.stderr
+    assert "at or below 1.0" in out, out
+    assert "p0" in out, out
+
+
+def test_ids_that_differ_only_in_type_are_still_duplicates(tmp_path: Path) -> None:
+    """Reproduced, not reasoned about.
+
+    The kernel stringifies before its own duplicate check, so numeric 1 beside
+    string "1" walked past a raw-value set here and hit
+    `ValueError: duplicate design_id '1'` inside selection -- a bare traceback
+    out of the one path this refusal exists to keep clean.
+    """
+    rows = _population(3)
+    rows[0]["design_id"] = 1
+    rows[1]["design_id"] = "1"
+    src = tmp_path / "mixed_ids.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode != 0
+    out = done.stdout + done.stderr
+    assert "Traceback" not in out, out
+    assert "duplicate design_id 1" in out, out

@@ -473,13 +473,19 @@ def main():
     # catches it too, but only as a bare ValueError escaping mid-selection --
     # every other refusal on this path is a clean paragraph, so raise it here
     # in the same shape campaign_gates.py already uses one stage earlier.
+    # Compare ids the way the KERNEL compares them -- it stringifies before
+    # its own duplicate check, so a pool carrying numeric 1 beside string "1"
+    # walked past a raw-value set here and hit `ValueError: duplicate
+    # design_id '1'` inside selection: a bare traceback from the one path this
+    # refusal exists to keep clean. Reproduced, not reasoned about.
     seen_ids, duplicated = set(), []
     for row in rows:
         did = row.get("design_id") or row.get("id")
         if did is None:
             continue
+        did = str(did).strip()
         if did in seen_ids:
-            duplicated.append(str(did))
+            duplicated.append(did)
         seen_ids.add(did)
     if duplicated:
         shown = ", ".join(sorted(set(duplicated))[:5])
@@ -506,16 +512,17 @@ def main():
     # numpy that SKILL.md calls the common case -- the guard was absent from
     # every run that most needed it, and the sheet shipped with the mismatch
     # disclosed only as a skipped recompute.
-    over = sorted(
-        str(r.get("design_id"))
+    _plddt = [
+        (str(r.get("design_id")), _num(r.get("monomer_plddt")))
         for r in rows
-        if (_num(r.get("monomer_plddt")) or 0) > 1.0
-    )
-    if over and args.monomer_floor <= 1.0:
+    ]
+    on_0_100 = sorted(did for did, v in _plddt if v is not None and v > 1.0)
+    on_0_1 = sorted(did for did, v in _plddt if v is not None and v <= 1.0)
+    if on_0_100 and args.monomer_floor <= 1.0:
         raise SystemExit(
-            f"HALTED: monomer_plddt exceeds 1.0 on {len(over)} row(s) while "
+            f"HALTED: monomer_plddt exceeds 1.0 on {len(on_0_100)} row(s) while "
             f"--monomer-floor is {args.monomer_floor} (a 0-1 scale).\n"
-            f"  first: {', '.join(over[:5])}\n"
+            f"  first: {', '.join(on_0_100[:5])}\n"
             "  The arms disagree on this scale -- ESMFold2 reports pLDDT on "
             "0-1 and Protenix on 0-100.\n"
             "  Against a 0-1 floor a 0-100 value passes for every design, so "
@@ -524,6 +531,26 @@ def main():
             "column and the floor on\n"
             "  the same scale in the pool, and record which arm's convention "
             "the frozen floor is in."
+        )
+    # The same disagreement the other way round. It fails LOUDLY rather than
+    # silently -- every design lands under the floor -- so it is the less
+    # dangerous direction, but only when the comparison actually runs. With
+    # `--skip-recompute`, or no numpy, nothing recomputes the floor and the
+    # rows ship on their carried verdicts with the declared floor never
+    # reconciled against the column at all. Name it here, where the check
+    # costs nothing either way.
+    if on_0_1 and args.monomer_floor > 1.0:
+        raise SystemExit(
+            f"HALTED: monomer_plddt is at or below 1.0 on {len(on_0_1)} row(s) "
+            f"while --monomer-floor is {args.monomer_floor} (a 0-100 scale).\n"
+            f"  first: {', '.join(on_0_1[:5])}\n"
+            "  The arms disagree on this scale -- ESMFold2 reports pLDDT on "
+            "0-1 and Protenix on 0-100.\n"
+            "  Against a 0-100 floor a 0-1 value fails for every design, so the "
+            "foldability gate would\n"
+            "  reject the whole pool on its units. Put the column and the floor "
+            "on the same scale in the\n"
+            "  pool, and record which arm's convention the frozen floor is in."
         )
 
     # ── ELIGIBILITY FIRST, THEN THE ALGEBRA ─────────────────────────────────
