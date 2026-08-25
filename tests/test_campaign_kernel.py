@@ -1448,3 +1448,140 @@ def test_every_classified_row_names_the_method_that_resolved_it(tmp_path: Path) 
             f"{row['design_id']}: a class resolved from the file's own records must say so, "
             f"got {row.get('fold_ss_method')!r}"
         )
+
+
+# ── round 4: the fold_ss_method label had to be ASKED, not guessed ──────────
+
+
+def _gates_module():
+    """Import campaign_gates so its helpers can be unit-tested directly."""
+    sys.path.insert(0, str(MCP_SCRIPTS))
+    spec = importlib.util.spec_from_file_location(
+        "campaign_gates_under_test", MCP_SCRIPTS / "campaign_gates.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _two_chain_pdb(records_on: str = "T", t_res: int = 40, b_res: int = 60) -> str:
+    """A two-chain complex whose HELIX record annotates only `records_on`."""
+    lines = [
+        f"HELIX    1   1 ALA {records_on}    2  ALA {records_on}   14  1"
+        f"{'':34}13"
+    ]
+    serial = 0
+
+    def cas(chain: str, count: int) -> list[str]:
+        nonlocal serial
+        out = []
+        for i in range(count):
+            serial += 1
+            x, y, z = i * 1.5, (i % 3) * 1.2, (i % 2) * 0.9
+            out.append(
+                f"ATOM  {serial:5d}  CA  ALA {chain}{i + 1:4d}    "
+                f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00 50.00           C"
+            )
+        return out
+
+    lines += cas("T", t_res) + cas("B", b_res)
+    return "\n".join(lines) + "\nEND\n"
+
+
+def test_records_on_another_chain_are_not_reported_as_this_chains_method(
+    kernel,
+) -> None:
+    """P-SEA output must never be labelled record-derived.
+
+    The first version of this check grepped the whole file for a line starting
+    HELIX or SHEET. The kernel keeps only records whose chain matches the one
+    being classified, so on a complex whose records annotate the TARGET chain
+    the binder falls through to P-SEA -- while the file-wide grep still said
+    `pdb-records`. The diversity target is defined under DSSP and P-SEA is a
+    different assignment, so that label is the whole evidentiary claim.
+
+    Unit-tested on the helper rather than end to end: the fallback only really
+    runs when biotite is installed, and CI does not install it.
+    """
+    helpers, _ = kernel
+    gates = _gates_module()
+    body = _two_chain_pdb(records_on="T")
+
+    # Ground truth from the kernel's own resolver.
+    assert helpers._ss_from_pdb_records(body, "T") != ""
+    assert helpers._ss_from_pdb_records(body, "B") == ""
+
+    assert gates._resolved_ss_method(helpers, body, "T", None) == "pdb-records"
+    assert gates._resolved_ss_method(helpers, body, "B", None) == "biotite-psea"
+    # Supplied codes short-circuit both, on either chain.
+    assert gates._resolved_ss_method(helpers, body, "B", ["H"] * 60) == "supplied"
+
+
+def _ss_pool(tmp_path: Path, codes, chain: str = "B", res: int = 60):
+    pdb = tmp_path / "complex.pdb"
+    pdb.write_text(_two_chain_pdb(records_on="T", b_res=res))
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps(
+            [
+                {
+                    "design_id": "d1",
+                    "sequence": _SEQUENCES[1][:res].ljust(res, "A"),
+                    "designed_structure_path": str(pdb),
+                    "binder_chain": chain,
+                    "ss_codes": codes,
+                }
+            ]
+        )
+    )
+    return _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+
+
+def test_ss_codes_of_the_wrong_length_refuse_the_pool(tmp_path: Path) -> None:
+    """A stale array still classifies -- it just classifies something else.
+
+    `_normalize_ss_codes` maps every unrecognized character to coil and checks
+    no length, and `_fold_class_from_ss` takes fractions over whatever it is
+    handed. So a 40-code array joined onto a 60-residue design returns a
+    plausible class rather than failing, and it lands in the diversity evidence.
+    """
+    done = _ss_pool(tmp_path, ["E"] * 40, res=60)
+    assert done.returncode != 0
+    combined = done.stdout + done.stderr
+    assert "supplies 40 ss_codes" in combined and "60 residues" in combined
+
+
+def test_ss_codes_for_a_chain_that_does_not_exist_refuse_the_pool(
+    tmp_path: Path,
+) -> None:
+    """Codes describing a chain the structure does not have describe nothing."""
+    done = _ss_pool(tmp_path, ["H"] * 60, chain="Z")
+    assert done.returncode != 0
+    assert "has no residues in its structure" in (done.stdout + done.stderr)
+
+
+def test_a_stringified_ss_code_list_is_refused_by_the_alphabet_check(
+    tmp_path: Path,
+) -> None:
+    """A second, independent guard on the trap round 3 introduced.
+
+    Preserving iterables fixed the one path that produced `"['E', 'E', ...]"`.
+    This refuses the shape wherever it arrives from, because the brackets,
+    quotes and commas are read as coil -- and an all-coil design is `other`,
+    which COUNTS toward the non-all-alpha diversity target. The misjoin does
+    not destroy the evidence, it manufactures it.
+    """
+    done = _ss_pool(tmp_path, str(["E"] * 60))
+    assert done.returncode != 0
+    assert "not secondary-structure codes" in (done.stdout + done.stderr)
+
+
+def test_well_formed_ss_codes_still_reach_the_classifier(tmp_path: Path) -> None:
+    """The control: the validation must not refuse the canonical path."""
+    done = _ss_pool(tmp_path, ["H"] * 60)
+    assert done.returncode == 0, done.stderr
+    import csv
+
+    row = list(csv.DictReader((tmp_path / "g.csv").read_text().splitlines()))[0]
+    assert row["fold_class"] == "all_alpha"
+    assert row["fold_ss_method"] == "supplied"

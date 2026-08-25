@@ -107,18 +107,96 @@ def _mimic(tm, pdb, refs, chain):
     return screen.get("verdict", VERDICT_NOT_RUN), {"target_mimic_tm_max": screen.get("tm_max")}, ""
 
 
-def _has_ss_records(pdb_path):
-    """Does this file carry its own HELIX/SHEET annotation?
-
-    Decides whether the classifier read the file's own secondary structure or
-    fell through to biotite's P-SEA, which is a different assignment from the
-    DSSP the fold-diversity target is written in.
-    """
+def _pdb_body(pdb_path):
+    """The file's text, or None. Matches what `dssp_fold_class` reads."""
     try:
-        with open(pdb_path, "r", errors="ignore") as handle:
-            return any(line.startswith(("HELIX", "SHEET")) for line in handle)
+        with open(pdb_path, encoding="utf-8", errors="replace") as handle:
+            return handle.read()
     except OSError:
-        return False
+        return None
+
+
+def _resolved_ss_method(helpers, body, chain, ss_codes):
+    """Which resolver actually produced the fold class -- ASKED, not guessed.
+
+    The first version of this grepped the whole file for a line starting HELIX
+    or SHEET. That does not reproduce what the classifier does, in two ways
+    that both mislabel P-SEA output as record-derived:
+
+      - the kernel keeps only records whose chain matches the one being
+        classified (HELIX column 20, SHEET column 22), so on a complex whose
+        records annotate the TARGET chain, the binder falls through to P-SEA
+        while a file-wide grep still says "pdb-records";
+      - a record that paints residues not present in the chain does not count
+        as an annotation at all, and the kernel says so explicitly, because an
+        all-coil "other" would be counted as non-all-alpha by the diversity
+        target.
+
+    So call the kernel's own resolver and read whether it produced anything.
+    Re-implementing its chain filter and validity rule here would be a second
+    copy of a load-bearing rule, free to drift from the one that decides.
+    """
+    if ss_codes is not None:
+        return "supplied"
+    if body is None:
+        return None
+    try:
+        return "pdb-records" if helpers._ss_from_pdb_records(body, chain) else "biotite-psea"
+    except Exception:
+        return None
+
+
+def _check_ss_codes(helpers, did, codes, body, chain, seq):
+    """Refuse per-residue codes that cannot be describing THIS design.
+
+    `_normalize_ss_codes` maps every unrecognized character to coil and does no
+    length check, and `_fold_class_from_ss` takes fractions over whatever length
+    it is handed. So a stale array joined onto the wrong row does not fail --
+    it returns a plausible class. Worse, an all-coil result is `other`, and
+    `other` COUNTS as non-all-alpha, so a misjoin manufactures evidence for the
+    diversity target rather than destroying it.
+
+    The codes describe the chain's residues, so that is what they are measured
+    against; with no structure on the row the sequence is the only reference
+    left. Fails the pool rather than the row: a misjoin is a bug in how the
+    pool was assembled, and the neighbouring rows were assembled the same way.
+    """
+    text = "".join(str(c).strip()[:1] or "-" for c in codes)
+    unknown = sorted({c for c in text if c not in helpers._SS_ANY_CODES})
+    if unknown:
+        raise SystemExit(
+            f"refusing the pool: design {did!r} has ss_codes containing "
+            f"{''.join(unknown)!r}, which are not secondary-structure codes.\n"
+            "Every unrecognized character is read as coil, and an all-coil design "
+            "classifies as `other`,\n"
+            "which COUNTS toward the >=10% non-all-alpha diversity target. Pass DSSP "
+            "8-state (HGIEBTSC-)\n"
+            "or biotite 3-state codes, one per residue."
+        )
+    expected, source = None, ""
+    if body is not None:
+        try:
+            _, residues = helpers._pdb_chain_ca_residues(body, chain)
+        except Exception:
+            residues = []
+        if not residues:
+            raise SystemExit(
+                f"refusing the pool: design {did!r} supplies ss_codes for chain "
+                f"{chain!r}, which has no residues in its structure.\n"
+                "The codes cannot be describing this design. Check the chain id and "
+                "the join that built the pool."
+            )
+        expected, source = len(residues), f"chain {chain!r} of the designed structure"
+    elif seq:
+        expected, source = len(seq), "the design's sequence"
+    if expected is not None and len(codes) != expected:
+        raise SystemExit(
+            f"refusing the pool: design {did!r} supplies {len(codes)} ss_codes but "
+            f"{source} has {expected} residues.\n"
+            "Per-residue codes joined onto the wrong row still classify -- they just "
+            "classify something else,\n"
+            "and the answer lands in the diversity evidence. Fix the join."
+        )
 
 
 def main():
@@ -314,6 +392,9 @@ def main():
             ss_codes = list(raw_ss) or None
         else:
             ss_codes = str(raw_ss or "").strip() or None
+        body = _pdb_body(pdb) if pdb and os.path.exists(pdb) else None
+        if ss_codes is not None:
+            _check_ss_codes(helpers, did, ss_codes, body, chain, seq)
         if pdb and os.path.exists(pdb):
             try:
                 fold = helpers.dssp_fold_class(pdb, chain=chain, ss_codes=ss_codes)
@@ -346,12 +427,9 @@ def main():
                     # under DSSP and the classifier's last resort is P-SEA, so a
                     # class with no method beside it cannot be reported against
                     # that target. Derived from the kernel's own resolver order.
-                    if ss_codes is not None:
-                        row["fold_ss_method"] = "supplied"
-                    elif _has_ss_records(pdb):
-                        row["fold_ss_method"] = "pdb-records"
-                    else:
-                        row["fold_ss_method"] = "biotite-psea"
+                    method = _resolved_ss_method(helpers, body, chain, ss_codes)
+                    if method:
+                        row["fold_ss_method"] = method
         else:
             row["fold_class"] = VERDICT_NOT_RUN
             row["fold_class_not_run_reason"] = "no designed structure on this row"
