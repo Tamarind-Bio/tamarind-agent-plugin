@@ -1037,3 +1037,27 @@ def test_the_plddt_scale_halt_leaves_a_consistent_pool_alone(tmp_path: Path) -> 
                 "--out", str(tmp_path / "b.csv"))
     assert done.returncode == 0, done.stdout + done.stderr
     assert "monomer_plddt exceeds 1.0" not in done.stdout + done.stderr
+
+
+def test_a_missing_ref_is_diagnosed_not_a_traceback(tmp_path: Path) -> None:
+    """The ordinary failure -- the kernel lives on a branch a checkout may lack.
+
+    It used to surface as an unhandled CalledProcessError, which named neither
+    the ref nor the path, on the one command whose job is detecting drift.
+    """
+    repo = tmp_path / "agent"
+    repo.mkdir()
+    for cmd in (("init", "-q"), ("config", "user.email", "t@t"),
+                ("config", "user.name", "t"), ("commit", "-q", "--allow-empty", "-m", "x")):
+        subprocess.run(["git", "-C", str(repo), *cmd], check=True, capture_output=True)
+
+    done = subprocess.run(
+        [sys.executable, str(ROOT / "tools/vendor_campaign_kernel.py"),
+         "--agent-repo", str(repo), "--check"],
+        capture_output=True, text=True,
+    )
+    assert done.returncode != 0
+    out = done.stdout + done.stderr
+    assert "Traceback" not in out, out
+    assert "campaign/cda/subagents" in out, out
+    assert "--ref" in out, out
