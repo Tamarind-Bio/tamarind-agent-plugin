@@ -76,6 +76,14 @@ The gates catch two weaker versions of this — the un-split string (`has non-re
 
 `proteina-complexa`, `pxdesign` and `boltzdesign` emit no sequence, so they route through sequence design — and that job indexes its own rows in a new id space. Carry the origin across explicitly: `root_backbone_id` and `structure_method` keep naming the **generator**; `seq_method` names the sequence designer. Losing this is how a method contributes zero ranked backbones while appearing to have run.
 
+## Which structure you hand the structural gates changes their verdict
+
+`designed_structure_path` decides what the plausibility and mimic gates measure, and a generator usually writes several structures per design. Point it at the design's **final, relaxed** complex, name the binder chain explicitly in `binder_chain`, and record which file you used.
+
+Measured, so you know the shape of the risk: two real RFdiffusion designs taken straight from the generator's `designability/` output were **both REJECTed** on backbone geometry — 5 of 69 peptide C–N bonds outside the frozen band (worst 1.2033 Å against a 1.229 Å floor) plus one severe clash — while the mimic gate on the same structures passed cleanly with TM 0.28–0.31. Unrelaxed predicted backbones routinely carry bond-length and side-chain-packing deviations at that scale.
+
+So when plausibility rejects everything, **investigate the input before the threshold.** The thresholds are vendored frozen values and retuning them to admit your pool is the defect this campaign exists to prevent; the honest fixes are to relax the structures first, or to feed the gate the co-folded complex rather than the raw generator output, or to disclose the gate as NOT_RUN. The skill's "a gate that passes everything, fails everything, or returns a constant is broken until investigated" rule fires here exactly as intended — and on a two-design pool it fires on sample size alone, so read it as a prompt, not a verdict.
+
 ## Clustering is a stage you run
 
 `select_panel.py` refuses a row with no `tm_cluster`, and no bundled script writes one. Cluster the surviving pool at ~90% identity and join the cluster id on before selection. The vendored kernel has the single-linkage TM clusterer; nothing calls it for you.
