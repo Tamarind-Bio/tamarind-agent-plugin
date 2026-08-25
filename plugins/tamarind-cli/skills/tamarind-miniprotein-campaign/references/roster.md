@@ -19,6 +19,29 @@ The lowercase token is the job `type`; the name in parentheses is the only spell
 | `boltzdesign` | BoltzDesign1 | optional |
 | `protein-hunter` | Protein Hunter | optional |
 
+## What the protocol names that this platform does not carry
+
+The protocol's structure-design roster is RFdiffusion*, RFdiffusion3*,
+FreeBindCraft*, BoltzGen*, PXDesign*, Proteina-Complexa*, Genie3* (starred, and
+owing the floor), plus Mosaic, FoldCraft, BoltzDesign1, HalluDesign and Protein
+Hunter. **All seven starred methods are above.** Two unstarred ones are not:
+
+- **FoldCraft** — the protocol names it specifically as the way to design binders
+  "that include beta-sheets and mixed alpha-beta folds, not only all-alpha helical
+  bundles, by supplying small beta-containing reference folds". Its absence bears
+  directly on the 10% non-all-alpha objective, so record the drop with **that**
+  consequence, not as a generic missing tool.
+- **HalluDesign** — hallucinates through Protenix v2, Chai-1 or Boltz. `mosaic-hallucinate`
+  occupies the same niche here (gradient-based, through Boltz-2/Protenix/AlphaFold/
+  OpenDDE) but is a different tool; name it as a substitute rather than reporting
+  HalluDesign as run.
+
+The catalog also carries generators the protocol does not name — BindCraft itself,
+BoltzProt-1, RSO, DISCO, EvoPro, AnewOmni, Promera. The protocol permits adding any
+open-source tool with a usable license **once a production run has taken it end to
+end on a real target**; an unrun tool is not roster material. Added arms do not owe
+the 50-backbone floor, which belongs to the starred set.
+
 ## Defaults you must override, per method
 
 **Every starred method needs settings set explicitly, and at least four of them produce something that is not a miniprotein binder campaign if you accept their defaults.** These are not tuning knobs — at defaults the method silently does the wrong job, and the canary in §2 still returns PASS because *something* ran. Resolve each against `tamarind --json schema TOOL` before submitting; this is a grounded snapshot, not the authority.
