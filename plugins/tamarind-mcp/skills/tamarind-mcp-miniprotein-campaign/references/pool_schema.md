@@ -33,30 +33,9 @@ The gates emit a CSV. Read it back with a plain reader and `target_mimic` is the
 
 Fail-closed is the right default here (an unreadable mimic score must never clear a design), which is exactly why it is quiet: nothing errors, the run just ends with an empty panel and a ban reason that reads like a real finding. Measured on the PD-L1 run; it cost a full debugging cycle before the ban was recognised as an artifact of the round-trip rather than a property of the designs.
 
-**Coerce the metrics you name — never "everything that parses as a float".** That rule breaks the pool the opposite way, because gate evidence is full of numeric-looking IDENTIFIERS: `design_id` is often `"3"` or `"001"`, and `novelty_top_subject` carries whatever the corpus called the entry it matched. Float those and you silently unjoin a row from its structure, or destroy the record of WHICH known binder rejected it. Enumerating identifiers to protect is a losing game — there is always one more — so allowlist the numbers instead and leave every other column as the string the CSV gave you:
+**Coerce only the columns you actually consume as numbers, and read their types from the source rather than a list copied from here.** Three attempts at a general recipe on this page were each wrong in a different way, and the reason is the same every time: the column semantics live in `campaign_gates.py` (`_liability`, `_novelty`, `_target_mimic`) and in `sheet_recompute.py`, and any list reproduced away from them goes stale or was never right. `"everything that parses as a float"` corrupts numeric IDENTIFIERS — `design_id` `"001"` becomes `1.0` and unjoins the row from its structure, `novelty_top_subject` loses the record of WHICH binder rejected it. An allowlist gets it wrong the other way: `liability_cys_parity` is the token `"odd"`/`"even"`, so a `float()` over it aborts pool construction outright.
 
-```python
-NUMERIC = {"target_mimic", "target_mimic_tm_max", "lcp_score", "monomer_plddt",
-           "novelty_top_identity", "novelty_top_aligned_columns", "n_seeds", "opt_round",
-           "liability_min_window_entropy_bits", "liability_max_hydrophobic_patch_fraction",
-           "liability_max_homopolymer_run", "liability_cys_parity"}
-NUMERIC_PREFIXES = ("ipsae_", "sc_DockQ_")
-
-def _wanted(k):
-    return k in NUMERIC or k.startswith(NUMERIC_PREFIXES)
-
-row = {k: (float(v) if _wanted(k) and isinstance(v, str) and v.strip() else v)
-       for k, v in gate_row.items()}
-
-# A gate column missing from NUMERIC is a gate switched OFF, not an error — so check.
-# This is the safe direction to fail: an unnamed column stays text and is caught here,
-# where an unnamed identifier would have been corrupted silently.
-for k in ("target_mimic", "lcp_score", "monomer_plddt"):
-    if k in row and not isinstance(row[k], (int, float)):
-        raise SystemExit(f"{k} survived the CSV round trip as {type(row[k]).__name__}")
-```
-
-Extend `NUMERIC` when you carry a new metric. Do not add an exclusion list.
+So: convert the two or three fields your verdict call is about to read — `target_mimic`, `monomer_plddt`, and the `ipsae_`/`sc_DockQ_` score terms — at the point you read them, and leave the rest of the row exactly as the CSV gave it to you. Then assert the conversion happened, because a gate that quietly stayed a string is a gate switched off.
 
 The general form: **a verdict function that fails closed on an unrecognised value turns a serialization bug into a scientific-looking rejection.** If a ban fires on the entire pool, check the TYPE of the column it names before you believe it — and if a design vanishes from a join instead, check the type of its ID.
 
