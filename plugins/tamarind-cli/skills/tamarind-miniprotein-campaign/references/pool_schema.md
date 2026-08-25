@@ -104,9 +104,9 @@ Read the chain off each structure rather than assuming: the binder is the chain 
 
 `boltzgen` returned a 75-residue "de novo design" that is **93.3% identical to human ubiquitin** and matches its first 40 residues exactly. It passed the liability gate cleanly — composition, entropy, patches and cysteine parity are all unremarkable, because ubiquitin is a perfectly well-behaved protein.
 
-Nothing in `campaign_gates.py` catches this. The self-similarity and known-binder limbs of novelty compare against the target and the control chains, and ubiquitin is neither. **Only the database limb — a sequence-identity search against the wider protein universe — sees it**, and that limb is a Tamarind job, which is exactly why this script emits `novelty_verdict = NOT_RUN` with a reason instead of a pass.
+**`campaign_gates.py` now catches exactly this, locally, with no job at all.** Ubiquitin is one of the novelty gate's five subject sets, and the protocol names it explicitly because it "often emerges with short terminal extensions" — so the kernel detects it by local alignment rather than exact match. The design above comes back REJECT at 1.0 gapped identity over 40 aligned columns against `P0CG47/P0CG48`.
 
-So treat that NOT_RUN as a live liability, not a formality: run the database novelty search on the survivors before the panel, and if you genuinely cannot, say in the report that the shipped designs were **not** checked against known proteins — because a campaign can otherwise ship ubiquitin as a de novo binder and every other gate will agree it looks fine.
+That closes the specific escape, not the general one. Ubiquitin is *one* natural protein; the wider protein universe is still only visible to the database limb, which is a Tamarind job. So the rule stands for everything that is not ubiquitin, the target, a control, or a staged known binder: run the sequence-identity search on the survivors before the panel and re-gate at `--novelty-tier final`, and if you genuinely cannot, say in the report that the shipped designs were **not** checked against known proteins.
 
 ## Which structure you hand the structural gates changes their verdict
 

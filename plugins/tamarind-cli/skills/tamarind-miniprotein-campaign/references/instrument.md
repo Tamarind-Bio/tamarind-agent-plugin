@@ -135,7 +135,7 @@ emits the **pseudo-perplexity** — the exponential of that. Both land in
 `esmc_ll = -score` is correct for the first and wrong for the second *by a
 logarithm* — a wrong number of entirely plausible magnitude on every row.
 
-Freeze `esmc-6b:scan`, record that token beside every `esmc_ll`, and do not accept
+Nothing enforces this for you — `select_panel.py` neither reads `esmc_ll` nor requires it, so a row missing it still ranks. Freeze `esmc-6b:scan`, record that token beside every `esmc_ll`, and do not accept
 a value whose producing tool is not named. `esmc-inference` is not a candidate at
 all: it runs a model *you* finetuned, and its output's scale and direction are
 model-dependent.

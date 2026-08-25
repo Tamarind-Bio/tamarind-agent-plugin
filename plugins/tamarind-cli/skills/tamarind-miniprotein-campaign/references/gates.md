@@ -78,6 +78,17 @@ UniRef90 arm only.
   `--uniref90-hits`. Supply one or the other, never both: the arm would run twice
   against different subject sets and the row could not say which produced its
   verdict.
+
+  **The hits path is a DISCLOSED REDUCTION of the corpus arm, and you must say so.**
+  Precomputed rows are judged on the global clause only — above 60% identity over
+  more than 50% coverage. The **local-alignment arm does not run**: a partial copy
+  at 100% identity over 40 aligned columns but only 33% coverage — precisely the
+  "short terminal extensions" shape the protocol calls out — is rejected by the
+  in-process arm and **passes** on the hits path. The row discloses it
+  (`known_binder_corpus_local_arm_not_run=1` in `novelty_subjects_screened`), so the
+  gap is auditable rather than silent, but it is a real difference between the two
+  routes. Choose the hits path for scale, then set the search's own thresholds to
+  surface short high-identity alignments, and name the reduction in the report.
 - **`--uniref90-hits`** takes `{design_id: [hit, …]}` from a sequence-identity
   search job, with the search's own columns — `identity`/`fident`/`pident` and
   `coverage`/`qcov`/`cov`. Percentages and fractions are disambiguated by value;
