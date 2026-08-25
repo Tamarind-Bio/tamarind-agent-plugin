@@ -33,12 +33,19 @@ The gates emit a CSV. Read it back with a plain reader and `target_mimic` is the
 
 Fail-closed is the right default here (an unreadable mimic score must never clear a design), which is exactly why it is quiet: nothing errors, the run just ends with an empty panel and a ban reason that reads like a real finding. Measured on the PD-L1 run; it cost a full debugging cycle before the ban was recognised as an artifact of the round-trip rather than a property of the designs.
 
-Coerce the numerics back before you hand the row on — everything except the `*_verdict`, `*_reason` and `*_tier` columns, which are genuinely text:
+**Coerce the metrics back — and do NOT coerce the identifiers.** "Everything that parses as a float" is the wrong rule and breaks the pool a different way: `design_id` is frequently numeric (rank- and index-based generators emit `"3"`, `"001"`), so a blanket `float()` turns `"001"` into `1.0` and silently unjoins that row from its structure, its reject-ledger entry and its lineage. Two silent failures, opposite directions, same round trip. Protect the identity and lineage columns by name, then coerce the rest:
 
 ```python
+# NEVER coerced: identity + lineage + the genuinely-textual gate fields.
+KEEP_TEXT = {
+    "design_id", "id", "root_backbone_id", "structure_method", "seq_method",
+    "sequence", "designed_structure_path", "binder_chain",
+}
+TEXT_SUFFIXES = ("_verdict", "_reason", "_tier", "_screened", "_not_run", "_kind")
+
 row = {}
 for k, v in gate_row.items():
-    if isinstance(v, str) and v.strip() and not k.endswith(("_verdict", "_reason", "_tier")):
+    if isinstance(v, str) and v.strip() and k not in KEEP_TEXT and not k.endswith(TEXT_SUFFIXES):
         try:
             row[k] = float(v)
             continue
@@ -47,7 +54,15 @@ for k, v in gate_row.items():
     row[k] = v
 ```
 
-The general form: **a verdict function that fails closed on an unrecognised value turns a serialization bug into a scientific-looking rejection.** If a ban fires on the entire pool, check the TYPE of the column it names before you believe it.
+**Then assert, because both failure modes are silent.** A name this list misses is a gate switched off, not an error — so check the columns the verdict helpers actually consume as numbers before you rank anything:
+
+```python
+for k in ("target_mimic", "lcp_score", "monomer_plddt"):   # + every ipsae_/sc_DockQ_ arm
+    if k in row and not isinstance(row[k], (int, float)):
+        raise SystemExit(f"{k} survived the CSV round trip as {type(row[k]).__name__}: {row[k]!r}")
+```
+
+The general form: **a verdict function that fails closed on an unrecognised value turns a serialization bug into a scientific-looking rejection.** If a ban fires on the entire pool, check the TYPE of the column it names before you believe it — and if a design vanishes from a join instead, check the type of its ID.
 
 ## The mapping, per generation method
 
