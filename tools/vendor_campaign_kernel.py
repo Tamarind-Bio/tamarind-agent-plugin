@@ -39,6 +39,7 @@ MODULES = [
     "novelty_gate",            # the novelty verdict over its subject sets
     "screen_gate_metrics",     # monomer foldability and the ESM-C log-likelihood
     "sheet_recompute",         # the write-time recompute that halts on a mismatch
+    "lcp",                     # Local Composition Perplexity, the mandatory sequence restraint
 ]
 
 # The only things the kernel needs from `campaign.cda.prompts.qa_rubrics`, which

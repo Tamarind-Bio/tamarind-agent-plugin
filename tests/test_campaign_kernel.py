@@ -1450,6 +1450,228 @@ def test_every_classified_row_names_the_method_that_resolved_it(tmp_path: Path) 
         )
 
 
+# ── Anthropic L81: the novelty gate the port had nailed shut ────────────────
+#
+# `campaign_gates.py` wrote `novelty_verdict = NOT_RUN` unconditionally, so the
+# campaign's most consequential pre-scoring filter never ran on any design --
+# while a complete implementation sat vendored in `_kernel/novelty_gate.py`.
+# Three of L81's four arms need no external search at all.
+
+# Human ubiquitin (UniProt P0CG47/P0CG48). L81 calls it out by name because it
+# "often emerges with short terminal extensions", which is why the gate detects
+# it by local alignment rather than exact match.
+_UBIQUITIN = (
+    "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
+)
+_TARGET_PDL1 = (
+    "AFTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQ"
+    "LSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPY"
+)
+
+
+def _gates_rows(tmp_path: Path, pool: list[dict], *args: str):
+    """Run campaign_gates over a pool and return (completed_process, rows)."""
+    pool_path = tmp_path / "pool.json"
+    pool_path.write_text(json.dumps(pool))
+    out = tmp_path / "gates.csv"
+    done = _run("campaign_gates.py", str(pool_path), "--out", str(out), *args)
+    rows = []
+    if out.exists():
+        import csv
+
+        rows = list(csv.DictReader(out.read_text().splitlines()))
+    return done, rows
+
+
+def test_a_design_that_is_really_ubiquitin_is_rejected_with_no_search_job(
+    tmp_path: Path,
+) -> None:
+    """The measured escape, now caught locally.
+
+    A generator returned a 75-residue "de novo design" whose first 40 residues
+    were ubiquitin's exactly. It passed liability cleanly -- ubiquitin is a
+    perfectly well-behaved protein -- and the port marked novelty NOT_RUN, so
+    nothing kept it out. No UniRef90, no corpus and no network is needed to
+    catch it: the kernel carries the ubiquitin subject itself.
+    """
+    design = _UBIQUITIN[:40] + "GSGSEEALKKAEELLKKAEELLKKGSG"
+    done, rows = _gates_rows(tmp_path, [{"design_id": "d_ubq", "sequence": design}])
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "REJECT"
+    assert rows[0]["novelty_top_subject_kind"] == "ubiquitin"
+    # The numbers that decided it, not just the word. A verdict with an empty
+    # evidence cell beside it is unfalsifiable -- and this column WAS empty
+    # first time round, because it was read under a key the kernel never writes.
+    assert float(rows[0]["novelty_top_identity"]) == 1.0
+    assert int(rows[0]["novelty_top_aligned_columns"]) == 40
+
+
+def test_a_design_that_is_a_slice_of_the_campaigns_own_target_is_rejected(
+    tmp_path: Path,
+) -> None:
+    """L81's self-similarity arm, against the target the campaign froze.
+
+    This is the arm that catches a target-fold mimic at the SEQUENCE level,
+    before any co-folding spend and independently of the structural TM screen.
+    It runs off the reference chains the pool already supplies.
+    """
+    refs = tmp_path / "refs.json"
+    refs.write_text(
+        json.dumps(
+            [{"pdb": "ref.pdb", "chain": "A", "sequence": _TARGET_PDL1,
+              "role": "target"}]
+        )
+    )
+    done, rows = _gates_rows(
+        tmp_path,
+        [{"design_id": "d_mimic", "sequence": _TARGET_PDL1[10:80]}],
+        "--reference-chains", str(refs),
+    )
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "REJECT"
+    assert rows[0]["novelty_top_subject_kind"] == "target_chain"
+
+
+def test_a_reference_with_no_sequence_leaves_the_self_similarity_arm_not_run(
+    tmp_path: Path,
+) -> None:
+    """The pair form feeds the structural screen only, and says so.
+
+    A `[pdb, chain]` reference carries no sequence, and the sequence is NOT
+    inferred from the PDB -- a silently mis-parsed reference is a gate pointed
+    at the wrong molecule. The arm is disclosed as un-run rather than passing.
+    """
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps([["ref.pdb", "A"]]))
+    done, rows = _gates_rows(
+        tmp_path,
+        [{"design_id": "d1", "sequence": _TARGET_PDL1[10:80]}],
+        "--reference-chains", str(refs),
+    )
+    assert done.returncode == 0, done.stderr
+    assert "target_chain" in rows[0]["novelty_arms_not_run"]
+    assert rows[0]["novelty_verdict"] != "PASS"
+
+
+def test_a_clean_design_is_not_run_rather_than_passed_without_the_corpus(
+    tmp_path: Path,
+) -> None:
+    """The combination rule: clean-but-incomplete is NOT_RUN, never PASS.
+
+    L79 stages the known-binder corpus in the first hour. Until it is, a design
+    that tripped no arm has still not been screened against a required subject
+    set, and calling that PASS would report a gate as run while filtering
+    against nothing.
+    """
+    done, rows = _gates_rows(
+        tmp_path, [{"design_id": "d_clean", "sequence": _SEQUENCES[1]}]
+    )
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "NOT_RUN"
+    assert "known_binder_corpus" in rows[0]["novelty_arms_not_run"]
+
+
+def test_a_malformed_uniref90_hits_file_is_refused_not_downgraded_to_not_run(
+    tmp_path: Path,
+) -> None:
+    """A bad input file must never be able to discard a rejection already made.
+
+    Measured while wiring this up: a hits file whose columns were named
+    `gapped_identity`/`query_coverage` instead of MMseqs2's own made the kernel
+    raise INSIDE the verdict, after the known-binder arm had already rejected
+    the design. The per-row catch turned that raise into NOT_RUN and the
+    standing REJECT went with it -- a bad file silently loosening the gate.
+    So the file is judged once, at startup, and an unusable hit refuses the run.
+    """
+    hits = tmp_path / "hits.json"
+    hits.write_text(
+        json.dumps({"d1": [{"subject_id": "U1", "gapped_identity": 0.92,
+                            "query_coverage": 0.88}]})
+    )
+    done, _ = _gates_rows(
+        tmp_path,
+        [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--uniref90-hits", str(hits),
+    )
+    assert done.returncode != 0
+    combined = done.stdout + done.stderr
+    assert "unusable hit" in combined
+    # Name the repair, not just the fault.
+    assert "fident" in combined and "qcov" in combined
+
+
+def test_precomputed_uniref90_hits_reach_the_verdict(tmp_path: Path) -> None:
+    """The one limb that cannot run locally, joined back in from a search job."""
+    hits = tmp_path / "hits.json"
+    hits.write_text(
+        json.dumps({"d1": [{"target": "UniRef90_Q9XYZ1", "fident": 0.92,
+                            "qcov": 0.88}]})
+    )
+    done, rows = _gates_rows(
+        tmp_path,
+        [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--uniref90-hits", str(hits), "--novelty-tier", "final",
+    )
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "REJECT"
+    assert rows[0]["novelty_top_subject"] == "UniRef90_Q9XYZ1"
+
+
+def test_the_final_novelty_tier_refuses_without_uniref90_hits(
+    tmp_path: Path,
+) -> None:
+    """L79 requires the full-UniRef90 check before any row reaches the sheet.
+
+    Asking for the final tier with nothing to judge would mark every design
+    NOT_RUN and rank none -- a campaign that looks gated and ships no panel.
+    """
+    done, _ = _gates_rows(
+        tmp_path,
+        [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--novelty-tier", "final",
+    )
+    assert done.returncode != 0
+    assert "--novelty-tier final requires --uniref90-hits" in (
+        done.stdout + done.stderr
+    )
+
+
+def test_lcp_score_is_recorded_and_penalises_low_complexity(
+    tmp_path: Path,
+) -> None:
+    """L73's mandatory sequence restraint, recorded per design.
+
+    Reported, never a gate: the protocol makes LCP a restraint on sequence
+    design and a recorded metric, not a rejection threshold. Higher is worse.
+    """
+    done, rows = _gates_rows(
+        tmp_path,
+        [
+            {"design_id": "d_clean", "sequence": _SEQUENCES[1]},
+            {"design_id": "d_repeat", "sequence": "EK" * 35},
+        ],
+    )
+    assert done.returncode == 0, done.stderr
+    by_id = {r["design_id"]: r for r in rows}
+    clean = float(by_id["d_clean"]["lcp_score"])
+    repeat = float(by_id["d_repeat"]["lcp_score"])
+    assert repeat > clean, (repeat, clean)
+
+
+def test_novelty_faces_the_constant_gate_warning_like_every_other_gate(
+    tmp_path: Path,
+) -> None:
+    """It was exempt while it could not run. It can run now, so the exemption goes.
+
+    "A gate that passes everything, fails everything, or returns a constant is
+    broken until investigated" has to cover novelty too, or the one gate whose
+    whole job is rejecting copies is also the one nothing checks.
+    """
+    src = (MCP_SCRIPTS / "campaign_gates.py").read_text()
+    assert 'always_not_run = {"monomer_foldability"}' in src
+    assert '"novelty"' not in src.split("always_not_run =")[1].split("\n")[0]
+
+
 # ── round 4: the fold_ss_method label had to be ASKED, not guessed ──────────
 
 
