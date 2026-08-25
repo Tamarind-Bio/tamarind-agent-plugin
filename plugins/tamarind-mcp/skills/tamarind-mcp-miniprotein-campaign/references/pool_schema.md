@@ -78,6 +78,28 @@ The gates catch two weaker versions of this — the un-split string (`has non-re
 
 `proteina-complexa`, `pxdesign` and `boltzdesign` emit no sequence, so they route through sequence design — and that job indexes its own rows in a new id space. Carry the origin across explicitly: `root_backbone_id` and `structure_method` keep naming the **generator**; `seq_method` names the sequence designer. Losing this is how a method contributes zero ranked backbones while appearing to have run.
 
+## `binder_chain` is not the same letter on every method
+
+Measured on one campaign, same target, three generators:
+
+| method | binder chain | target chain |
+|---|---|---|
+| `rfdiffusion` | **B** | A |
+| `boltzgen` | **B** | A |
+| `genie3` | **A** | B |
+
+So the natural assumption — "the binder is chain B", which is what FreeBindCraft's own output documentation states — **gates the target instead of the design** on genie3. The plausibility gate then measures the target's geometry and the fold-class column describes the target's fold. The mimic screen does catch this specific case (target against target scores TM ≈ 1.0 and REJECTs), but only because the mimic gate happened to run; with no reference chains supplied it is NOT_RUN and nothing notices.
+
+Read the chain off each structure rather than assuming: the binder is the chain whose length matches the design you asked for, and the target is the one that matches your frozen construct. Set `binder_chain` per row, per method.
+
+## A generator can hand you a natural protein
+
+`boltzgen` returned a 75-residue "de novo design" that is **93.3% identical to human ubiquitin** and matches its first 40 residues exactly. It passed the liability gate cleanly — composition, entropy, patches and cysteine parity are all unremarkable, because ubiquitin is a perfectly well-behaved protein.
+
+Nothing in `campaign_gates.py` catches this. The self-similarity and known-binder limbs of novelty compare against the target and the control chains, and ubiquitin is neither. **Only the database limb — a sequence-identity search against the wider protein universe — sees it**, and that limb is a Tamarind job, which is exactly why this script emits `novelty_verdict = NOT_RUN` with a reason instead of a pass.
+
+So treat that NOT_RUN as a live liability, not a formality: run the database novelty search on the survivors before the panel, and if you genuinely cannot, say in the report that the shipped designs were **not** checked against known proteins — because a campaign can otherwise ship ubiquitin as a de novo binder and every other gate will agree it looks fine.
+
 ## Which structure you hand the structural gates changes their verdict
 
 `designed_structure_path` decides what the plausibility and mimic gates measure, and a generator usually writes several structures per design. Point it at the design's **final, relaxed** complex, name the binder chain explicitly in `binder_chain`, and record which file you used.
