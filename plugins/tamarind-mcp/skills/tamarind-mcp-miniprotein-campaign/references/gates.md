@@ -66,6 +66,18 @@ UniRef90 arm only.
   `$CAMPAIGN_KNOWN_BINDER_CORPUS`). **Until it is staged, a clean design is NOT_RUN
   rather than PASS**, because a corpus of zero subjects would clear every design
   against nothing. The protocol stages this in the first hour; do the same.
+
+  **It does not scale to a campaign-size pool, and the run refuses rather than
+  crawling.** The in-process aligner is O(pool x corpus) — measured at ~0.5 ms per
+  local alignment, the protocol's own ~16,500-entry corpus against a 20,000-design
+  pool is ~330M alignments, roughly **46 hours single-core** on a campaign with a
+  24-hour clock. The kernel's cap compares only the corpus size, so it never fires
+  on that shape; the wrapper checks `pool x corpus` up front and refuses with the
+  arithmetic. Above the cap, search the pool against the corpus **once** with
+  MMseqs2 and pass the rows to **`--known-binder-hits`** instead — same shape as
+  `--uniref90-hits`. Supply one or the other, never both: the arm would run twice
+  against different subject sets and the row could not say which produced its
+  verdict.
 - **`--uniref90-hits`** takes `{design_id: [hit, …]}` from a sequence-identity
   search job, with the search's own columns — `identity`/`fident`/`pident` and
   `coverage`/`qcov`/`cov`. Percentages and fractions are disambiguated by value;
@@ -100,7 +112,19 @@ on every ranked row.
 
 The binder alone, mean pLDDT at or above the frozen floor (default **0.70** on the
 0–1 scale, 70 on 0–100). `campaign_gates.py` writes NOT_RUN with a reason; run a
-binder-alone fold and join `monomer_plddt` onto the row.
+binder-alone fold and join the result onto the row.
+
+**Join BOTH fields, or the sheet halts.** Adding `monomer_plddt` alone leaves
+`monomer_foldability_verdict` at the `NOT_RUN` that `campaign_gates.py` wrote, and
+`select_panel.py` then recomputes the verdict from that pLDDT and halts on the
+disagreement — after a below-floor design has already travelled through the score
+algebra instead of being filtered before it. Write the measurement **and** the
+thresholded verdict together, against the same frozen floor:
+
+```python
+row["monomer_plddt"] = plddt                       # on the floor's own scale
+row["monomer_foldability_verdict"] = "PASS" if plddt >= floor else "REJECT"
+```
 
 **The arms disagree on the scale and that is where this bites.** Measured on real
 rows for the same construct, ESMFold2 reports mean pLDDT on **0–1** (0.7884) and

@@ -11,12 +11,20 @@ explicit rank and full metadata. `select_panel.py` writes it.
 `final_score`, the instrument that produced them, `pose_PASS`, `pose_dockq`, and the
 designed-structure path. A row that cannot fill these is not a ranked row.
 
-**Recomputed at write time.** The writer recomputes every gate — novelty, liability,
-monomer foldability, structural plausibility, `pose_dockq`, `final_score` — from the
-row's own sequence and predicted structure at the **same thresholds**, and admits the
-row only when the recomputed value matches the carried one to within 1e-4. A
-mismatch halts the writer with the row id. This is what makes the sheet a claim
-rather than a copy of one.
+**Recomputed at write time.** The writer recomputes liability, monomer foldability,
+structural plausibility, `pose_dockq` and `final_score` from the row's own sequence
+and predicted structure at the **same thresholds**, and admits the row only when the
+recomputed value matches the carried one to within 1e-4. A mismatch halts the writer
+with the row id. This is what makes the sheet a claim rather than a copy of one.
+
+**Novelty is the exception, and the sheet says so.** Reproducing it would need the
+staged corpus and every reference chain inside the writer, and the in-process aligner
+is O(pool x corpus) — measured at ~0.5 ms per alignment, the protocol's own corpus
+against a protocol-scale pool is tens of hours. So the novelty verdict and tier are
+**carried, not reproduced**: the writer lists novelty under its skipped recomputes at
+run time, and enforces the tier instead (a `NOT_RUN` verdict, or a `PASS` earned only
+at the dispatch tier, does not rank). Do not describe a shipped sheet's novelty column
+as independently verified by the writer.
 
 **Row count.** If the gates leave fewer than the panel size rank-eligible after
 upstream regeneration, ship the real N and say so. Padding with duplicates, or

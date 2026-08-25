@@ -1612,9 +1612,15 @@ def test_precomputed_uniref90_hits_reach_the_verdict(tmp_path: Path) -> None:
         json.dumps({"d1": [{"target": "UniRef90_Q9XYZ1", "fident": 0.92,
                             "qcov": 0.88}]})
     )
+    # The final tier also requires the target-chain arm to have subjects, so the
+    # reference carries its sequence rather than only its chain id.
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps([{"pdb": "r.pdb", "chain": "A",
+                                 "sequence": _TARGET_PDL1, "role": "target"}]))
     done, rows = _gates_rows(
         tmp_path,
         [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--reference-chains", str(refs),
         "--uniref90-hits", str(hits), "--novelty-tier", "final",
     )
     assert done.returncode == 0, done.stderr
@@ -1630,10 +1636,13 @@ def test_the_final_novelty_tier_refuses_without_uniref90_hits(
     Asking for the final tier with nothing to judge would mark every design
     NOT_RUN and rank none -- a campaign that looks gated and ships no panel.
     """
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps([{"pdb": "r.pdb", "chain": "A",
+                                 "sequence": _TARGET_PDL1, "role": "target"}]))
     done, _ = _gates_rows(
         tmp_path,
         [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
-        "--novelty-tier", "final",
+        "--reference-chains", str(refs), "--novelty-tier", "final",
     )
     assert done.returncode != 0
     assert "--novelty-tier final requires --uniref90-hits" in (
@@ -1964,6 +1973,146 @@ def test_terminal_coil_survives_a_scalar_dssp_string(tmp_path: Path) -> None:
     row = list(csv.DictReader(out.read_text().splitlines()))[0]
     assert row["fold_class"] == "all_alpha"
     assert row["fold_ss_method"] == "supplied"
+
+
+# ── PR-22 round 2 ──────────────────────────────────────────────────────────
+
+
+def _corpus(tmp_path: Path, n: int) -> Path:
+    """A FASTA corpus of `n` distinct entries."""
+    import random
+
+    rng = random.Random(0)
+    lines = []
+    for i in range(n):
+        seq = "".join(rng.choice("ACDEFGHIKLMNPQRSTVWY") for _ in range(80))
+        lines.append(f">kb{i}\n{seq}")
+    p = tmp_path / "corpus.fasta"
+    p.write_text("\n".join(lines) + "\n")
+    return p
+
+
+def test_the_corpus_arm_refuses_a_workload_it_cannot_finish(
+    tmp_path: Path,
+) -> None:
+    """The kernel's cap is per invocation; the POOL multiplies it.
+
+    `CORPUS_LOCAL_ALIGNMENT_MAX_PAIRS` is compared against `len(corpus.entries)`
+    alone, so the ~16,500-entry corpus the protocol ships never trips it -- while
+    a 20,000-design pool against it is ~330M local alignments. Measured at
+    ~0.5 ms per alignment that is about 46 hours single-core, on a campaign with
+    a 24-hour clock. Refusing up front with the arithmetic beats discovering it
+    two days in.
+    """
+    sys.path.insert(0, str(MCP_SCRIPTS))
+    from _kernel import novelty_gate as ng  # noqa: E402
+
+    cap = ng.CORPUS_LOCAL_ALIGNMENT_MAX_PAIRS
+    entries = 400
+    designs = cap // entries + 2          # just over the aggregate cap
+    corpus = _corpus(tmp_path, entries)
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{"design_id": f"d{i}", "sequence": _SEQUENCES[i % 4]}
+                    for i in range(designs)])
+    )
+    done = _run("campaign_gates.py", str(pool), "--known-binders", str(corpus),
+                "--out", str(tmp_path / "g.csv"))
+    assert done.returncode != 0
+    combined = done.stdout + done.stderr
+    assert "local alignments, above the" in combined
+    # Names the way forward, not just the refusal.
+    assert "--known-binder-hits" in combined
+
+
+def test_precomputed_corpus_hits_replace_the_in_process_aligner(
+    tmp_path: Path,
+) -> None:
+    """The seam the kernel's own cap message points at, exposed on the wrapper."""
+    hits = tmp_path / "kb.json"
+    hits.write_text(
+        json.dumps({"d1": [{"target": "known_binder_7", "fident": 0.91,
+                            "qcov": 0.83}]})
+    )
+    done, rows = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--known-binder-hits", str(hits),
+    )
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "REJECT"
+    assert rows[0]["novelty_top_subject"] == "known_binder_7"
+
+
+def test_the_corpus_cannot_be_supplied_twice_in_different_forms(
+    tmp_path: Path,
+) -> None:
+    """Two subject sets under one arm, and the row could not say which decided."""
+    hits = tmp_path / "kb.json"
+    hits.write_text(json.dumps({"d1": []}))
+    done, _ = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--known-binders", str(_corpus(tmp_path, 5)),
+        "--known-binder-hits", str(hits),
+    )
+    assert done.returncode != 0
+    assert "not both" in (done.stdout + done.stderr)
+
+
+def test_the_final_tier_requires_target_sequences_not_just_chain_ids(
+    tmp_path: Path,
+) -> None:
+    """`final` certifies the whole gate ran, including the self-similarity arm.
+
+    With the documented `[pdb, chain]` pair form there are no sequences to align,
+    so the kernel records `target_chain` in `arms_not_run` -- and a clean row
+    could still carry PASS at tier `final`, promising an arm that never ran.
+    """
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps([["ref.pdb", "A"]]))
+    done, _ = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--reference-chains", str(refs), "--novelty-tier", "final",
+    )
+    assert done.returncode != 0
+    assert "requires target chain SEQUENCES" in (done.stdout + done.stderr)
+
+
+def test_the_novelty_escape_covers_the_tier_but_never_a_not_run(
+    tmp_path: Path,
+) -> None:
+    """Its help text promises the UniRef90 gap; it must not admit more.
+
+    A missing known-binder corpus also yields NOT_RUN, and that is the gate not
+    clearing the design at all -- a wider hole than the flag advertises.
+    """
+    gate = _gate(tmp_path)
+    pool = tmp_path / "c.json"
+    pool.write_text(json.dumps([_candidate(f"p{i}", float(i), _index=i,
+                                           novelty_verdict="NOT_RUN")
+                                for i in range(3)]))
+    done = _run("select_panel.py", str(pool), "--gate", str(gate),
+                "--panel-size", "3", "--allow-novelty-not-final",
+                "--out", str(tmp_path / "s.csv"))
+    assert "novelty_verdict is NOT_RUN" in (done.stdout + done.stderr)
+
+
+def test_lcp_ships_the_parameterisation_that_produced_it(tmp_path: Path) -> None:
+    """Figure 1's exact settings are not recoverable and the public ports disagree.
+
+    A bare scalar separated from this revision is uninterpretable, and two
+    campaigns' values are not comparable without the window, estimator and
+    entropy floor that produced them. The kernel exports its choice for exactly
+    this reason.
+    """
+    done, rows = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}]
+    )
+    assert done.returncode == 0, done.stderr
+    # LCP is a penalty and a well-behaved sequence can legitimately score 0.0 --
+    # what must always travel is the parameterisation that produced it.
+    assert rows[0]["lcp_score"] != ""
+    assert "w=30" in rows[0]["lcp_parameterisation"]
+    assert "entropy_min" in rows[0]["lcp_parameterisation"]
 
 
 def _ca_line(serial: int, chain: str, resseq: int, x: float, alt: str = " ") -> str:

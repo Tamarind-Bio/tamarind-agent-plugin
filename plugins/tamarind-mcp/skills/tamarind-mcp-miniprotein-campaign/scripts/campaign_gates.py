@@ -136,7 +136,8 @@ def _mimic(tm, pdb, refs, chain):
             {"target_mimic_tm_max": screen.get("tm_max")}, "", screen)
 
 
-def _novelty(novelty, seq, corpus, target_seqs, control_seqs, uniref_hits, screen, tier):
+def _novelty(novelty, seq, corpus, target_seqs, control_seqs, uniref_hits,
+             corpus_hits, screen, tier):
     """Protocol L81 for one design. The kernel decides; this only supplies subjects.
 
     Every threshold, the ubiquitin detector and the combination rule live in
@@ -154,6 +155,7 @@ def _novelty(novelty, seq, corpus, target_seqs, control_seqs, uniref_hits, scree
             target_chains=target_seqs,
             control_chains=control_seqs,
             uniref90_hits=uniref_hits,
+            corpus_hits=corpus_hits,
             tm_screen=screen,
             required_subjects=tier,
         )
@@ -349,6 +351,13 @@ def main():
                          "this in the first hour; until it is staged, a clean design is "
                          "NOT_RUN rather than PASS, because a corpus of zero subjects "
                          "would clear every design against nothing.")
+    ap.add_argument("--known-binder-hits",
+                    help="JSON of precomputed known-binder-corpus hits, "
+                         "{design_id: [hit, ...]}, in the same shape as "
+                         "--uniref90-hits. Use this instead of --known-binders "
+                         "at campaign scale: the in-process aligner is "
+                         "O(pool x corpus) and the protocol's own corpus is "
+                         "~16,500 entries.")
     ap.add_argument("--uniref90-hits",
                     help="JSON of precomputed MMseqs2 hits from a Tamarind sequence-identity "
                          "search: {design_id: [hit, ...]}. Each hit carries MMseqs2's own "
@@ -438,17 +447,47 @@ def main():
             print(f"  novelty: known-binder corpus NOT staged - {corpus.unavailable_reason}",
                   file=sys.stderr)
 
-    uniref_hits = {}
-    if args.uniref90_hits:
-        with open(args.uniref90_hits) as fh:
+    def _load_hits(path, kind):
+        if not path:
+            return {}
+        with open(path) as fh:
             loaded = json.load(fh)
         if not isinstance(loaded, dict):
             raise SystemExit(
-                f"{args.uniref90_hits}: expected an object keyed by design_id.\n"
+                f"{path}: expected an object keyed by design_id.\n"
                 "A bare list cannot be attributed to a design, and novelty hits "
                 "joined to the wrong design is a gate pointed at another molecule."
             )
-        uniref_hits = loaded
+        if novelty is not None:
+            for design_key, design_hits in loaded.items():
+                try:
+                    novelty.evaluate_precomputed_hits(design_hits, kind)
+                except Exception as exc:
+                    raise SystemExit(
+                        f"{path}: design {design_key!r} has an unusable hit -- {exc}\n"
+                        "Emit the search's own columns (fident/pident for identity, "
+                        "qcov/cov for coverage).\n"
+                        "Refusing here rather than per row: a hit the kernel cannot "
+                        "judge raises inside the\n"
+                        "verdict, which would report novelty NOT_RUN and discard a "
+                        "rejection another arm had already made."
+                    )
+        return loaded
+
+    uniref_hits = _load_hits(
+        args.uniref90_hits, novelty.SUBJECT_UNIREF90 if novelty else ""
+    )
+    corpus_hits = _load_hits(
+        args.known_binder_hits,
+        novelty.SUBJECT_KNOWN_BINDER_CORPUS if novelty else "",
+    )
+    if args.known_binder_hits and args.known_binders:
+        raise SystemExit(
+            "pass --known-binders OR --known-binder-hits, not both: the corpus arm "
+            "would run twice\n"
+            "against different subject sets and the row could not say which one "
+            "produced its verdict."
+        )
         # Judge the whole file HERE, once, and refuse the run if any hit is
         # malformed -- rather than letting the kernel raise per row into
         # `_novelty`'s catch, which would report NOT_RUN.
@@ -482,6 +521,18 @@ def main():
         novelty.NOVELTY_REQUIRED_SUBJECTS_FINAL if args.novelty_tier == "final"
         else novelty.NOVELTY_REQUIRED_SUBJECTS_DISPATCH
     ) if novelty is not None else ()
+    if args.novelty_tier == "final" and not target_seqs:
+        raise SystemExit(
+            "--novelty-tier final requires target chain SEQUENCES in "
+            "--reference-chains.\n"
+            "The final tier certifies that the whole novelty gate ran, and its "
+            "self-similarity arm\n"
+            "aligns against the target's sequence. With the [pdb, chain] pair "
+            "form there are no\n"
+            "sequences to align, so `final` would promise an arm that never ran. "
+            "Use the object form\n"
+            '({"pdb": ..., "chain": ..., "sequence": ..., "role": "target"}).'
+        )
     if args.novelty_tier == "final" and not args.uniref90_hits:
         raise SystemExit(
             "--novelty-tier final requires --uniref90-hits.\n"
@@ -561,6 +612,32 @@ def main():
             "  so it would collapse to a single design. Screen the distinct "
             "sequence once."
         )
+
+    # THE AGGREGATE COST, checked before the loop rather than inside it.
+    # The kernel's cap is per invocation and compares only `len(corpus.entries)`
+    # against CORPUS_LOCAL_ALIGNMENT_MAX_PAIRS, so a 16,500-entry corpus (the
+    # size protocol L79's own corpus folder ships) never trips it -- while the
+    # POOL multiplies it. Measured at 0.5 ms per local alignment, the protocol's
+    # 20,000-design pool against that corpus is ~330M alignments, about 46 hours
+    # single-core, on a campaign with a 24-hour clock. Refusing up front with the
+    # arithmetic beats discovering it two days in.
+    if novelty is not None and corpus is not None and corpus.available:
+        pair_total = len(pool) * len(corpus.entries)
+        if pair_total > novelty.CORPUS_LOCAL_ALIGNMENT_MAX_PAIRS:
+            raise SystemExit(
+                f"refusing the run: {len(pool)} designs x {len(corpus.entries)} "
+                f"corpus entries is {pair_total:,} local alignments, above the "
+                f"kernel's {novelty.CORPUS_LOCAL_ALIGNMENT_MAX_PAIRS:,}-alignment "
+                "cap.\n"
+                "The in-process aligner is O(pool x corpus) and runs at roughly "
+                "0.5 ms per pair, so this\n"
+                "would take on the order of "
+                f"{pair_total * 0.0005 / 3600:.0f} hours single-core.\n"
+                "Stage the MMseqs2 index the protocol asks for, search the pool "
+                "against the corpus once,\n"
+                "and pass its rows with --known-binder-hits instead of "
+                "--known-binders."
+            )
 
     seen = set()
     for entry in pool:
@@ -738,7 +815,7 @@ def main():
         # this row already reports under `target_mimic`.
         nv, nev, nreason = _novelty(
             novelty, seq, corpus, target_seqs, control_seqs,
-            uniref_hits.get(did), mscreen, novelty_tier,
+            uniref_hits.get(did), corpus_hits.get(did), mscreen, novelty_tier,
         )
         row["novelty_verdict"] = nv
         # WHICH tier cleared it. A dispatch-tier PASS did not screen UniRef90 --
@@ -753,6 +830,16 @@ def main():
         row["lcp_score"], lcp_reason = _lcp(lcp, seq)
         if lcp_reason:
             row["lcp_not_run_reason"] = lcp_reason
+        elif lcp is not None:
+            # The parameterisation travels WITH the number. Figure 1's exact
+            # settings are not recoverable from the figure, the public
+            # implementations disagree, and the kernel exports its choice for
+            # exactly this reason -- so a score separated from this revision is
+            # otherwise uninterpretable, and two campaigns' values are not
+            # comparable without it.
+            row["lcp_parameterisation"] = str(
+                getattr(lcp, "LCP_PARAMETERISATION", "") or ""
+            )
 
         # Route each reason by ITS OWN verdict. The kernel returns a `reason`
         # for any outcome, so folding them together wrote REJECT rationales

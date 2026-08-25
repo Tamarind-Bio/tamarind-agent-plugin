@@ -255,7 +255,13 @@ def _bad_gate_verdicts(row, allow_novelty_gap=False):
         # sheet" -- which is this file. So a NOT_RUN novelty verdict, or a PASS
         # earned at the dispatch tier, is not final-sheet evidence, and the two
         # are indistinguishable without the tier column.
-        if column == "novelty_verdict" and not allow_novelty_gap:
+        if column == "novelty_verdict":
+            # The escape covers the TIER, never a NOT_RUN. Its whole stated
+            # purpose is "the UniRef90 search was unavailable but the local arms
+            # cleared this design" -- which is a dispatch-tier PASS. A NOT_RUN
+            # means the gate did not clear the design at all (a missing corpus
+            # produces one), so admitting it under a flag whose help text
+            # promises only the UniRef90 gap is a wider hole than advertised.
             if verdict == "NOT_RUN":
                 return (
                     "novelty_verdict is NOT_RUN: the protocol requires the "
@@ -266,7 +272,7 @@ def _bad_gate_verdicts(row, allow_novelty_gap=False):
                     "proteins"
                 )
             tier = str(row.get("novelty_tier") or "").strip().lower()
-            if tier != "final":
+            if tier != "final" and not allow_novelty_gap:
                 return (
                     f"novelty_tier is {tier or 'absent'!r}, not 'final': a "
                     "dispatch-tier clearance did not screen UniRef90, so it is not "
