@@ -60,7 +60,8 @@ the 50-backbone floor, which belongs to the starred set.
 | | `filterBindingSite` | **false** | Supplying `bindingSite` does **not** filter on it; the conditioning is soft and the schema says so. |
 | `pxdesign` | `pxdesignMode` | **`generation`** | Raw backbones, **no ranked table and no output contract at all**. Only `extended` writes `summary.csv`. |
 | | `binderLength` | **10** | Below this campaign's own 35-residue floor; every row would be refused by the gate. |
-| `mosaic-hallucinate` | `binderLength` | **220** | Above the 160 ceiling. |
+| `mosaic-hallucinate` | `binderLength` | **220** | Above the 160 ceiling. A plain NUMBER, like `pxdesign`'s — not a range. |
+| | `numDesigns` | **1** | Same silent-single-run trap. |
 | `freebindcraft` | **`hotspotResidues`** | **optional — auto-selects** | **The one that breaks the campaign silently.** Its description reads *"If left empty suitable hotspots will be selected automatically."* Omit it and the tool picks its **own** epitope: no error, a normal-looking run, and a method aimed somewhere else. One frozen epitope across every method is this campaign's central invariant, and this is the only roster entry that answers a missing epitope by choosing **another one**. Six more violate the invariant just as silently by dropping the constraint and designing unaimed — see the adherence section below — but their designs at least are not aimed somewhere you did not pick. Audit it afterwards on the `Target_Hotspot` output column, documented as *"empty if auto-selected"* — an empty value there means the epitope was not yours. |
 | | `numDesigns` | **1** | It generates until this many designs *pass its filters*, and stops early on its runtime cap — so a run can end partial and silently short. |
 | | `maxRunTime` | 16 h (free: 4 h) | The cap that makes a run end partial. |
@@ -84,14 +85,14 @@ Five spellings and four value grammars. Submission validates against that type's
 | method | target file | chain field | aiming field | required? | value shape | binder length |
 |---|---|---|---|---|---|---|
 | `rfdiffusion` | `pdbFile` | `targetChains` | `binderHotspots` | optional | `{"A": "20 21 23"}` — space | `binderLength` — STRING range `"60-80"` |
-| `rfdiffusion3` | `pdbFile` | `targetChains` | `hotspots` | optional | `{"A": "185 213 216 217 247 248"}` — space | `binderLength` — STRING range `"60-80"` |
+| `rfdiffusion3` | `pdbFile` | `targetChains` | `hotspots` | optional | `{"A": "185 213 216 217 247 248"}` — space | `binderLength` — COMMA range `"60,80"` (same key name as `rfdiffusion`, opposite separator) |
 | `freebindcraft` | `pdbFile` | `chains` | `hotspotResidues` | **optional — AUTO-SELECTS** | `{"A": "1-10"}` — dash range; discrete residues go in as `"185-185,213-213,216-217"` | `binderLengthRange` — `"60,80"` |
 | `boltzgen` | `targetFile` | `targetChains` | `bindingSite` / `notBindingSite` | optional | `{"A": "185,213,216,217,247,248"}` — comma | `lengthRange` — `"60,80"` |
 | `pxdesign` | `targetFile` | `targetChains` | `hotspots` | optional | `{"A": "12-33"}` — dash range | `binderLength` — a NUMBER, not a range |
 | `proteina-complexa` | `pdbFile` | `targetChains` | `hotspotResidues` | optional | `{"A": "37,39,49,98"}` — comma | `binderLengthRange` — `"60,80"` |
 | `genie3` | `targetFile` | `targetChains` | `hotspots` | **REQUIRED** | `{"A": "261 263 264"}` — space | `minBinderLength` **and** `maxBinderLength` — two separate numbers |
 | `boltzdesign` | `pdbFile` (needs `inputFormat: "pdb"`) | `targetChains` (+ `constraintChain` scopes the picker) | `constraintResidues` | optional — set both or neither | comma-separated, on the ONE `constraintChain` — **not** a `{chain: …}` map like every other entry | `binderLengthRange` — `"100,150"` |
-| `mosaic-hallucinate` | **none** — `targetSequence` only | — | — | — | cannot be aimed | `binderLength` |
+| `mosaic-hallucinate` | **none** — `targetSequence` only | — | — | — | cannot be aimed | `binderLength` — a NUMBER (220), not a range |
 | `protein-hunter` | **none** — `targetSequence`/`targetCCD` | — | — | — | cannot be aimed | `lengthRange` — `"90,150"` |
 
 Every cell above was resolved on 2026-08-25 against the live catalog: the aiming keys by submitting to prod and reading back `valid: true` against a two-chain target with a six-residue epitope, and the length keys and their defaults from each tool's own schema.
