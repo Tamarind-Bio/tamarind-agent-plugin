@@ -186,7 +186,14 @@ def _check_ss_codes(helpers, did, codes, body, chain, seq):
                 "The codes cannot be describing this design. Check the chain id and "
                 "the join that built the pool."
             )
-        expected, source = len(residues), f"chain {chain!r} of the designed structure"
+        # UNIQUE (resseq, icode). The kernel's CA scan appends one entry per CA
+        # record, and two realistic shapes emit more than one per residue:
+        # measured on a 30-residue chain, a two-MODEL file counts 60 and
+        # alternate-location CAs count 60. DSSP emits one code per RESIDUE, so
+        # comparing against the raw record count refuses valid input -- the same
+        # false-refusal class as stripping terminal coil, one line over.
+        expected = len(set(residues))
+        source = f"chain {chain!r} of the designed structure"
     elif seq:
         expected, source = len(seq), "the design's sequence"
     if expected is not None and len(codes) != expected:
@@ -401,8 +408,23 @@ def main():
             # Incidental CSV padding is not a reason to trim: the length check
             # is what tells the two apart. Padding makes the count wrong and is
             # refused; a true DSSP string matches the chain exactly and passes.
+            # Whitespace is DATA here, not padding: DSSP writes coil as a
+            # space, so an entirely-coil assignment is an all-space string and
+            # `text.strip()` discards it whole. Only a genuinely EMPTY field
+            # means "no codes supplied". Measured on a 60-residue chain:
+            #
+            #   all-coil DSSP (60 spaces)   was fold_class NOT_RUN, now `other`
+            #                               under method `supplied` -- and
+            #                               `other` is what counts toward the
+            #                               non-all-alpha diversity target, so
+            #                               the evidence was being thrown away
+            #   a stray one-space CSV cell  was a silent NOT_RUN, now a refusal
+            #                               naming the count mismatch
+            #
+            # Both directions improve: the valid input survives, and the
+            # malformed one stops being silent.
             text = str(raw_ss or "")
-            ss_codes = text if text.strip() else None
+            ss_codes = text if text else None
         body = _pdb_body(pdb) if pdb and os.path.exists(pdb) else None
         if ss_codes is not None:
             _check_ss_codes(helpers, did, ss_codes, body, chain, seq)

@@ -1621,3 +1621,109 @@ def test_terminal_coil_survives_a_scalar_dssp_string(tmp_path: Path) -> None:
     row = list(csv.DictReader(out.read_text().splitlines()))[0]
     assert row["fold_class"] == "all_alpha"
     assert row["fold_ss_method"] == "supplied"
+
+
+def _ca_line(serial: int, chain: str, resseq: int, x: float, alt: str = " ") -> str:
+    """One CA record at the real PDB columns (name[12:16], altLoc[16])."""
+    s = list(" " * 80)
+    s[0:6] = list("ATOM  ")
+    s[6:11] = list(f"{serial:5d}")
+    s[12:16] = list(" CA ")
+    s[16] = alt
+    s[17:20] = list("ALA")
+    s[21] = chain
+    s[22:26] = list(f"{resseq:4d}")
+    s[30:38] = list(f"{x:8.3f}")
+    s[38:46] = list(f"{0.0:8.3f}")
+    s[46:54] = list(f"{0.0:8.3f}")
+    return "".join(s).rstrip()
+
+
+@pytest.mark.parametrize(
+    "shape", ["two_models", "altloc"],
+)
+def test_repeated_ca_records_do_not_inflate_the_expected_code_count(
+    tmp_path: Path, shape: str
+) -> None:
+    """DSSP emits one code per RESIDUE, not per CA record.
+
+    The kernel's CA scan appends an entry per record, and two realistic shapes
+    emit more than one per residue -- measured on a 30-residue chain, a
+    two-MODEL file counts 60 and alternate-location CAs count 60. Comparing the
+    supplied code count against the raw record count refuses valid input, the
+    same false-refusal class as stripping terminal coil.
+    """
+    res = 40                      # inside the frozen 35-160 length policy
+    rows, serial = [], 0
+    if shape == "two_models":
+        for model in (1, 2):
+            rows.append(f"MODEL     {model:>4}")
+            for i in range(res):
+                serial += 1
+                rows.append(_ca_line(serial, "B", i + 1, i * 1.5))
+            rows.append("ENDMDL")
+    else:
+        for alt in ("A", "B"):
+            for i in range(res):
+                serial += 1
+                rows.append(_ca_line(serial, "B", i + 1, i * 1.5, alt=alt))
+    pdb = tmp_path / "s.pdb"
+    pdb.write_text("\n".join(rows) + "\nEND\n")
+
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{
+            "design_id": "d1",
+            "sequence": _SEQUENCES[1][:res].ljust(res, "A"),
+            "designed_structure_path": str(pdb),
+            "binder_chain": "B",
+            "ss_codes": "H" * res,
+        }])
+    )
+    done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_an_entirely_coil_assignment_is_data_not_an_empty_field(
+    tmp_path: Path,
+) -> None:
+    """DSSP writes coil as a space, so an all-coil assignment is all spaces.
+
+    Stripping discarded it whole and the row came back NOT_RUN -- throwing away
+    the evidence, because an all-coil design classifies as `other` and `other`
+    is exactly what counts toward the non-all-alpha diversity target. Only a
+    genuinely empty field means "no codes supplied"; a stray whitespace cell now
+    fails the count check loudly instead of vanishing.
+    """
+    res = 40                      # inside the frozen 35-160 length policy
+    pdb = tmp_path / "s.pdb"
+    pdb.write_text(
+        "\n".join(_ca_line(i + 1, "B", i + 1, i * 1.5) for i in range(res))
+        + "\nEND\n"
+    )
+
+    def run(ss_codes):
+        pool = tmp_path / "pool.json"
+        pool.write_text(
+            json.dumps([{
+                "design_id": "d1",
+                "sequence": _SEQUENCES[1][:res].ljust(res, "A"),
+                "designed_structure_path": str(pdb),
+                "binder_chain": "B",
+                "ss_codes": ss_codes,
+            }])
+        )
+        return _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+
+    import csv
+
+    done = run(" " * res)
+    assert done.returncode == 0, done.stdout + done.stderr
+    row = list(csv.DictReader((tmp_path / "g.csv").read_text().splitlines()))[0]
+    assert row["fold_class"] == "other"
+    assert row["fold_ss_method"] == "supplied"
+
+    # A stray one-space cell is not a 1-residue assignment: it is refused, by name.
+    done = run(" ")
+    assert done.returncode != 0
+    assert "supplies 1 ss_codes" in (done.stdout + done.stderr)
