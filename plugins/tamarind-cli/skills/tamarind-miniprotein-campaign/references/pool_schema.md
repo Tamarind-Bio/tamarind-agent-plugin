@@ -58,11 +58,14 @@ So the two tools you are most likely to pair actually **agree** — both put the
 
 A target chain of ordinary composition and legal length gates cleanly as if it were a design. Every row then carries the same target sequence, and the numbers that come back are a scoring method's opinion of the target against itself.
 
-**Identify the binder by what it is, not by its position.** You know the target sequence — it is in your frozen plan — and you know the length you asked for. Assert both:
+**Identify the binder by what it is, not by its position.** You know the target chains — they are in your frozen plan — and you know the length you asked for. Assert both:
 
 ```python
 chains = row["seq"].split("/")
-binder = [c for c in chains if c != TARGET_SEQUENCE]
+# TARGET_CHAINS is a SET, one entry per chain of the frozen construct. A
+# heteromeric target has more than one, and excluding only the first leaves
+# the second looking like a design.
+binder = [c for c in chains if c not in TARGET_CHAINS]
 assert len(binder) == 1 and LEN_MIN <= len(binder[0]) <= LEN_MAX
 ```
 

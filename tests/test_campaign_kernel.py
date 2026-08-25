@@ -1237,3 +1237,24 @@ def test_ids_that_differ_only_in_type_are_still_duplicates(tmp_path: Path) -> No
     out = done.stdout + done.stderr
     assert "Traceback" not in out, out
     assert "duplicate design_id 1" in out, out
+
+
+def test_one_catastrophic_prediction_is_not_a_units_mismatch(tmp_path: Path) -> None:
+    """The reverse units check is an INFERENCE, so it demands unanimity.
+
+    A value above 1.0 is impossible on a 0-1 scale, so one proves a mismatch.
+    A value at or below 1.0 is only astonishing on a 0-100 scale, so refusing
+    the run over a single catastrophic prediction would abort a correctly
+    declared campaign instead of letting the monomer gate reject that row.
+    """
+    rows = _population(3)
+    for row, value in zip(rows, (86.75, 91.2, 0.9)):   # one hopeless design
+        row["monomer_plddt"] = value
+    src = tmp_path / "one_bad.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--monomer-floor", "70",
+                "--skip-recompute", "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "at or below 1.0" not in done.stdout + done.stderr

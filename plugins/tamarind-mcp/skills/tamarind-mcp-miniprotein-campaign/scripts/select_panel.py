@@ -532,17 +532,27 @@ def main():
             "  the same scale in the pool, and record which arm's convention "
             "the frozen floor is in."
         )
-    # The same disagreement the other way round. It fails LOUDLY rather than
-    # silently -- every design lands under the floor -- so it is the less
-    # dangerous direction, but only when the comparison actually runs. With
-    # `--skip-recompute`, or no numpy, nothing recomputes the floor and the
-    # rows ship on their carried verdicts with the declared floor never
-    # reconciled against the column at all. Name it here, where the check
-    # costs nothing either way.
-    if on_0_1 and args.monomer_floor > 1.0:
+    # The same disagreement the other way round -- but this direction is an
+    # INFERENCE and the one above is not, so it does not get the same trigger.
+    #
+    # A value above 1.0 is IMPOSSIBLE on a 0-1 scale, so one of them proves a
+    # units mismatch. The reverse is not proof: a value at or below 1.0 is
+    # merely astonishing on a 0-100 scale, not impossible, and aborting the run
+    # over one catastrophic prediction would refuse a correctly declared
+    # campaign instead of letting the monomer gate reject that row -- the same
+    # false-positive mode this script declined a mixed-scale detector over.
+    # So demand unanimity: EVERY value under 1.0 against a 0-100 floor is a
+    # units mismatch, one of them is a bad design.
+    #
+    # Worth checking at all because the loud failure only happens when the
+    # comparison runs. Under `--skip-recompute`, or with no numpy, nothing
+    # recomputes the floor and the rows ship on carried verdicts with the
+    # declared floor never reconciled against the column at all.
+    if on_0_1 and not on_0_100 and args.monomer_floor > 1.0:
         raise SystemExit(
-            f"HALTED: monomer_plddt is at or below 1.0 on {len(on_0_1)} row(s) "
-            f"while --monomer-floor is {args.monomer_floor} (a 0-100 scale).\n"
+            f"HALTED: every monomer_plddt in this pool is at or below 1.0 "
+            f"({len(on_0_1)} row(s)) while --monomer-floor is "
+            f"{args.monomer_floor} (a 0-100 scale).\n"
             f"  first: {', '.join(on_0_1[:5])}\n"
             "  The arms disagree on this scale -- ESMFold2 reports pLDDT on "
             "0-1 and Protenix on 0-100.\n"
