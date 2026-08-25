@@ -47,6 +47,7 @@ to carry these or the row goes to the unranked section with its reason:
 |---|---|
 | `sequence` | drawn entirely from the residue alphabet — a path or status word is refused, never salvaged |
 | `liability_verdict`, `novelty_verdict`, `structural_plausibility_verdict`, `monomer_foldability_verdict`, `target_mimic_verdict` | present and one of PASS / REJECT / NOT_RUN. **Absent is not a pass**, and REJECT is refused |
+| `target_mimic_tm_max` | the mimic gate's **measured TM value**, and it is required on top of the verdict column above |
 | `n_seeds` | a non-negative whole number. Absent reads as a deliberately shallow tier rather than a lost join |
 | `opt_round`, `parent_design_id`, `root_backbone_id` | lineage that closes — round 0 claims no parent, a later round names one, nothing is its own parent |
 | per-arm `ipsae_*` / `sc_DockQ_*` | numeric. A boolean is refused: `float(True)` is a fabricated perfect score |
@@ -54,6 +55,8 @@ to carry these or the row goes to the unranked section with its reason:
 | `structure_method`, `seq_method` | canonicalized before counting, so `rfdiffusion3` / `RFdiffusion3` / `rfdiffusion-3` count as ONE method rather than three |
 | binder length | 35-160 residues. The >25%-from-the-target-chain mimic band needs the frozen construct and is the skill's to enforce, not the script's |
 | `pose_PASS`, `pose_dockq` | **derived, never trusted** — recomputed as the min over the realized `sc_DockQ_*` terms against the frozen 0.23 threshold, and the run halts when a carried verdict disagrees. A row missing any arm's term carries `NOT_RUN`, never a min over what is left |
+
+**The mimic ban reads the measurement, not the verdict.** Supplying `target_mimic_verdict: PASS` and nothing else leaves every row banned — measured — because the ban resolves the TM value itself and treats a missing one as NOT_RUN. That is deliberate: this is the one gate with no second falsifier downstream, so it cannot be satisfied by asserting it passed. `campaign_gates.py` emits `target_mimic_tm_max` whenever the gate actually runs, so a pool built from its output carries it; a hand-assembled pool that carries only verdict strings will be refused wholesale with `target_mimic_ban`, and the reason will not be obvious from the count alone.
 
 Two whole-run refusals, distinct from per-row ones: it will not emit a panel
 whose distinct `structure_method` count is below **3** — that floor is absolute,

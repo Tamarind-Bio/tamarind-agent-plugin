@@ -236,7 +236,47 @@ def _bad_gate_verdicts(row):
             return f"{column} is {verdict!r}, which is not one of {'/'.join(RECOGNIZED_VERDICTS)}"
         if verdict == "REJECT":
             return f"{column} is REJECT: a gate already refused this design"
+        # NOT_RUN is a pass for no gate, but for THIS one it is disqualifying
+        # rather than merely undisclosed: the mimic screen is the only gate
+        # with no second falsifier downstream, and the kernel's own contract
+        # is that a NOT_RUN row "is NOT cleared". The kernel enforces that
+        # from `row["target_mimic"]`; a pool assembled by hand may carry only
+        # the verdict column and a number, and the number alone would clear it.
+        if column == "target_mimic_verdict" and verdict == "NOT_RUN":
+            return (
+                "target_mimic_verdict is NOT_RUN: the mimic screen is the one gate "
+                "with no second falsifier downstream, so it cannot be satisfied by "
+                "absence -- run target_mimic_screen on this row, or declare the gate "
+                "unavailable campaign-wide and say so in the report"
+            )
     return None
+
+
+def _mismatch_id(entry):
+    """The design id inside one recompute mismatch.
+
+    The kernel declares `mismatches` as a list of design-id STRINGS
+    (`_kernel/sheet_recompute.py`), so reading it as a mapping raised
+    AttributeError and crashed the very halt this id is printed by -- the
+    operator got a traceback instead of the row and the gate. Accept both
+    shapes so a widened kernel contract cannot resurrect that failure.
+    """
+    if isinstance(entry, dict):
+        return str(entry.get("design_id") or entry.get("id") or entry)
+    return str(entry)
+
+
+def _folded_chains(value):
+    """The chains of the construct a scoring job actually folded.
+
+    A complex is submitted as one joined value -- `TARGET:BINDER` on the FASTA
+    route this skill recommends -- and comes back from the platform that way.
+    A monomer fold yields the single chain. Both separators in use are
+    accepted, since the generation tables join with `/` and the scoring
+    submissions with `:`.
+    """
+    joined = str(value).replace("/", ":")
+    return [c.strip().upper() for c in joined.split(":") if c.strip()]
 
 
 def _canonical_method(value):
@@ -362,6 +402,179 @@ def main():
         from _kernel import qa_selection_helpers as selection
     except ImportError as exc:
         raise SystemExit(f"vendored kernel unavailable: {exc}")
+
+    # DID THE SCORES COME FROM THIS ROW'S SEQUENCE?
+    #
+    # Nothing else on this page can tell. Every gate recomputes against the
+    # row's own sequence, so a row whose SCORES belong to a different molecule
+    # reproduces perfectly and ranks on numbers that are not its own.
+    #
+    # This is not hypothetical. Building a scoring submission by hand-copying
+    # sequences into it produced, in one small real run: one row whose id named
+    # design n1 while the job folded n0, and one row whose submitted sequence
+    # matched NO design in any result table -- it shared a prefix with a real
+    # design and then diverged. The platform accepted both, folded them, and
+    # returned entirely plausible confidence numbers.
+    #
+    # So carry `scored_sequence` -- the sequence the scoring job actually
+    # received, read back from the platform, not from the notes you submitted
+    # from -- and check it here.
+    # The scoring construct is a COMPLEX. The recommended route folds a FASTA
+    # record holding the joined `TARGET:BINDER` value, so the stored input read
+    # back from the platform carries BOTH chains while the row's `sequence` is
+    # the binder alone. Compare against the CHAINS of what was folded, not
+    # against the whole construct: plain equality refuses every correctly
+    # scored complex, turning this halt on the good case.
+    scored = [
+        r for r in rows
+        if str(r.get("scored_sequence") or "").strip() and str(r.get("sequence") or "").strip()
+    ]
+    mismatched = [
+        r for r in scored
+        if str(r.get("sequence")).strip().upper() not in _folded_chains(r["scored_sequence"])
+    ]
+    if mismatched:
+        lines = []
+        for r in mismatched[:5]:
+            folded = _folded_chains(r["scored_sequence"])
+            lines.append(
+                f"  {r.get('design_id')}: row carries {len(str(r.get('sequence') or ''))} aa, "
+                f"the scoring job folded {'+'.join(str(len(c)) for c in folded)} aa"
+            )
+        raise SystemExit(
+            f"HALTED: {len(mismatched)} row(s) carry a sequence that is not among the "
+            "chains the scoring job folded:\n" + "\n".join(lines) + "\n"
+            "  These rows rank on numbers that belong to another molecule, and every "
+            "gate still reproduces\n"
+            "  because the gates read the row's own sequence. Rebuild the scoring "
+            "pool by threading the\n"
+            "  sequence programmatically from the generation table -- never by "
+            "transcribing it."
+        )
+    if rows and not scored:
+        print(
+            "  WARNING: no row carries scored_sequence, so nothing verifies that these "
+            "scores came from\n"
+            "  these designs. A row scored on another molecule ranks normally and "
+            "reproduces every gate.",
+            file=sys.stderr,
+        )
+    elif scored and len(scored) < len(rows):
+        # Partial coverage is MORE suspicious than none: the read-back ran, and
+        # these rows escaped it. A non-empty `scored` silenced the warning
+        # above, so an unverified row shipped with no disclosure at all.
+        # Identity, not equality: `r not in scored` compares dicts by VALUE, so
+        # two rows that happen to be equal would mask each other.
+        checked = {id(r) for r in scored}
+        missing = sorted(
+            str(r.get("design_id")) for r in rows if id(r) not in checked
+        )
+        print(
+            f"  WARNING: {len(missing)} of {len(rows)} row(s) carry no scored_sequence, "
+            "so nothing verifies\n"
+            f"  that their scores came from their designs: {', '.join(missing[:5])}"
+            + (" ..." if len(missing) > 5 else "") + "\n"
+            "  The other rows were checked. These were not, and a row scored on "
+            "another molecule ranks\n"
+            "  normally and reproduces every gate.",
+            file=sys.stderr,
+        )
+
+    # A repeated design_id is a WHOLE-RUN refusal, not a per-row unranking:
+    # nothing here can tell which row is the real one, and the caps, the
+    # rejects ledger and the trace all address rows by that id. The kernel
+    # catches it too, but only as a bare ValueError escaping mid-selection --
+    # every other refusal on this path is a clean paragraph, so raise it here
+    # in the same shape campaign_gates.py already uses one stage earlier.
+    # Compare ids the way the KERNEL compares them -- it stringifies before
+    # its own duplicate check, so a pool carrying numeric 1 beside string "1"
+    # walked past a raw-value set here and hit `ValueError: duplicate
+    # design_id '1'` inside selection: a bare traceback from the one path this
+    # refusal exists to keep clean. Reproduced, not reasoned about.
+    seen_ids, duplicated = set(), []
+    for row in rows:
+        did = row.get("design_id") or row.get("id")
+        if did is None:
+            continue
+        did = str(did).strip()
+        if did in seen_ids:
+            duplicated.append(did)
+        seen_ids.add(did)
+    if duplicated:
+        shown = ", ".join(sorted(set(duplicated))[:5])
+        raise SystemExit(
+            f"refusing to build a panel: duplicate design_id {shown}.\n"
+            "  Design ids address rows in the caps, the rejects ledger and the "
+            "trace, so a repeated one makes all three ambiguous.\n"
+            "  This usually means two pools were concatenated, or a "
+            "sequence-design pass minted a second id space over the same "
+            "backbones."
+        )
+
+    # The arms do NOT agree on the pLDDT scale. Measured on real rows for the
+    # same construct: ESMFold2 reports 0-1 (0.7884) and Protenix 0-100 (86.75).
+    # Against a 0-1 floor a 0-100 value clears for EVERY design -- the
+    # foldability gate stops rejecting anything while still reporting PASS on
+    # every row. That is a vacuous gate, which is worse than an absent one, so
+    # refuse rather than rescale: only the campaign knows which arm produced
+    # the column.
+    #
+    # This is a comparison of two numbers and needs NOTHING from the kernel, so
+    # it runs HERE rather than beside the recompute. Sited there it was inside
+    # `if sr is not None`, which is False on exactly the stock machine with no
+    # numpy that SKILL.md calls the common case -- the guard was absent from
+    # every run that most needed it, and the sheet shipped with the mismatch
+    # disclosed only as a skipped recompute.
+    _plddt = [
+        (str(r.get("design_id")), _num(r.get("monomer_plddt")))
+        for r in rows
+    ]
+    on_0_100 = sorted(did for did, v in _plddt if v is not None and v > 1.0)
+    on_0_1 = sorted(did for did, v in _plddt if v is not None and v <= 1.0)
+    if on_0_100 and args.monomer_floor <= 1.0:
+        raise SystemExit(
+            f"HALTED: monomer_plddt exceeds 1.0 on {len(on_0_100)} row(s) while "
+            f"--monomer-floor is {args.monomer_floor} (a 0-1 scale).\n"
+            f"  first: {', '.join(on_0_100[:5])}\n"
+            "  The arms disagree on this scale -- ESMFold2 reports pLDDT on "
+            "0-1 and Protenix on 0-100.\n"
+            "  Against a 0-1 floor a 0-100 value passes for every design, so "
+            "the foldability gate\n"
+            "  would report PASS on every row while rejecting nothing. Put the "
+            "column and the floor on\n"
+            "  the same scale in the pool, and record which arm's convention "
+            "the frozen floor is in."
+        )
+    # The same disagreement the other way round -- but this direction is an
+    # INFERENCE and the one above is not, so it does not get the same trigger.
+    #
+    # A value above 1.0 is IMPOSSIBLE on a 0-1 scale, so one of them proves a
+    # units mismatch. The reverse is not proof: a value at or below 1.0 is
+    # merely astonishing on a 0-100 scale, not impossible, and aborting the run
+    # over one catastrophic prediction would refuse a correctly declared
+    # campaign instead of letting the monomer gate reject that row -- the same
+    # false-positive mode this script declined a mixed-scale detector over.
+    # So demand unanimity: EVERY value under 1.0 against a 0-100 floor is a
+    # units mismatch, one of them is a bad design.
+    #
+    # Worth checking at all because the loud failure only happens when the
+    # comparison runs. Under `--skip-recompute`, or with no numpy, nothing
+    # recomputes the floor and the rows ship on carried verdicts with the
+    # declared floor never reconciled against the column at all.
+    if on_0_1 and not on_0_100 and args.monomer_floor > 1.0:
+        raise SystemExit(
+            f"HALTED: every monomer_plddt in this pool is at or below 1.0 "
+            f"({len(on_0_1)} row(s)) while --monomer-floor is "
+            f"{args.monomer_floor} (a 0-100 scale).\n"
+            f"  first: {', '.join(on_0_1[:5])}\n"
+            "  The arms disagree on this scale -- ESMFold2 reports pLDDT on "
+            "0-1 and Protenix on 0-100.\n"
+            "  Against a 0-100 floor a 0-1 value fails for every design, so the "
+            "foldability gate would\n"
+            "  reject the whole pool on its units. Put the column and the floor "
+            "on the same scale in the\n"
+            "  pool, and record which arm's convention the frozen floor is in."
+        )
 
     # ── ELIGIBILITY FIRST, THEN THE ALGEBRA ─────────────────────────────────
     # rank_zscore is TRANSDUCTIVE: the mean and spread come from the scored
@@ -651,7 +864,7 @@ def main():
             if failed:
                 lines = []
                 for name, rows_bad in failed.items():
-                    ids = ", ".join(str(m.get("design_id") or m) for m in rows_bad[:5])
+                    ids = ", ".join(_mismatch_id(m) for m in rows_bad[:5])
                     lines.append(f"  {name}: {len(rows_bad)} row(s) (first: {ids})")
                 raise SystemExit(
                     "HALTED: carried gate numbers do not reproduce from the row's own "
@@ -733,11 +946,19 @@ def main():
                 (result.get("rejection_counts") or {}).items(), key=lambda kv: -kv[1]
             )
         )
+        # The row-intrinsic checks (bad sequence, broken lineage, absent
+        # verdict, unusable n_seeds) drop a row BEFORE selection, so they never
+        # reach `rejection_counts`. A pool emptied entirely that way printed a
+        # refusal naming no reason at all -- on precisely the run where the
+        # operator has nothing else to go on. Name both populations: the caps
+        # are one repair, the malformed rows are a different one.
+        why = ", ".join(sorted({r["unranked_reason"] for r in unranked}))
         raise SystemExit(
             "refusing to report success: no candidate survived to the panel.\n"
             f"  {len(rows)} candidate(s) in, {len(unranked)} unranked, "
             f"{len(ranked)} reached selection.\n"
             + (f"  rejected by: {detail}\n" if detail else "")
+            + (f"  unranked because: {why}\n" if why else "")
             + "Nothing was written. Fix the pool upstream rather than shipping an empty sheet."
         )
 

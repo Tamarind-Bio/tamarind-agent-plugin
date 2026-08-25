@@ -158,6 +158,53 @@ def main():
             f"(first at index {shown}).\n"
             "A row with no durable identifier cannot be tracked into or out of a gate."
         )
+    # A multi-row pool in which every design carries the SAME sequence is not a
+    # design pool. The way this happens is measured, not hypothetical: a
+    # generator writes the binder and the target joined in one field, and the
+    # split takes the wrong half -- so every row becomes the target. RFdiffusion
+    # ships exactly that shape, and its own schema documents the two chains in
+    # the opposite order from the one it delivers, so following the
+    # documentation produces this pool. The target is of legal length and
+    # ordinary composition, so every other check here passes it.
+    #
+    # Fires ONLY on a pool that is otherwise perfectly well formed. A row with
+    # no id, a duplicate id, a missing sequence or an illegal length has its own
+    # refusal that says more, and those must win -- otherwise a two-row pool
+    # where one row simply lacks a sequence gets reported as a chain-split bug.
+    _seqs = [str(e.get("sequence") or "").strip().upper() for e in pool]
+    _ids = [str(e.get("design_id") or e.get("id") or "").strip() for e in pool]
+    well_formed = (
+        all(_seqs) and all(_ids) and len(set(_ids)) == len(_ids)
+        and all(BINDER_LEN_MIN <= len(s) <= BINDER_LEN_MAX for s in _seqs)
+        # The alphabet too, and this one is not hypothetical: an UN-SPLIT
+        # `TARGET/BINDER` string is identical on every row and of legal
+        # length, so without this it collected the chain-split diagnosis
+        # below instead of the sharper "has non-residue characters '/'" that
+        # names the actual repair.
+        and all(not (set(s) - AMINO_ACIDS) for s in _seqs)
+    )
+    if len(pool) > 1 and well_formed and len(set(_seqs)) == 1:
+        only = _seqs[0]
+        raise SystemExit(
+            f"refusing the pool: all {len(pool)} designs carry an identical "
+            f"{len(only)}-residue sequence.\n"
+            "  A pool of one repeated sequence is not a design pool. The usual cause "
+            "is a joined\n"
+            "  sequence field (binder and target in one string) split on the wrong "
+            "side -- every row\n"
+            "  is then the TARGET, which is of legal length and passes every other "
+            "check here.\n"
+            "  Identify the binder by excluding your frozen target sequence and "
+            "asserting the\n"
+            "  designed length, not by taking a fixed position in the split.\n"
+            "  If instead these rows genuinely converged on one binder from "
+            "different backbones,\n"
+            "  that pool cannot make a panel either -- the selector rejects "
+            "exact-sequence duplicates,\n"
+            "  so it would collapse to a single design. Screen the distinct "
+            "sequence once."
+        )
+
     seen = set()
     for entry in pool:
         did = str(entry.get("design_id") or entry.get("id") or "").strip()
@@ -206,6 +253,31 @@ def main():
         row["structural_plausibility_verdict"] = pv
         row.update(pev)
         row["target_mimic_verdict"] = mv
+        # ALSO under the kernel's own name, because `select_with_diversity_caps`
+        # resolves the ban from `row["target_mimic"]` and falls back to the bare
+        # `target_mimic_tm_max` only when that key is absent. Writing the verdict
+        # under a name the ban does not read let a NOT_RUN row ship on the
+        # strength of its number; measured against a PASS control, both arms
+        # shipped 3 of 3.
+        #
+        # WHICH value goes there is the whole question, because the kernel
+        # prefers a verdict WORD over the number. Neither one alone is safe:
+        #
+        #   - the word alone lets a stale or misjoined PASS override a measured
+        #     TM at or above the ban threshold, and nothing downstream re-runs
+        #     the mimic screen to catch it;
+        #   - the number alone reads the `failures` shape -- one reference
+        #     scored low, another could not be scored -- as a PASS, which is
+        #     the NOT_RUN this whole block exists to preserve.
+        #
+        # So: NOT_RUN dominates everything, and where the screen did produce a
+        # measurement that MEASUREMENT decides, exactly as selection.md says
+        # ("the ban reads the measurement, not the verdict").
+        tm_measured = mev.get("target_mimic_tm_max")
+        if mv == VERDICT_NOT_RUN or tm_measured is None:
+            row["target_mimic"] = mv
+        else:
+            row["target_mimic"] = tm_measured
         row.update(mev)
 
         # Fold class feeds the >=10% non-all-alpha diversity target. Reported,
@@ -213,13 +285,31 @@ def main():
         if pdb and os.path.exists(pdb):
             try:
                 fold = helpers.dssp_fold_class(pdb, chain=chain)
-                row["fold_class"] = getattr(fold, "fold_class", None) or getattr(fold, "label", str(fold))
-                helical = getattr(fold, "helical_fraction", None)
-                if helical is not None:
-                    row["fold_helical_fraction"] = helical
             except Exception as exc:
                 row["fold_class"] = VERDICT_NOT_RUN
                 row["fold_class_not_run_reason"] = f"{type(exc).__name__}: {exc}"
+            else:
+                # `dssp_fold_class` returns a STRING -- `FoldClass` is a Literal
+                # of "all_alpha" | "all_beta" | "alpha_beta" | "other" |
+                # "unknown", not an object. Reading it through getattr yields
+                # None for every real classification and turns the whole column
+                # into NOT_RUN, which deletes the evidence for the >=10%
+                # non-all-alpha diversity target.
+                #
+                # Only "unknown" is a non-classification: the kernel returns it
+                # when no secondary structure could be resolved, and its own
+                # docstring says it must not count toward the diversity target
+                # and must be reported NOT_RUN. It does not raise to say so,
+                # which is why this branch exists at all.
+                label = str(fold).strip()
+                if not label or label.lower() == "unknown":
+                    row["fold_class"] = VERDICT_NOT_RUN
+                    row["fold_class_not_run_reason"] = (
+                        "the fold classifier returned no class for this structure "
+                        "(no secondary structure resolved on the designed chain)"
+                    )
+                else:
+                    row["fold_class"] = label
         else:
             row["fold_class"] = VERDICT_NOT_RUN
             row["fold_class_not_run_reason"] = "no designed structure on this row"
@@ -235,8 +325,21 @@ def main():
             "needs a sequence-identity search job; run it on the survivors and join the verdict"
         )
 
-        if preason or mreason:
-            row["gate_not_run_reason"] = "; ".join(r for r in (preason, mreason) if r)
+        # Route each reason by ITS OWN verdict. The kernel returns a `reason`
+        # for any outcome, so folding them together wrote REJECT rationales
+        # into a column named `_not_run_reason` -- and a consumer filtering on
+        # "this column is non-empty" then counted refused designs as gates that
+        # never ran, which is the exact confusion every NOT_RUN here exists to
+        # prevent.
+        not_run, rejected_because = [], []
+        for verdict, reason in ((pv, preason), (mv, mreason)):
+            if not reason:
+                continue
+            (not_run if verdict == VERDICT_NOT_RUN else rejected_because).append(reason)
+        if not_run:
+            row["gate_not_run_reason"] = "; ".join(not_run)
+        if rejected_because:
+            row["gate_reject_reason"] = "; ".join(rejected_because)
 
         for gate, verdict in (
             ("liability", lv), ("structural_plausibility", pv), ("target_mimic", mv),

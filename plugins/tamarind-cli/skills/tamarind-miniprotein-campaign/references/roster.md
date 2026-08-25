@@ -19,6 +19,78 @@ The lowercase token is the job `type`; the name in parentheses is the only spell
 | `boltzdesign` | BoltzDesign1 | optional |
 | `protein-hunter` | Protein Hunter | optional |
 
+## Defaults you must override, per method
+
+**Every starred method needs settings set explicitly, and at least four of them produce something that is not a miniprotein binder campaign if you accept their defaults.** These are not tuning knobs — at defaults the method silently does the wrong job, and the canary in §2 still returns PASS because *something* ran. Resolve each against `tamarind --json schema TOOL` before submitting; this is a grounded snapshot, not the authority.
+
+| method | setting | default | why you must set it |
+|---|---|---|---|
+| `rfdiffusion` | `task` | **`Motif Scaffolding`** | **Not binder design.** All of `targetChains`, `binderLength`, `binderHotspots` are scoped to `Binder Design` and are ignored otherwise. Set `task: "Binder Design"`. |
+| | `binderLength` | required | A **string** range (`"60-80"`), not a number. |
+| `boltzgen` | `binderType` | **`de-novo-nanobody`** | **The default designs a nanobody** — the modality §0 puts out of scope. Set `binderType: "protein"`. |
+| | `budget` | **2** | Caps designs *returned* regardless of `numDesigns`. Left alone, a request for 50 backbones yields **2**, and the per-method floor silently goes undischarged. |
+| | `lengthRange` | protein `"100,150"` | Exists **only** on the `protein`/`peptide` tasks — so length is unsettable until `binderType` is right. The default also sits inside the mimic band. |
+| | `filterBindingSite` | **false** | Supplying `bindingSite` does **not** filter on it; the conditioning is soft and the schema says so. |
+| `pxdesign` | `pxdesignMode` | **`generation`** | Raw backbones, **no ranked table and no output contract at all**. Only `extended` writes `summary.csv`. |
+| | `binderLength` | **10** | Below this campaign's own 35-residue floor; every row would be refused by the gate. |
+| `mosaic-hallucinate` | `binderLength` | **220** | Above the 160 ceiling. |
+| `freebindcraft` | **`hotspotResidues`** | **optional — auto-selects** | **The one that breaks the campaign silently.** Its description reads *"If left empty suitable hotspots will be selected automatically."* Omit it and the tool picks its **own** epitope: no error, a normal-looking run, and a method aimed somewhere else. One frozen epitope across every method is this campaign's central invariant, and this is the only roster entry that answers a missing epitope by choosing **another one**. Six more violate the invariant just as silently by dropping the constraint and designing unaimed — see the adherence section below — but their designs at least are not aimed somewhere you did not pick. Audit it afterwards on the `Target_Hotspot` output column, documented as *"empty if auto-selected"* — an empty value there means the epitope was not yours. |
+| | `numDesigns` | **1** | It generates until this many designs *pass its filters*, and stops early on its runtime cap — so a run can end partial and silently short. |
+| | `maxRunTime` | 16 h (free: 4 h) | The cap that makes a run end partial. |
+| `genie3` | `foldNumModels` | 5 | Rows are per predicted **model**, and `rank` is the AF2 model rank, not a design ordinal — there is no design identifier at all. See [pool_schema.md](pool_schema.md). |
+
+## Aiming at the frozen epitope — the key per method
+
+Five spellings and four value grammars. Submission validates against that type's own schema and rejects the whole job on the first unrecognized key, so a spelling borrowed from a neighbour costs the entire round.
+
+| method | chain field | aiming field | required? | value shape |
+|---|---|---|---|---|
+| `rfdiffusion` | `targetChains` | `binderHotspots` | optional | `{"A": "20 21 23"}` — space |
+| `rfdiffusion3` | `targetChains` | `hotspots` | optional | no example in schema |
+| `freebindcraft` | `chains` | `hotspotResidues` | **optional — AUTO-SELECTS** | `{"A": "1-10"}` — dash range |
+| `boltzgen` | `targetChains` | `bindingSite` / `notBindingSite` | optional | no example in schema |
+| `pxdesign` | `targetChains` | `hotspots` | optional | `{"A": "12-33"}` — dash range |
+| `proteina-complexa` | `targetChains` | `hotspotResidues` | optional | `{"A": "37,39,49,98"}` — comma |
+| `genie3` | `targetChains` | `hotspots` | **REQUIRED** | `{"A": "261 263 264"}` — space |
+| `boltzdesign` | `targetChains` (+ `constraintChain` scopes the picker) | `constraintResidues` | optional | comma-separated |
+| `mosaic-hallucinate` | **none** — `targetSequence` only | — | — | cannot be aimed |
+| `protein-hunter` | **none** — `targetSequence`/`targetCCD` | — | — | cannot be aimed |
+
+Three carry **no example**, so the value shape cannot be read off the schema. The file field differs too — `genie3` takes `targetFile`, not `pdbFile`, and an unrecognized key fails the whole job.
+
+**Discover what is actually enforced with `tamarind --json validate`, which costs nothing.** Validating an empty payload returns the tool's *enforced* required-field list, which is the half a schema read can leave you guessing at:
+
+```
+tamarind --json validate genie3 --input empty.yaml --name probe
+  -> valid: false, missing_fields: [targetFile, hotspots]
+```
+
+That is how the `targetFile`/`pdbFile` difference above was found — a plausible-looking `pdbFile` came back under `unrecognized_settings`, which fails the whole job. Validate one payload per method before committing a round to it, and treat a `mutatedFields` warning as a failure: it means the validator silently altered your input.
+
+**Seven of the eight aimable methods accept no epitope without complaint.** Only `genie3` refuses — measured: omitting `hotspots` returns `valid: false` ("At least one residue is required"), while omitting `freebindcraft`'s `hotspotResidues` returns **`valid: true`** and runs. Forgetting the epitope is therefore a silent event on almost every method, and it fails in two different ways:
+
+- **FreeBindCraft substitutes its own epitope** — it selects hotspots automatically and designs against a site you did not choose. Its designs then look like ordinary members of the pool aimed somewhere else.
+- **The other six drop the constraint entirely** — the binder lands wherever the model prefers. Proteina-Complexa says so outright: "will design without specified hotspots."
+
+Neither errors, and the difference matters: the first is a *wrong* epitope, the second is *no* epitope.
+
+**Setting the key is not the same as hitting the site — measured.** Two methods given the *identical* frozen six-residue epitope on the same target, in the same campaign:
+
+| method | what it was given | what it delivered |
+|---|---|---|
+| `genie3` | `hotspots` (required) | `target_hotspot_coverage` = **1.0** on both designs — all 6 residues engaged |
+| `boltzgen` | `bindingSite` **plus `filterBindingSite: true`** | `bindsite_under_5rmsd` = **0.0** on 3 of 4 designs (0.167 on the fourth) |
+
+Same epitope, same target, opposite outcomes — and boltzgen had its post-filter switched on, which is the stricter setting. So the aim is genuinely a bias on some methods and a constraint on others, and **which one you got is only visible in the output.** Do not report a method as aimed at the frozen site because you set its key. Report the adherence number, per method, and treat a method that cannot reach the site as a diversity arm with that fact disclosed — not as a failure, and not silently as an aimed arm.
+
+**Audit adherence from the output, not from what you submitted.** Two methods hand you the check for free — `genie3` emits `target_hotspot_coverage` ("fraction of user-specified target hotspot residues the designed binder engages") and `boltzgen` emits `bindsite_under_*rmsd`. FreeBindCraft's `Target_Hotspot` is documented "empty if auto-selected", so a blank cell there means the epitope was not yours. For the rest, compute interface contacts against the frozen site yourself.
+
+**Setting `bindingSite` on `boltzgen` is necessary but not sufficient.** Its own `filterBindingSite` description states that "the soft bindingSite conditioning alone does not guarantee adherence" — so set `filterBindingSite: true` (default `false`) or accept that the aim is a bias rather than a constraint, and say which.
+
+"Every method got the same epitope" is a claim about what came back, not about what you sent.
+
+**None of these defaults produce an error.** Measured: a `boltzgen` submission carrying only a target file and `targetChains` validates clean, and its normalized settings come back `binderType: "de-novo-nanobody"`, `numDesigns: 10`, `budget: 2`, `filterBindingSite: false`. A clean validation is not evidence that you submitted the campaign you meant to. **Read the normalized settings that `tamarind --json validate` returns and check them against your frozen plan** — it is the only place the platform tells you what it actually decided to run.
+
 **No method opens the campaign by default.** The protocol names them as peers and requires backbones from each, so a preferred first method is a finger on the scale of the very comparison the campaign exists to make. A method whose outputs will not parse is a gap to disclose and fix, never a reason to substitute a different method for it.
 
 **Per-method floor: at least 50 backbones into the scored pool from every starred method not proved UNAVAILABLE.** NOT_PROBED still owes them — the way to discharge that is to run the canary, not to assume the method is dead. Beyond the floor, reallocate toward whichever methods perform best on this target and epitope, while staying under the selection caps.

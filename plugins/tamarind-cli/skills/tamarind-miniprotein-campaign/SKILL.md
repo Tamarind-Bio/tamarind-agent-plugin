@@ -29,6 +29,10 @@ python3 "$SKILL_DIR/scripts/select_panel.py" candidates.json --gate gate.json --
 
 Resolve `SKILL_DIR` to the directory holding this `SKILL.md`; do not assume the shell starts there. The scripts need `numpy` for the structural gates — without it they report those gates **NOT_RUN**, which is honest, and they never report them passed.
 
+**`numpy` also switches off the write-time recompute**, and that is the larger loss: without it `select_panel.py` prints `gate recompute: SKIPPED - disclose this` and ships the sheet anyway, so the halt in §7 that catches a row whose gates do not reproduce is simply not running. A stock machine often has no `numpy`. Install it before the campaign rather than discovering at the sheet that the campaign's last check never fired — and if you genuinely cannot, say in the report that gate reproduction was not verified.
+
+The pool these scripts read is **not** the shape any tool emits. Building it is a real step, and the two ways it goes wrong silently — an inverted chain split and a collapsed identifier — are in [references/pool_schema.md](references/pool_schema.md). Read it before the first gate run.
+
 **Where each piece runs.** Put the scripts on the workspace's own compute and keep every artifact — the frozen plan, the gate verdict, the rejects ledger, each stage's surviving pool, the sheet — in workspace storage under stable names, because later stages read them back rather than re-deriving them. Where the workspace can run review passes as separate agents, use one per review in §8 and keep them strictly serial. Where it cannot, run them yourself in the same order and say so.
 
 **What is still on you.** `select_panel.py` refuses to emit a panel without a PASS gate artifact, and it halts on a row whose gates do not reproduce — those two are mechanical. Nothing, however, stops you from submitting a scoring job that skips the gate entirely. That boundary is yours to hold, and §5 is where it costs the most.
@@ -58,14 +62,19 @@ Run one small canary per generation method **on the real campaign target with pr
 
 **Only UNAVAILABLE releases a method from its floor.** Recording it for a method you merely have not tested quietly excuses that method from the campaign.
 
-**Read the files, not the file listing.** Download the canary and open its actual result table — often neither the first nor the largest file — and read the run's own log for a stage that died silently:
+**Read the files, not the file listing.** Ask the schema which file is the result before you open anything — its output contract names the actual result table, and every other table the job wrote is an intermediate. It is often neither the first nor the largest file, and guessing from the listing is what once cost a working method its place in a campaign. Then download the canary and read the run's own log for a stage that died silently:
 
 ```bash
+tamarind --json schema TOOL          # its output contract names the real result table
 tamarind --json results CANARY_NAME --download /absolute/path/to/canary
 tamarind --json logs CANARY_NAME --max-lines 200
 ```
 
 Then name **which stage** lost the designs. "This method produced nothing" is a restatement, not a diagnosis, and it is the sentence that drops a working method.
+
+**A generator's own "success" table being empty is not the campaign's verdict.** Measured on a real run: Genie 3 returned an **empty** `success_info.csv` — zero designs passed its internal filter — while its actual result table held two perfectly usable designs at interface confidence up to 0.83, each engaging **all six** frozen epitope residues. Opening only the success file would have recorded RAN_NO_YIELD and dropped a method that worked. A method's internal acceptance criteria are its own, tuned for its own purpose; this campaign's gates are §4's. Read the result table its output contract names, and judge on your thresholds.
+
+**Check the job's status before you read absence as evidence.** An empty log and an empty file listing look identical whether the job has not started, is still running, or finished having produced nothing. Resolve the status with `tamarind --json status CANARY_NAME` first: only a *terminal* job supports a verdict. A queued job is NOT_PROBED, not RAN_NO_YIELD.
 
 When the diagnosis points at a setting, change that setting and re-run the canary. **At most two diagnosis-driven retries**, each changing something a diagnosis pointed at; then record the drop with its consequence and move that compute to methods that are producing. The common repairable shape is a generator whose own in-job sequence step rejects everything: turn that step off and route its backbones through this campaign's own sequence-design pass instead.
 
@@ -76,7 +85,7 @@ Probe the **chain**, not the first link. A canary is unfinished until one backbo
 See [references/roster.md](references/roster.md) for the roster, the sequence-carrying split, the epitope setting keys and the length policy. In outline:
 
 - single-chain miniproteins of **50–120 residues** (35–160 where epitope geometry motivates it, with the reason recorded), and **more than 25% away from every target chain's length** — set the length explicitly on every submit, because several tool defaults land inside the mimic band;
-- **every method gets the same frozen construct and the same frozen epitope.** Filling unresolved residues from the reference sequence inside the construct's own range is mechanical and needs no approval. Widening the construct is a different molecule and is never a per-method fix;
+- **every method gets the same frozen construct and the same frozen epitope** — and **almost nothing enforces this**. Seven of the eight aimable methods accept a submission with no epitope at all and run anyway: most simply drop the constraint, and FreeBindCraft goes further and picks its **own** site. Only Genie 3 refuses. So a missing epitope key is a silent event on nearly every method, and the resulting designs look like ordinary members of the pool. Set the key on every submit from `references/roster.md`, then **audit the site each method actually used from its own output** — that is the only evidence that the comparison this campaign exists to make was even run. Filling unresolved residues from the reference sequence inside the construct's own range is mechanical and needs no approval. Widening the construct is a different molecule and is never a per-method fix;
 - **at least 50 backbones from every starred method** not proved UNAVAILABLE. Track the per-method count as an open obligation;
 - backbone-only methods must pass through sequence design before they can be scored; sequence-carrying methods must not, because the extra hop mints a second id space and is how a design ships another backbone's sequence;
 - use the soluble sequence-design variant for anything destined to be ordered;
@@ -91,6 +100,8 @@ Every candidate is assessed before it is scored: novelty (sequence identity, loc
 Run these with `campaign_gates.py` (§0b) over the downloaded artifacts, not by hand and not through paid jobs. It writes one evidence row per design carrying the numbers that decided each verdict, plus the rejects ledger. **Record every rejected design_id and verify its absence from every downstream pool** — a gate counts as run only when its rejects are traceably absent downstream. **A gate that passes everything, fails everything, or returns a constant is broken until investigated.**
 
 The mimic screen is the one that has no second falsifier downstream: a structure generator conditioned on the target complex, asked for a binder near a target chain's length, will happily reproduce that chain's fold, and every confidence arm will like it.
+
+**Novelty's database limb is the other one you cannot skip, and it is the limb that does not run locally.** Measured on a real canary: a generator returned a 75-residue "de novo design" that is **93.3% identical to human ubiquitin**, matching its first 40 residues exactly — and it passed the liability gate cleanly, because ubiquitin is a perfectly well-behaved protein. Self-similarity and known-binder checks compare against the target and the controls; a natural protein is neither, so only a sequence-identity search against the wider protein universe sees it. That search is a Tamarind job. Run it on the survivors before the panel, and if you cannot, say in the report that the shipped designs were not checked against known proteins — otherwise the campaign can ship ubiquitin as a de novo binder with every other gate agreeing it looks fine.
 
 ## 5. Validate the scoring on known answers before production scoring
 
@@ -108,7 +119,15 @@ Nothing in the CLI will stop a production submission that skips this. The check 
 - a term an arm did not produce is **NOT_RUN** — never 0, never blank, never a plausible-looking number, and never averaged in;
 - when a limb did not run, report the **consequence**, not just the gap.
 
-Building these rows is the campaign's most error-prone submission. A scoring row that pairs a target with a candidate needs the combined value the live schema defines, so write explicit per-row settings with matching `jobNames` in the batch document. `tamarind-batch` owns that contract; follow it, and keep `--prevalidate` on every final batch command.
+Building these rows is the campaign's most error-prone submission. A scoring row must pair the target with the candidate in the combined value the live schema defines. **Chaining from a design job folds the candidate alone** — it reads that job's generated sequences, which are binders — so it cannot build a complex.
+
+**Generate the batch input document; never hand-write it.** This transport has no file fan-out that folds each record as-is — `tamarind batch` takes a YAML/JSON list of per-job settings, or an object carrying `batchName`, `type`, `settings` and `jobNames`, and `tamarind-batch` warns explicitly against inventing flags the CLI does not expose. So the safety property has to come from how the document is *built*, not from which route submits it: **write that YAML from the generation table programmatically**, each row's sequence setting holding the joined `TARGET:BINDER` value, so no sequence passes through your hands. A hand-written batch document is the defect this whole section exists to prevent — see the transcription rule below. Prevalidate it (`--prevalidate`) before submitting.
+
+`jobNames` lets this transport name each row after its design, which is worth doing — but a name is a label you wrote, not evidence of what was folded. Reconcile by reading each job's stored input sequence back and matching it to the design's binder — never by position, and never by job name alone. **That reconciliation is only unique while the binder sequences are** — two methods can converge on the same binder, and then no amount of sequence matching says which design a job belongs to. Collapse identical binder sequences BEFORE submitting the scoring batch: fold each distinct sequence once and carry the set of design ids that share it, which is also the only way the per-method attribution on the sheet stays true. The selection kernel rejects exact-sequence duplicates anyway, so the second copy was never going to reach a panel.
+
+**Thread every sequence programmatically from the generation table into the submission. Never transcribe one.** A hand-built scoring submission is how a design id ends up naming one molecule while the numbers beside it describe another, and **no gate can catch it** — the gates recompute against the row's own sequence, so a row scored on the wrong molecule reproduces perfectly and ranks on numbers that are not its own. Verifying this on a real run produced both failures in two rows: one id named design `n1` while the job folded `n0`, and one submitted sequence matched **no design in any result table** — it shared a prefix with a real design and then diverged. The platform accepted both, folded them, and returned entirely plausible confidence.
+
+So close it mechanically. After scoring, read each job's stored input back from the platform (`tamarind --json status JOB_NAME` returns the job, including the settings it actually ran) and carry that sequence onto the row as `scored_sequence` **verbatim, both chains and all** — do not trim it to the binder first. `select_panel.py` splits it into chains and halts when the row's own sequence is not one of them, and warns when no row carries it at all. Handing it a pre-trimmed value throws away the only evidence that the target went in with the design. Reconcile by sequence, not by position or by job name — the sequence is the only thing that is the same object on both sides of the submission.
 
 ## 7. Optimize, then select
 

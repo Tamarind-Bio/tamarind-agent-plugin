@@ -469,8 +469,15 @@ def test_gates_refuse_a_pool_row_with_no_sequence(tmp_path: Path) -> None:
 def test_gates_warn_when_a_gate_is_constant_across_the_pool(tmp_path: Path) -> None:
     """All-pass and all-reject are broken until investigated, same as all-NOT_RUN."""
     pool = tmp_path / "p.json"
+    # Distinct sequences on purpose: a pool of one repeated sequence is itself
+    # refused (it is the signature of a mis-split binder/target field), and a
+    # constant VERDICT does not need identical rows to reproduce.
     pool.write_text(json.dumps([
-        {"design_id": f"d{i}", "sequence": "MKKKKKKKKKKKKWWWWWWWWWWCAAAAAAAAAAAAAAAAAAAAAAAA"} for i in range(3)
+        {"design_id": f"d{i}", "sequence": seq} for i, seq in enumerate((
+            "MKKKKKKKKKKKKWWWWWWWWWWCAAAAAAAAAAAAAAAAAAAAAAAA",
+            "MEEEEEEEEEEEEWWWWWWWWWWCAAAAAAAAAAAAAAAAAAAAAAAA",
+            "MQQQQQQQQQQQQWWWWWWWWWWCAAAAAAAAAAAAAAAAAAAAAAAA",
+        ))
     ]))
     done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
     assert done.returncode == 0, done.stderr
@@ -757,3 +764,629 @@ def test_a_degenerate_term_halts_with_its_cause_named(tmp_path: Path) -> None:
     assert done.returncode != 0
     assert "rank_zscore is undefined for every eligible row" in done.stderr
     assert "sc_DockQ_ef2full" in done.stderr
+
+
+# ── Fixes found by running the skill end to end against live prod ────────────
+# Every test below reproduced a defect that shipped in the merged skill. The
+# first one is the worst kind: a refusal that was written, documented, tested
+# by nothing, and dead.
+
+
+def test_a_recompute_mismatch_names_the_row_instead_of_crashing(tmp_path: Path) -> None:
+    """The halt in §7 must PRINT the row whose gates did not reproduce.
+
+    The kernel declares `mismatches` as a list of design-id STRINGS, but this
+    branch read them as mappings -- so the halt raised AttributeError and the
+    operator got a traceback instead of the id and the gate. It fired on every
+    mismatch, i.e. exactly whenever the check actually caught something.
+    """
+    rows = _population(4)
+    # Carry a liability number that cannot reproduce from this row's own sequence.
+    rows[1]["liability_max_homopolymer_run"] = 999
+    rows[1]["liability_min_window_entropy_bits"] = 0.001
+    pool = tmp_path / "candidates.json"
+    pool.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(pool), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "4", "--out", str(tmp_path / "sheet.csv"))
+
+    assert "Traceback" not in done.stderr, done.stderr
+    assert "AttributeError" not in done.stderr
+    out = done.stdout + done.stderr
+    if "HALTED" in out:
+        assert "p1" in out, f"the halt must name the row: {out}"
+        assert "liability" in out
+
+
+def test_a_duplicate_design_id_is_refused_cleanly(tmp_path: Path) -> None:
+    """A repeated id makes the caps, the ledger and the trace ambiguous.
+
+    campaign_gates.py already refused this in a clean paragraph one stage
+    earlier; the selector let the kernel's bare ValueError escape instead.
+    """
+    rows = _population(3)
+    rows[2]["design_id"] = rows[0]["design_id"]
+    pool = tmp_path / "dupe.json"
+    pool.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(pool), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+
+    assert done.returncode != 0
+    assert "Traceback" not in done.stderr, done.stderr
+    assert "duplicate design_id" in done.stdout + done.stderr
+
+
+def test_an_empty_panel_names_why_the_rows_were_unranked(tmp_path: Path) -> None:
+    """The row-intrinsic checks drop rows BEFORE selection.
+
+    So a pool emptied entirely that way has empty `rejection_counts`, and the
+    refusal used to print no reason at all -- on precisely the run where the
+    operator has nothing else to go on.
+    """
+    rows = _population(3)
+    for row in rows:
+        row["opt_round"] = ""
+    pool = tmp_path / "allbad.json"
+    pool.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(pool), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+
+    out = done.stdout + done.stderr
+    assert "no candidate survived" in out
+    assert "unranked because" in out, f"the refusal must name a reason: {out}"
+    assert "opt_round" in out
+
+
+def _gated(tmp_path: Path, rows: list[dict]) -> list[dict]:
+    pool = tmp_path / "pool.json"
+    pool.write_text(json.dumps(rows))
+    out = tmp_path / "gates.csv"
+    done = _run("campaign_gates.py", str(pool), "--out", str(out))
+    assert out.exists(), done.stdout + done.stderr
+    import csv
+    with out.open() as fh:
+        return list(csv.DictReader(fh))
+
+
+def test_a_reject_reason_is_not_written_into_the_not_run_column(tmp_path: Path) -> None:
+    """The kernel returns a `reason` for ANY verdict, not only NOT_RUN.
+
+    Folding them together wrote REJECT rationales into a column named
+    `gate_not_run_reason`, so a consumer filtering on it counted refused
+    designs as gates that never ran -- the exact confusion every NOT_RUN in
+    this script exists to prevent.
+    """
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    for row in rows:
+        if row.get("gate_not_run_reason"):
+            for gate in ("structural_plausibility_verdict", "target_mimic_verdict"):
+                assert row.get(gate) != "REJECT" or row.get("gate_reject_reason"), (
+                    f"{row['design_id']}: a REJECT rationale landed in the "
+                    f"not-run column: {row['gate_not_run_reason']!r}"
+                )
+
+
+def test_an_unclassifiable_fold_is_not_a_fourth_verdict_token(tmp_path: Path) -> None:
+    """`selection.md` allows PASS / REJECT / NOT_RUN and nothing else.
+
+    The fold classifier does not RAISE when it cannot classify -- it returns a
+    value whose str() is "unknown" -- so the except branch never fired and a
+    reasonless fourth token reached the sheet.
+    """
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    for row in rows:
+        fold = (row.get("fold_class") or "").strip()
+        assert fold.lower() != "unknown", "an unclassifiable fold must be NOT_RUN, not 'unknown'"
+        if fold == "NOT_RUN":
+            assert row.get("fold_class_not_run_reason"), (
+                f"{row['design_id']}: NOT_RUN with no reason"
+            )
+
+
+def test_the_drift_check_defaults_to_the_ref_it_was_vendored_from() -> None:
+    """`--ref` defaulted to `main`, where the source package does not exist.
+
+    So the drift detector the manifest exists to enable was inoperable out of
+    the box, and failed as an unhandled CalledProcessError rather than a
+    diagnosis. The default is now read back from the manifest itself.
+    """
+    tool = ROOT / "tools/vendor_campaign_kernel.py"
+    spec = importlib.util.spec_from_file_location("vendor_tool", tool)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    manifest = (MCP_SCRIPTS / "_kernel/VENDORED.md").read_text()
+    assert f"- ref: `{module.recorded_ref()}`" in manifest
+    assert module.recorded_ref() != "main"
+
+
+def test_a_pool_of_one_repeated_sequence_is_refused(tmp_path: Path) -> None:
+    """Measured on live prod, not hypothesised.
+
+    RFdiffusion's `seq` column joins binder and target, and its own schema
+    documents them in the OPPOSITE order from the one it delivers -- a real
+    PD-L1 run returned target-first while the description said binder-first.
+    Following the documentation therefore yields a pool in which every row is
+    the target: legal length, ordinary composition, and it passes every other
+    check in this script.
+    """
+    target = "FTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQ"
+    pool = tmp_path / "wrong_half.json"
+    pool.write_text(json.dumps(
+        [{"design_id": f"d{i}", "sequence": target} for i in range(8)]
+    ))
+
+    done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+
+    assert done.returncode != 0, "a pool of one repeated sequence must fail closed"
+    out = done.stdout + done.stderr
+    assert "identical" in out
+    assert "TARGET" in out, f"the refusal must name the cause: {out}"
+
+
+def test_a_legitimately_varied_pool_is_not_caught_by_that_check(tmp_path: Path) -> None:
+    """The guard must not fire on a real pool that happens to share some rows."""
+    rows = [{"design_id": f"d{i}", "sequence": seq}
+            for i, seq in enumerate(_SEQUENCES)]
+    rows.append({"design_id": "dup", "sequence": _SEQUENCES[0]})  # a legitimate repeat
+    pool = tmp_path / "varied.json"
+    pool.write_text(json.dumps(rows))
+
+    done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "identical" not in done.stdout
+
+
+def test_a_row_scored_on_a_different_sequence_halts(tmp_path: Path) -> None:
+    """The one defect no gate can catch, reproduced for real during verification.
+
+    Every gate recomputes against the row's OWN sequence, so a row whose SCORES
+    came from a different molecule reproduces perfectly and ranks on numbers
+    that are not its own. Hand-building a scoring submission produced exactly
+    this twice in one small run: one row mislabelled, and one whose submitted
+    sequence matched no design anywhere.
+    """
+    rows = _population(3)
+    rows[1]["scored_sequence"] = _SEQUENCES[2]          # folded a different design
+    rows[0]["scored_sequence"] = rows[0]["sequence"]
+    rows[2]["scored_sequence"] = rows[2]["sequence"]
+    pool = tmp_path / "swapped.json"
+    pool.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(pool), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+
+    assert done.returncode != 0
+    out = done.stdout + done.stderr
+    assert "not among the chains" in out
+    assert "p1" in out, f"the halt must name the row: {out}"
+
+
+def test_matching_scored_sequences_pass_and_absence_warns(tmp_path: Path) -> None:
+    """Present-and-equal must not trip; absent must not be silent."""
+    ok = _population(3)
+    for r in ok:
+        r["scored_sequence"] = r["sequence"]
+    good = tmp_path / "ok.json"
+    good.write_text(json.dumps(ok))
+    done = _run("select_panel.py", str(good), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "a.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "not among the chains" not in done.stdout + done.stderr
+
+    silent = tmp_path / "nocol.json"
+    silent.write_text(json.dumps(_population(3)))
+    done = _run("select_panel.py", str(silent), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "b.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "no row carries scored_sequence" in done.stderr
+
+
+def test_a_0_100_plddt_against_a_0_1_floor_halts(tmp_path: Path) -> None:
+    """The vacuous-gate case: a Protenix pLDDT judged by an ESMFold2 floor.
+
+    Measured on real rows for the same construct -- ESMFold2 reports mean pLDDT
+    on 0-1 (0.7884) and Protenix on 0-100 (86.75). Against the frozen 0.70
+    floor every 0-100 value clears, so the foldability gate reports PASS on
+    every design while rejecting nothing. Refuse rather than rescale: only the
+    campaign knows which arm produced the column.
+    """
+    rows = _population(3)
+    for row, value in zip(rows, (86.75, 91.2, 78.4)):
+        row["monomer_plddt"] = value
+    src = tmp_path / "hundreds.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+
+    assert done.returncode != 0
+    out = done.stdout + done.stderr
+    assert "monomer_plddt exceeds 1.0" in out, out
+    assert "p0" in out, f"the halt must name the rows: {out}"
+
+
+def test_the_plddt_scale_halt_leaves_a_consistent_pool_alone(tmp_path: Path) -> None:
+    """It must fire on the MISMATCH, not on either scale used consistently."""
+    on_0_1 = _population(3)
+    for row, value in zip(on_0_1, (0.7884, 0.81, 0.74)):
+        row["monomer_plddt"] = value
+    src = tmp_path / "unit.json"
+    src.write_text(json.dumps(on_0_1))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "a.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+
+    # The same 0-100 values are fine once the floor is declared on that scale.
+    on_0_100 = _population(3)
+    for row, value in zip(on_0_100, (86.75, 91.2, 78.4)):
+        row["monomer_plddt"] = value
+    src = tmp_path / "hundreds-ok.json"
+    src.write_text(json.dumps(on_0_100))
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--monomer-floor", "70",
+                "--out", str(tmp_path / "b.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "monomer_plddt exceeds 1.0" not in done.stdout + done.stderr
+
+
+def test_a_missing_ref_is_diagnosed_not_a_traceback(tmp_path: Path) -> None:
+    """The ordinary failure -- the kernel lives on a branch a checkout may lack.
+
+    It used to surface as an unhandled CalledProcessError, which named neither
+    the ref nor the path, on the one command whose job is detecting drift.
+    """
+    repo = tmp_path / "agent"
+    repo.mkdir()
+    for cmd in (("init", "-q"), ("config", "user.email", "t@t"),
+                ("config", "user.name", "t"), ("commit", "-q", "--allow-empty", "-m", "x")):
+        subprocess.run(["git", "-C", str(repo), *cmd], check=True, capture_output=True)
+
+    done = subprocess.run(
+        [sys.executable, str(ROOT / "tools/vendor_campaign_kernel.py"),
+         "--agent-repo", str(repo), "--check"],
+        capture_output=True, text=True,
+    )
+    assert done.returncode != 0
+    out = done.stdout + done.stderr
+    assert "Traceback" not in out, out
+    assert "campaign/cda/subagents" in out, out
+    assert "--ref" in out, out
+
+
+def _helix_pdb(path: Path, n: int = 30, chain: str = "B", annotated: bool = True) -> Path:
+    """A minimal CA-only chain, optionally carrying its own HELIX record.
+
+    The kernel resolves secondary structure from HELIX/SHEET records when the
+    file has them and returns "unknown" when nothing resolves, so this builds
+    both the classifiable and the unclassifiable case without any structure
+    dependency.
+    """
+    lines = []
+    if annotated:
+        lines.append(f"HELIX    1   1 ALA {chain}   1  ALA {chain}  {n:>3}  1{' ':>36}{n:>5}")
+    for i in range(1, n + 1):
+        lines.append(
+            f"ATOM  {i:>5}  CA  ALA {chain}{i:>4}    "
+            f"{i * 1.5:>8.3f}{0.0:>8.3f}{0.0:>8.3f}  1.00 50.00           C"
+        )
+    lines.append("END")
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def test_a_classified_fold_keeps_its_label(tmp_path: Path) -> None:
+    """`dssp_fold_class` returns a STRING, not an object.
+
+    Reading it through `getattr(fold, "fold_class", ...)` yields None for every
+    real classification, so the whole column collapsed to NOT_RUN and took the
+    evidence for the >=10% non-all-alpha diversity target with it.
+    """
+    pdb = _helix_pdb(tmp_path / "design.pdb")
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq,
+         "designed_structure_path": str(pdb), "binder_chain": "B"}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    assert rows, "the gate wrote no rows"
+    for row in rows:
+        assert row["fold_class"] == "all_alpha", (
+            f"{row['design_id']}: a classified fold must keep its label, got "
+            f"{row['fold_class']!r}"
+        )
+        assert not row.get("fold_class_not_run_reason"), row
+
+
+def test_an_unclassifiable_structure_is_still_not_run(tmp_path: Path) -> None:
+    """The other half: "unknown" is a non-classification and must say so.
+
+    The kernel returns it rather than raising, so the except branch never fires
+    and a reasonless fourth token would otherwise reach the sheet.
+    """
+    pdb = _helix_pdb(tmp_path / "flat.pdb", annotated=False)
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq,
+         "designed_structure_path": str(pdb), "binder_chain": "B"}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    assert rows
+    for row in rows:
+        assert row["fold_class"] == "NOT_RUN", row
+        assert row["fold_class_not_run_reason"], f"{row['design_id']}: NOT_RUN with no reason"
+
+
+def test_a_complex_scored_sequence_matches_its_binder_chain(tmp_path: Path) -> None:
+    """The recommended scoring route folds `TARGET:BINDER` as one record.
+
+    So the stored input read back from the platform carries both chains while
+    the row carries the binder alone. A plain equality check calls every
+    correctly scored complex a mismatch and halts on the good case.
+    """
+    target = "FTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQ"
+    rows = _population(3)
+    for row in rows:
+        row["scored_sequence"] = f"{target}:{row['sequence']}"
+    src = tmp_path / "complex.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+
+    # ...and a binder that is in NO chain of what was folded still halts.
+    wrong = _population(3)
+    for row in wrong:
+        row["scored_sequence"] = f"{target}:{_SEQUENCES[0]}"
+    bad = tmp_path / "wrong.json"
+    bad.write_text(json.dumps(wrong))
+    done = _run("select_panel.py", str(bad), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "b.csv"))
+    assert done.returncode != 0
+    assert "not among the chains" in done.stdout + done.stderr
+
+
+def test_the_plddt_scale_halt_does_not_need_numpy(tmp_path: Path) -> None:
+    """It compares two numbers, so it must not sit behind the kernel import.
+
+    Sited beside the recompute it was inside `if sr is not None`, which is
+    False on exactly the stock machine with no numpy that SKILL.md calls the
+    common case -- absent from every run that most needed it.
+    """
+    rows = _population(3)
+    for row, value in zip(rows, (86.75, 91.2, 78.4)):
+        row["monomer_plddt"] = value
+    src = tmp_path / "hundreds.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--skip-recompute",
+                "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode != 0, done.stdout + done.stderr
+    assert "monomer_plddt exceeds 1.0" in done.stdout + done.stderr
+
+
+def test_partial_scored_sequence_coverage_is_disclosed(tmp_path: Path) -> None:
+    """A non-empty `scored` silenced the "nothing verifies this" warning.
+
+    Partial coverage is MORE suspicious than none -- the read-back ran and
+    these rows escaped it -- so it must not be quieter than an unannotated
+    pool.
+    """
+    rows = _population(3)
+    rows[0]["scored_sequence"] = rows[0]["sequence"]
+    src = tmp_path / "partial.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "2 of 3 row(s) carry no scored_sequence" in done.stderr, done.stderr
+    for did in ("p1", "p2"):
+        assert did in done.stderr, f"the warning must name {did}: {done.stderr}"
+
+
+def test_a_0_1_plddt_against_a_0_100_floor_also_halts(tmp_path: Path) -> None:
+    """The mirror of the units halt.
+
+    It fails loudly rather than silently -- every design lands under the floor
+    -- so it is the less dangerous direction. But with `--skip-recompute`, or
+    no numpy, nothing recomputes the floor at all and the rows ship on carried
+    verdicts with the declared floor never reconciled against the column.
+    """
+    rows = _population(3)
+    for row, value in zip(rows, (0.7884, 0.81, 0.74)):
+        row["monomer_plddt"] = value
+    src = tmp_path / "units.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--monomer-floor", "70",
+                "--skip-recompute", "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode != 0, done.stdout + done.stderr
+    out = done.stdout + done.stderr
+    assert "at or below 1.0" in out, out
+    assert "p0" in out, out
+
+
+def test_ids_that_differ_only_in_type_are_still_duplicates(tmp_path: Path) -> None:
+    """Reproduced, not reasoned about.
+
+    The kernel stringifies before its own duplicate check, so numeric 1 beside
+    string "1" walked past a raw-value set here and hit
+    `ValueError: duplicate design_id '1'` inside selection -- a bare traceback
+    out of the one path this refusal exists to keep clean.
+    """
+    rows = _population(3)
+    rows[0]["design_id"] = 1
+    rows[1]["design_id"] = "1"
+    src = tmp_path / "mixed_ids.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode != 0
+    out = done.stdout + done.stderr
+    assert "Traceback" not in out, out
+    assert "duplicate design_id 1" in out, out
+
+
+def test_one_catastrophic_prediction_is_not_a_units_mismatch(tmp_path: Path) -> None:
+    """The reverse units check is an INFERENCE, so it demands unanimity.
+
+    A value above 1.0 is impossible on a 0-1 scale, so one proves a mismatch.
+    A value at or below 1.0 is only astonishing on a 0-100 scale, so refusing
+    the run over a single catastrophic prediction would abort a correctly
+    declared campaign instead of letting the monomer gate reject that row.
+    """
+    rows = _population(3)
+    for row, value in zip(rows, (86.75, 91.2, 0.9)):   # one hopeless design
+        row["monomer_plddt"] = value
+    src = tmp_path / "one_bad.json"
+    src.write_text(json.dumps(rows))
+
+    done = _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                "--panel-size", "3", "--monomer-floor", "70",
+                "--skip-recompute", "--out", str(tmp_path / "sheet.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "at or below 1.0" not in done.stdout + done.stderr
+
+
+def test_an_unsplit_pool_gets_the_alphabet_refusal_not_the_split_one(tmp_path: Path) -> None:
+    """The sharper refusal has to win, exactly as the guard's comment claims.
+
+    An UN-SPLIT `TARGET/BINDER` string is identical on every row and of legal
+    length, so the identical-sequence check (which runs first) would diagnose a
+    chain split -- true in spirit, but it names the wrong repair and hides the
+    stray `/` that says what actually happened.
+    """
+    unsplit = "MKQLEDKVEELLSKNYHLENEVARLKKLVGERG/FTVTVPKDLYVVEYGSNMTIECKFPVEKQ"
+    pool = tmp_path / "unsplit.json"
+    pool.write_text(json.dumps(
+        [{"design_id": f"d{i}", "sequence": unsplit} for i in range(4)]
+    ))
+    done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+    assert done.returncode != 0
+    out = done.stdout + done.stderr
+    assert "non-residue characters" in out, out
+    assert "identical" not in out, f"the sharper refusal must win: {out}"
+
+
+def test_a_not_run_mimic_verdict_cannot_reach_the_panel(tmp_path: Path) -> None:
+    """The absolute gate was bypassed by a column-name mismatch.
+
+    `select_with_diversity_caps` resolves the ban from `row["target_mimic"]`,
+    falling back to the bare `target_mimic_tm_max` number. The port wrote the
+    verdict as `target_mimic_verdict` -- a name the ban never reads -- so a row
+    whose mimic screen explicitly did NOT run shipped on the strength of its
+    number, and the summary counted zero NOT_RUN mimic rows.
+
+    Measured before the fix, against the PASS control below: both arms shipped
+    3 of 3. The control is what makes this a test and not a coincidence.
+    """
+    def arm(verdict):
+        rows = _population(3)
+        for row in rows:
+            row["target_mimic"] = verdict
+            row["target_mimic_verdict"] = verdict
+            row["target_mimic_tm_max"] = 0.31        # below the ban threshold
+        src = tmp_path / f"{verdict}.json"
+        src.write_text(json.dumps(rows))
+        return _run("select_panel.py", str(src), "--gate", str(_gate(tmp_path)),
+                    "--panel-size", "3", "--out", str(tmp_path / f"{verdict}.csv"),
+                    "--json")
+
+    control = arm("PASS")
+    assert control.returncode == 0, control.stdout + control.stderr
+    assert json.loads(control.stdout)["panel_size_shipped"] == 3
+
+    done = arm("NOT_RUN")
+    assert done.returncode != 0, (
+        "a NOT_RUN mimic gate must not ship: " + done.stdout + done.stderr
+    )
+    assert "NOT_RUN" in done.stdout + done.stderr
+
+
+def test_the_gate_writes_the_mimic_verdict_where_the_kernel_reads_it(tmp_path: Path) -> None:
+    """The other half: the gate has to emit the kernel's own column name."""
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    assert rows
+    for row in rows:
+        carried = str(row.get("target_mimic") or "")
+        assert carried, f"{row['design_id']}: the kernel reads `target_mimic` and it is absent"
+        # No reference chains in this fixture, so the screen did not run and the
+        # verdict word -- not a number -- has to be what the ban sees.
+        assert carried == "NOT_RUN" == row["target_mimic_verdict"], (
+            f"{row['design_id']}: an un-run screen must carry NOT_RUN, got {carried!r}"
+        )
+
+
+def _helix_3d_pdb(path: Path, n: int = 40, chain: str = "B") -> Path:
+    """A real 3-D helix, so TM-align has something to superpose."""
+    import math
+    lines = [f"HELIX    1   1 ALA {chain}   1  ALA {chain}  {n:>3}  1{' ':>36}{n:>5}"]
+    for i in range(1, n + 1):
+        t = i * 100.0 * math.pi / 180.0
+        x, y, z = 2.3 * math.cos(t), 2.3 * math.sin(t), 1.5 * i
+        lines.append(
+            f"ATOM  {i:>5}  CA  ALA {chain}{i:>4}    "
+            f"{x:>8.3f}{y:>8.3f}{z:>8.3f}  1.00 50.00           C"
+        )
+    lines.append("END")
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def test_the_measurement_not_the_word_goes_where_the_ban_reads(tmp_path: Path) -> None:
+    """The regression the previous fix introduced, pinned at the GATE.
+
+    The kernel prefers a verdict WORD in `target_mimic` over the numeric
+    fallback, so writing the word there let a stale or misjoined PASS outrank a
+    measured TM at or above the ban threshold -- and nothing downstream re-runs
+    the mimic screen to catch it. Where the screen produced a measurement, that
+    measurement is what must reach the ban.
+
+    Scoring a design against ITSELF is the cheap way to force a real number:
+    TM = 1.0, verdict REJECT, so the two candidate values are distinguishable.
+    """
+    pdb = _helix_3d_pdb(tmp_path / "design.pdb")
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps([[str(pdb), "B"]]))
+    pool = tmp_path / "pool.json"
+    pool.write_text(json.dumps([{
+        "design_id": "d0", "sequence": _SEQUENCES[0],
+        "designed_structure_path": str(pdb), "binder_chain": "B",
+    }]))
+    out = tmp_path / "gates.csv"
+    done = _run("campaign_gates.py", str(pool), "--reference-chains", str(refs),
+                "--out", str(out))
+    assert out.exists(), done.stdout + done.stderr
+
+    import csv as _csv
+
+    def number(value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    row = next(iter(_csv.DictReader(out.open())))
+    assert row["target_mimic_verdict"] == "REJECT", row
+    assert number(row["target_mimic_tm_max"]) is not None, row
+    carried = row["target_mimic"]
+    assert number(carried) is not None, (
+        "the ban must receive the MEASUREMENT, not the verdict word: "
+        f"target_mimic={carried!r}"
+    )
+    assert number(carried) == number(row["target_mimic_tm_max"]), row
