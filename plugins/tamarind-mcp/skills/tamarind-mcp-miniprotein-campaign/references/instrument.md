@@ -88,10 +88,13 @@ is the discipline this page already requires for a different reason, and it is a
 how you *discover* which side of the flag you are on. Reconcile every scored row
 against the job's stored input **by sequence**, and assert the chain count and each
 chain's length against the frozen construct. If they disagree, fail the row rather
-than ranking it — and treat the affected construct as unsubmittable and say so, since
-a homo-oligomeric target is the common case and every one of its scoring constructs
-repeats a chain. Do not silently score a monomeric crop instead: that is a different
-construct and the protocol forbids the swap.
+than ranking it — and treat the affected construct as unsubmittable and say so. On a
+homo-oligomeric target that is the complex and the target-only control, both of which
+repeat the target chain. It is NOT the binder-alone monomer fold: that construct is a
+single chain, repeats nothing, and stays submittable — a blanket refusal there would
+leave `monomer_foldability_verdict` at NOT_RUN for no reason. Do not silently score a
+monomeric crop in place of an affected construct either: that is a different construct
+and the protocol forbids the swap.
 
 ## Score algebra — fix it, then never touch it
 
