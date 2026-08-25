@@ -391,7 +391,18 @@ def main():
         if isinstance(raw_ss, (list, tuple)):
             ss_codes = list(raw_ss) or None
         else:
-            ss_codes = str(raw_ss or "").strip() or None
+            # DO NOT strip a scalar. DSSP writes SPACE for coil and the kernel
+            # accepts it (` ` is in `_SS_ANY_CODES`, normalised to C), so a real
+            # assignment with coil at either terminus -- " " + "H"*58 + " " --
+            # loses two per-residue codes to `.strip()`. Harmless while the
+            # codes were merely forwarded; once the count is checked against the
+            # chain it turns a VALID canonical input into a refused pool.
+            #
+            # Incidental CSV padding is not a reason to trim: the length check
+            # is what tells the two apart. Padding makes the count wrong and is
+            # refused; a true DSSP string matches the chain exactly and passes.
+            text = str(raw_ss or "")
+            ss_codes = text if text.strip() else None
         body = _pdb_body(pdb) if pdb and os.path.exists(pdb) else None
         if ss_codes is not None:
             _check_ss_codes(helpers, did, ss_codes, body, chain, seq)

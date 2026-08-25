@@ -1585,3 +1585,39 @@ def test_well_formed_ss_codes_still_reach_the_classifier(tmp_path: Path) -> None
     row = list(csv.DictReader((tmp_path / "g.csv").read_text().splitlines()))[0]
     assert row["fold_class"] == "all_alpha"
     assert row["fold_ss_method"] == "supplied"
+
+
+def test_terminal_coil_survives_a_scalar_dssp_string(tmp_path: Path) -> None:
+    """`.strip()` on a scalar deletes per-residue codes DSSP actually wrote.
+
+    DSSP writes SPACE for coil and the kernel accepts it -- ` ` is in
+    `_SS_ANY_CODES` and normalises to C. So a real assignment with coil at
+    either terminus loses two codes to a strip. That was harmless while the
+    codes were merely forwarded; once the count is checked against the chain it
+    turns a VALID canonical input into a refused pool, on exactly the path this
+    wiring exists to make reachable.
+
+    Incidental CSV padding is not a reason to trim: the length check tells them
+    apart, because padding makes the count wrong and a true DSSP string matches.
+    """
+    res = 60
+    pdb = tmp_path / "b.pdb"
+    pdb.write_text(_two_chain_pdb(records_on="T", b_res=res))
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{
+            "design_id": "d1",
+            "sequence": _SEQUENCES[1][:res].ljust(res, "A"),
+            "designed_structure_path": str(pdb),
+            "binder_chain": "B",
+            "ss_codes": " " + "H" * (res - 2) + " ",
+        }])
+    )
+    out = tmp_path / "g.csv"
+    done = _run("campaign_gates.py", str(pool), "--out", str(out))
+    assert done.returncode == 0, done.stdout + done.stderr
+    import csv
+
+    row = list(csv.DictReader(out.read_text().splitlines()))[0]
+    assert row["fold_class"] == "all_alpha"
+    assert row["fold_ss_method"] == "supplied"
