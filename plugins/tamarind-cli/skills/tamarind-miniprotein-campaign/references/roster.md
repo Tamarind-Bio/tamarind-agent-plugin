@@ -19,6 +19,29 @@ The lowercase token is the job `type`; the name in parentheses is the only spell
 | `boltzdesign` | BoltzDesign1 | optional |
 | `protein-hunter` | Protein Hunter | optional |
 
+## What the protocol names — and what the catalog carried when this was written
+
+The protocol's structure-design roster is RFdiffusion*, RFdiffusion3*,
+FreeBindCraft*, BoltzGen*, PXDesign*, Proteina-Complexa*, Genie3* (starred, and
+owing the floor), plus Mosaic, FoldCraft, BoltzDesign1, HalluDesign and Protein
+Hunter. **All seven starred methods were present.** Two unstarred ones were not — re-check both against `tamarind --json tools` before recording either as dropped:
+
+- **FoldCraft** — the protocol names it specifically as the way to design binders
+  "that include beta-sheets and mixed alpha-beta folds, not only all-alpha helical
+  bundles, by supplying small beta-containing reference folds". Its absence bears
+  directly on the 10% non-all-alpha objective, so record the drop with **that**
+  consequence, not as a generic missing tool.
+- **HalluDesign** — hallucinates through Protenix v2, Chai-1 or Boltz. `mosaic-hallucinate`
+  occupies the same niche here (gradient-based, through Boltz-2/Protenix/AlphaFold/
+  OpenDDE) but is a different tool; name it as a substitute rather than reporting
+  HalluDesign as run.
+
+The catalog also carries generators the protocol does not name — BindCraft itself,
+BoltzProt-1, RSO, DISCO, EvoPro, AnewOmni, Promera. The protocol permits adding any
+open-source tool with a usable license **once a production run has taken it end to
+end on a real target**; an unrun tool is not roster material. Added arms do not owe
+the 50-backbone floor, which belongs to the starred set.
+
 ## Defaults you must override, per method
 
 **Every starred method needs settings set explicitly, and at least four of them produce something that is not a miniprotein binder campaign if you accept their defaults.** These are not tuning knobs — at defaults the method silently does the wrong job, and the canary in §2 still returns PASS because *something* ran. Resolve each against `tamarind --json schema TOOL` before submitting; this is a grounded snapshot, not the authority.
@@ -58,12 +81,22 @@ Five spellings and four value grammars. Submission validates against that type's
 
 Three carry **no example**, so the value shape cannot be read off the schema. The file field differs too — `genie3` takes `targetFile`, not `pdbFile`, and an unrecognized key fails the whole job.
 
-**Discover what is actually enforced with `tamarind --json validate`, which costs nothing.** Validating an empty payload returns the tool's *enforced* required-field list, which is the half a schema read can leave you guessing at:
+**Probe what is actually enforced with `tamarind --json validate`, which costs nothing — but read the `error`, not just `missing_fields`.** Validating an empty payload names what the tool refuses to run without:
 
 ```
 tamarind --json validate genie3 --input empty.yaml --name probe
-  -> valid: false, missing_fields: [targetFile, hotspots]
+  -> valid: false, missing_fields: [targetFile, targetChains, hotspots]
+
+tamarind --json validate rfdiffusion --input empty.yaml --name probe
+  -> valid: false, missing_fields: []      <- EMPTY
+     error: 'Missing required rfdiffusion field "pdbFile"'
+
+tamarind --json validate boltzgen --input empty.yaml --name probe
+  -> valid: false, missing_fields: []      <- EMPTY
+     error: 'Missing required boltzgen field "targetFile"'
 ```
+
+**`missing_fields` is populated for some tools and empty for others, and it is empty on the two most complicated ones.** Measured on prod: genie3 and freebindcraft list their fields; rfdiffusion and boltzgen return `[]` and name only the FIRST missing field, in the `error` string. boltzgen has 25 task-gated required parameters and rfdiffusion's requirements shift across its 8 tasks, so an empty `missing_fields` means *this surface did not answer*, never *this tool needs one field*. The TYPED source for field names is the schema: `tamarind --json schema TOOL` carries a `required` flag on each one. It over-reports rather than under-reports — boltzgen marks 25 required, gated by task — so read it for the NAMES and let the probe tell you which of them your task actually enforces. Treat the probe as best-effort confirmation: fix the field the `error` names, validate again, and keep going until it passes. **The error string's wording is not a contract** — match the field name it quotes, never the sentence around it, and if the text stops naming a field, fall back to the schema and say the probe stopped answering rather than guessing a payload.
 
 That is how the `targetFile`/`pdbFile` difference above was found — a plausible-looking `pdbFile` came back under `unrecognized_settings`, which fails the whole job. Validate one payload per method before committing a round to it, and treat a `mutatedFields` warning as a failure: it means the validator silently altered your input.
 

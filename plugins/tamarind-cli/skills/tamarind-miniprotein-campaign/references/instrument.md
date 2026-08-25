@@ -115,6 +115,52 @@ Shard every scoring batch at **500 members or fewer**.
 
 **Carry the surviving pool forward as an artifact, not as a re-derived list.** A large design job's file listing can exceed the listing cap and come back partial, and a partial pool scores a subset while looking complete. Write each stage's survivors to a file and read the next stage's members from it.
 
+## Two columns the protocol requires that no arm emits
+
+Both are computed by the vendored kernel from job output you join yourself
+(`_kernel/screen_gate_metrics.py`); neither has a bundled CLI, so they are built in
+the same step that builds the scoring rows.
+
+### Sequence feasibility — an ESM-C log-likelihood on every ranked design
+
+The protocol requires one on every design that receives a rank. **Use `esmc-6b`
+with `task="scan"`, and name the tool on every row you ship.**
+
+**Two tools write the same file, the same column header, and different
+quantities.** `esmc-6b` at `task="scan"` emits a mean pseudo **negative
+log-likelihood** in nats — `-mean(log P)`, explicitly "not a perplexity". `esmc-scan`
+emits the **pseudo-perplexity** — the exponential of that. Both land in
+`global_score.csv` under a column called `score`, and the ranges overlap (an NLL is
+≥ 0, a perplexity is ≥ 1), so **nothing in the value tells you which you have**.
+`esmc_ll = -score` is correct for the first and wrong for the second *by a
+logarithm* — a wrong number of entirely plausible magnitude on every row.
+
+Nothing enforces this for you — `select_panel.py` neither reads `esmc_ll` nor requires it, so a row missing it still ranks. Freeze `esmc-6b:scan`, record that token beside every `esmc_ll`, and do not accept
+a value whose producing tool is not named. `esmc-inference` is not a candidate at
+all: it runs a model *you* finetuned, and its output's scale and direction are
+model-dependent.
+
+### N:N stoichiometry on an oligomeric target
+
+Every ranked design is scored at **both** stoichiometries, and they answer different
+questions:
+
+- **1:N** — one binder against all N protomers. This is the construct that feeds the
+  ranking.
+- **N:N** — one binder per protomer at full occupancy. Record its interface
+  confidence, its pose term, and the **binder-binder clash count** as additional
+  sheet columns.
+
+Build the N:N reference by applying the target multimer's own symmetry operators to
+the single designed binder pose; co-fold the prediction with N independent binder
+chains; and take the best symmetric chain relabeling when comparing them. **Disclose
+any design whose N:N score collapses relative to its 1:N** — that is a design which
+only works when its neighbours are empty, and the ranking construct cannot see it.
+
+Put the stoichiometry beside every number on a multimeric target. Absolute interface
+confidence compresses with chain count, so a 1:N and an N:N number are not
+comparable to each other and neither is comparable across targets.
+
 ## Optimization rounds
 
 At least five rounds, continuing while the metrics improve.

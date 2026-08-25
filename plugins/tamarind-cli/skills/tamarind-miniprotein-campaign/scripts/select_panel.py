@@ -220,7 +220,7 @@ GATE_VERDICT_COLUMNS = (
 RECOGNIZED_VERDICTS = ("PASS", "REJECT", "NOT_RUN")
 
 
-def _bad_gate_verdicts(row):
+def _bad_gate_verdicts(row, allow_novelty_gap=False):
     """Reason this row's gate verdicts do not clear it for ranking, or None.
 
     Refusing only the literal REJECT would let a row that never carried the
@@ -249,6 +249,37 @@ def _bad_gate_verdicts(row):
                 "absence -- run target_mimic_screen on this row, or declare the gate "
                 "unavailable campaign-wide and say so in the report"
             )
+        # Novelty joins the mimic screen at THIS stage and only at this stage.
+        # The protocol exempts UniRef90 staging before dispatch and then
+        # requires the full check "before any row reaches the FINAL ranked
+        # sheet" -- which is this file. So a NOT_RUN novelty verdict, or a PASS
+        # earned at the dispatch tier, is not final-sheet evidence, and the two
+        # are indistinguishable without the tier column.
+        if column == "novelty_verdict":
+            # The escape covers the TIER, never a NOT_RUN. Its whole stated
+            # purpose is "the UniRef90 search was unavailable but the local arms
+            # cleared this design" -- which is a dispatch-tier PASS. A NOT_RUN
+            # means the gate did not clear the design at all (a missing corpus
+            # produces one), so admitting it under a flag whose help text
+            # promises only the UniRef90 gap is a wider hole than advertised.
+            if verdict == "NOT_RUN":
+                return (
+                    "novelty_verdict is NOT_RUN: the protocol requires the "
+                    "full-UniRef90 check and the ubiquitin rejection before any row "
+                    "reaches the ranked sheet -- run the search and re-gate with "
+                    "--novelty-tier final, or pass --allow-novelty-not-final and "
+                    "report that the shipped designs were not checked against known "
+                    "proteins"
+                )
+            tier = str(row.get("novelty_tier") or "").strip().lower()
+            if tier != "final" and not allow_novelty_gap:
+                return (
+                    f"novelty_tier is {tier or 'absent'!r}, not 'final': a "
+                    "dispatch-tier clearance did not screen UniRef90, so it is not "
+                    "evidence for the ranked sheet -- re-gate with "
+                    "--novelty-tier final, or pass --allow-novelty-not-final and "
+                    "disclose the gap"
+                )
     return None
 
 
@@ -385,6 +416,10 @@ def main():
                     help="per_seed_metrics.csv; verifies coverage and that each per-arm\naggregate is the max over that design and arm's seed rows")
     ap.add_argument("--pose-threshold", type=float, default=POSE_THRESHOLD_DEFAULT,
                     help="frozen pose_dockq threshold; pose_PASS is derived, never trusted")
+    ap.add_argument("--allow-novelty-not-final", action="store_true",
+                    help="rank rows whose novelty gate did not reach the final tier "
+                         "(no UniRef90 search). A DISCLOSED gap: the report must say "
+                         "the shipped designs were not checked against known proteins.")
     ap.add_argument("--allow-reduced-instrument", action="store_true",
                     help="rank without the pose limb; a DISCLOSED reduction that must be\nreported on every row and in the deliverable")
     ap.add_argument("--skip-recompute", action="store_true",
@@ -587,7 +622,7 @@ def main():
         reason = (
             _bad_sequence(row.get("sequence"))
             or _bad_lineage(row)
-            or _bad_gate_verdicts(row)
+            or _bad_gate_verdicts(row, args.allow_novelty_not_final)
             or _bad_seed_count(row)
         )
         if reason:

@@ -214,7 +214,12 @@ def _candidate(design_id: str, z: float, _index: int = 0, **over) -> dict:
         "tm_cluster": f"c-{design_id}",
         "target_mimic": "PASS", "opt_round": 0, "n_seeds": 5,
         "liability_verdict": "PASS", "structural_plausibility_verdict": "PASS",
-        "target_mimic_verdict": "PASS", "novelty_verdict": "NOT_RUN",
+        # novelty PASS at the FINAL tier: this fixture is a design that IS
+        # clearable. It read NOT_RUN while the gate could not run at all; now
+        # that it runs, the sheet writer requires the full-UniRef90 tier, and a
+        # fixture carrying the old value would be asserting the gap is fine.
+        "target_mimic_verdict": "PASS", "novelty_verdict": "PASS",
+        "novelty_tier": "final",
         "monomer_foldability_verdict": "NOT_RUN",
         "ipsae_ef2full": 0.5 + z / 100, "sc_DockQ_ef2full": 0.3 + z / 100,
     }
@@ -1111,11 +1116,18 @@ def test_an_unclassifiable_structure_is_still_not_run(tmp_path: Path) -> None:
 
     The kernel returns it rather than raising, so the except branch never fires
     and a reasonless fourth token would otherwise reach the sheet.
+
+    The unclassifiable input has to be unclassifiable for EVERY resolver. An
+    earlier version used a helix with its HELIX record stripped, which is only
+    unreadable when biotite is absent -- so it passed in CI (which installs
+    numpy but not biotite) and failed the moment biotite was installed. That
+    is a test pinned to a missing dependency rather than to behaviour. Naming
+    a chain the file does not contain leaves nothing to resolve either way.
     """
-    pdb = _helix_pdb(tmp_path / "flat.pdb", annotated=False)
+    pdb = _helix_pdb(tmp_path / "flat.pdb", annotated=False, chain="B")
     rows = _gated(tmp_path, [
         {"design_id": f"d{i}", "sequence": seq,
-         "designed_structure_path": str(pdb), "binder_chain": "B"}
+         "designed_structure_path": str(pdb), "binder_chain": "Z"}   # no chain Z in the file
         for i, seq in enumerate(_SEQUENCES)
     ])
     assert rows
@@ -1390,3 +1402,927 @@ def test_the_measurement_not_the_word_goes_where_the_ban_reads(tmp_path: Path) -
         f"target_mimic={carried!r}"
     )
     assert number(carried) == number(row["target_mimic_tm_max"]), row
+
+
+def test_supplied_dssp_codes_reach_the_fold_classifier(tmp_path: Path) -> None:
+    """The canonical path has to be reachable from the gate, not just the kernel.
+
+    The target is defined "not-all-alpha under DSSP", but the classifier's only
+    dependency-free fallback is P-SEA -- a different assignment. Generator PDBs
+    carry no HELIX/SHEET records, so without forwarding `ss_codes` the run fell
+    to P-SEA or to NOT_RUN no matter what DSSP the campaign had in hand.
+    """
+    pdb = _helix_pdb(tmp_path / "plain.pdb", n=40, annotated=False, chain="B")
+    # BOTH shapes a pool can carry. A DSSP tool -- and biotite's own
+    # annotate_sse -- emits per-residue codes as a LIST, and str() on that
+    # yields "['E', 'E', ...]", whose punctuation the kernel reads as coil:
+    # measured, 40 strand residues give all_beta as a list and `other` once
+    # coerced. The scalar string is what a CSV pool carries.
+    for tag, codes in (("scalar", "E" * 40), ("list", ["E"] * 40)):
+        rows = _gated(tmp_path, [
+            {"design_id": f"{tag}-d{i}", "sequence": seq,
+             "designed_structure_path": str(pdb), "binder_chain": "B", "ss_codes": codes}
+            for i, seq in enumerate(_SEQUENCES)
+        ])
+        assert rows, tag
+        for row in rows:
+            assert row["fold_class"] == "all_beta", (
+                f"{tag} {row['design_id']}: supplied DSSP codes must decide the class, "
+                f"got {row['fold_class']!r}"
+            )
+            assert row.get("fold_ss_method") == "supplied", row
+
+
+def test_every_classified_row_names_the_method_that_resolved_it(tmp_path: Path) -> None:
+    """A diversity figure with no method beside it is not evidence.
+
+    The target is defined under DSSP; the classifier's last resort is P-SEA.
+    Stamping the method only when the pool supplied codes left the fallback
+    cases unlabelled, so a P-SEA class could be reported as DSSP-derived.
+    """
+    annotated = _helix_pdb(tmp_path / "withrecords.pdb", chain="B")          # HELIX present
+    rows = _gated(tmp_path, [
+        {"design_id": f"r{i}", "sequence": seq,
+         "designed_structure_path": str(annotated), "binder_chain": "B"}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    assert rows
+    for row in rows:
+        assert row["fold_class"] == "all_alpha", row
+        assert row["fold_ss_method"] == "pdb-records", (
+            f"{row['design_id']}: a class resolved from the file's own records must say so, "
+            f"got {row.get('fold_ss_method')!r}"
+        )
+
+
+# ── Anthropic L81: the novelty gate the port had nailed shut ────────────────
+#
+# `campaign_gates.py` wrote `novelty_verdict = NOT_RUN` unconditionally, so the
+# campaign's most consequential pre-scoring filter never ran on any design --
+# while a complete implementation sat vendored in `_kernel/novelty_gate.py`.
+# Three of L81's four arms need no external search at all.
+
+# Human ubiquitin (UniProt P0CG47/P0CG48). L81 calls it out by name because it
+# "often emerges with short terminal extensions", which is why the gate detects
+# it by local alignment rather than exact match.
+_UBIQUITIN = (
+    "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
+)
+_TARGET_PDL1 = (
+    "AFTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQ"
+    "LSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPY"
+)
+
+
+def _gates_rows(tmp_path: Path, pool: list[dict], *args: str):
+    """Run campaign_gates over a pool and return (completed_process, rows)."""
+    pool_path = tmp_path / "pool.json"
+    pool_path.write_text(json.dumps(pool))
+    out = tmp_path / "gates.csv"
+    done = _run("campaign_gates.py", str(pool_path), "--out", str(out), *args)
+    rows = []
+    if out.exists():
+        import csv
+
+        rows = list(csv.DictReader(out.read_text().splitlines()))
+    return done, rows
+
+
+def test_a_design_that_is_really_ubiquitin_is_rejected_with_no_search_job(
+    tmp_path: Path,
+) -> None:
+    """The measured escape, now caught locally.
+
+    A generator returned a 75-residue "de novo design" whose first 40 residues
+    were ubiquitin's exactly. It passed liability cleanly -- ubiquitin is a
+    perfectly well-behaved protein -- and the port marked novelty NOT_RUN, so
+    nothing kept it out. No UniRef90, no corpus and no network is needed to
+    catch it: the kernel carries the ubiquitin subject itself.
+    """
+    design = _UBIQUITIN[:40] + "GSGSEEALKKAEELLKKAEELLKKGSG"
+    done, rows = _gates_rows(tmp_path, [{"design_id": "d_ubq", "sequence": design}])
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "REJECT"
+    assert rows[0]["novelty_top_subject_kind"] == "ubiquitin"
+    # The numbers that decided it, not just the word. A verdict with an empty
+    # evidence cell beside it is unfalsifiable -- and this column WAS empty
+    # first time round, because it was read under a key the kernel never writes.
+    assert float(rows[0]["novelty_top_identity"]) == 1.0
+    assert int(rows[0]["novelty_top_aligned_columns"]) == 40
+
+
+def test_a_design_that_is_a_slice_of_the_campaigns_own_target_is_rejected(
+    tmp_path: Path,
+) -> None:
+    """L81's self-similarity arm, against the target the campaign froze.
+
+    This is the arm that catches a target-fold mimic at the SEQUENCE level,
+    before any co-folding spend and independently of the structural TM screen.
+    It runs off the reference chains the pool already supplies.
+    """
+    refs = tmp_path / "refs.json"
+    refs.write_text(
+        json.dumps(
+            [{"pdb": "ref.pdb", "chain": "A", "sequence": _TARGET_PDL1,
+              "role": "target"}]
+        )
+    )
+    done, rows = _gates_rows(
+        tmp_path,
+        [{"design_id": "d_mimic", "sequence": _TARGET_PDL1[10:80]}],
+        "--reference-chains", str(refs),
+    )
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "REJECT"
+    assert rows[0]["novelty_top_subject_kind"] == "target_chain"
+
+
+def test_a_reference_with_no_sequence_leaves_the_self_similarity_arm_not_run(
+    tmp_path: Path,
+) -> None:
+    """The pair form feeds the structural screen only, and says so.
+
+    A `[pdb, chain]` reference carries no sequence, and the sequence is NOT
+    inferred from the PDB -- a silently mis-parsed reference is a gate pointed
+    at the wrong molecule. The arm is disclosed as un-run rather than passing.
+    """
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps([["ref.pdb", "A"]]))
+    done, rows = _gates_rows(
+        tmp_path,
+        [{"design_id": "d1", "sequence": _TARGET_PDL1[10:80]}],
+        "--reference-chains", str(refs),
+    )
+    assert done.returncode == 0, done.stderr
+    assert "target_chain" in rows[0]["novelty_arms_not_run"]
+    assert rows[0]["novelty_verdict"] != "PASS"
+
+
+def test_a_clean_design_is_not_run_rather_than_passed_without_the_corpus(
+    tmp_path: Path,
+) -> None:
+    """The combination rule: clean-but-incomplete is NOT_RUN, never PASS.
+
+    L79 stages the known-binder corpus in the first hour. Until it is, a design
+    that tripped no arm has still not been screened against a required subject
+    set, and calling that PASS would report a gate as run while filtering
+    against nothing.
+    """
+    done, rows = _gates_rows(
+        tmp_path, [{"design_id": "d_clean", "sequence": _SEQUENCES[1]}]
+    )
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "NOT_RUN"
+    assert "known_binder_corpus" in rows[0]["novelty_arms_not_run"]
+
+
+def test_a_malformed_uniref90_hits_file_is_refused_not_downgraded_to_not_run(
+    tmp_path: Path,
+) -> None:
+    """A bad input file must never be able to discard a rejection already made.
+
+    Measured while wiring this up: a hits file whose columns were named
+    `gapped_identity`/`query_coverage` instead of MMseqs2's own made the kernel
+    raise INSIDE the verdict, after the known-binder arm had already rejected
+    the design. The per-row catch turned that raise into NOT_RUN and the
+    standing REJECT went with it -- a bad file silently loosening the gate.
+    So the file is judged once, at startup, and an unusable hit refuses the run.
+    """
+    hits = tmp_path / "hits.json"
+    hits.write_text(
+        json.dumps({"d1": [{"subject_id": "U1", "gapped_identity": 0.92,
+                            "query_coverage": 0.88}]})
+    )
+    done, _ = _gates_rows(
+        tmp_path,
+        [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--uniref90-hits", str(hits),
+    )
+    assert done.returncode != 0
+    combined = done.stdout + done.stderr
+    assert "unusable hit" in combined
+    # Name the repair, not just the fault.
+    assert "fident" in combined and "qcov" in combined
+
+
+def test_precomputed_uniref90_hits_reach_the_verdict(tmp_path: Path) -> None:
+    """The one limb that cannot run locally, joined back in from a search job."""
+    hits = tmp_path / "hits.json"
+    hits.write_text(
+        json.dumps({"d1": [{"target": "UniRef90_Q9XYZ1", "fident": 0.92,
+                            "qcov": 0.88}]})
+    )
+    # The final tier also requires the target-chain arm to have subjects, so the
+    # reference carries its sequence rather than only its chain id.
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps([{"pdb": "r.pdb", "chain": "A",
+                                 "sequence": _TARGET_PDL1, "role": "target"}]))
+    done, rows = _gates_rows(
+        tmp_path,
+        [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--reference-chains", str(refs),
+        "--uniref90-hits", str(hits), "--novelty-tier", "final",
+    )
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "REJECT"
+    assert rows[0]["novelty_top_subject"] == "UniRef90_Q9XYZ1"
+
+
+def test_the_final_novelty_tier_refuses_without_uniref90_hits(
+    tmp_path: Path,
+) -> None:
+    """L79 requires the full-UniRef90 check before any row reaches the sheet.
+
+    Asking for the final tier with nothing to judge would mark every design
+    NOT_RUN and rank none -- a campaign that looks gated and ships no panel.
+    """
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps([{"pdb": "r.pdb", "chain": "A",
+                                 "sequence": _TARGET_PDL1, "role": "target"}]))
+    done, _ = _gates_rows(
+        tmp_path,
+        [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--reference-chains", str(refs), "--novelty-tier", "final",
+    )
+    assert done.returncode != 0
+    assert "--novelty-tier final requires --uniref90-hits" in (
+        done.stdout + done.stderr
+    )
+
+
+def test_lcp_score_is_recorded_and_penalises_low_complexity(
+    tmp_path: Path,
+) -> None:
+    """L73's mandatory sequence restraint, recorded per design.
+
+    Reported, never a gate: the protocol makes LCP a restraint on sequence
+    design and a recorded metric, not a rejection threshold. Higher is worse.
+    """
+    done, rows = _gates_rows(
+        tmp_path,
+        [
+            {"design_id": "d_clean", "sequence": _SEQUENCES[1]},
+            {"design_id": "d_repeat", "sequence": "EK" * 35},
+        ],
+    )
+    assert done.returncode == 0, done.stderr
+    by_id = {r["design_id"]: r for r in rows}
+    clean = float(by_id["d_clean"]["lcp_score"])
+    repeat = float(by_id["d_repeat"]["lcp_score"])
+    assert repeat > clean, (repeat, clean)
+
+
+def test_novelty_faces_the_constant_gate_warning_like_every_other_gate(
+    tmp_path: Path,
+) -> None:
+    """It was exempt while it could not run. It can run now, so the exemption goes.
+
+    "A gate that passes everything, fails everything, or returns a constant is
+    broken until investigated" has to cover novelty too, or the one gate whose
+    whole job is rejecting copies is also the one nothing checks.
+    """
+    src = (MCP_SCRIPTS / "campaign_gates.py").read_text()
+    assert 'always_not_run = {"monomer_foldability"}' in src
+    assert '"novelty"' not in src.split("always_not_run =")[1].split("\n")[0]
+
+
+# ── round 4: the fold_ss_method label had to be ASKED, not guessed ──────────
+
+
+def _gates_module():
+    """Import campaign_gates so its helpers can be unit-tested directly."""
+    sys.path.insert(0, str(MCP_SCRIPTS))
+    spec = importlib.util.spec_from_file_location(
+        "campaign_gates_under_test", MCP_SCRIPTS / "campaign_gates.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _two_chain_pdb(records_on: str = "T", t_res: int = 40, b_res: int = 60) -> str:
+    """A two-chain complex whose HELIX record annotates only `records_on`."""
+    lines = [
+        f"HELIX    1   1 ALA {records_on}    2  ALA {records_on}   14  1"
+        f"{'':34}13"
+    ]
+    serial = 0
+
+    def cas(chain: str, count: int) -> list[str]:
+        nonlocal serial
+        out = []
+        for i in range(count):
+            serial += 1
+            x, y, z = i * 1.5, (i % 3) * 1.2, (i % 2) * 0.9
+            out.append(
+                f"ATOM  {serial:5d}  CA  ALA {chain}{i + 1:4d}    "
+                f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00 50.00           C"
+            )
+        return out
+
+    lines += cas("T", t_res) + cas("B", b_res)
+    return "\n".join(lines) + "\nEND\n"
+
+
+def test_records_on_another_chain_are_not_reported_as_this_chains_method(
+    kernel,
+) -> None:
+    """P-SEA output must never be labelled record-derived.
+
+    The first version of this check grepped the whole file for a line starting
+    HELIX or SHEET. The kernel keeps only records whose chain matches the one
+    being classified, so on a complex whose records annotate the TARGET chain
+    the binder falls through to P-SEA -- while the file-wide grep still said
+    `pdb-records`. The diversity target is defined under DSSP and P-SEA is a
+    different assignment, so that label is the whole evidentiary claim.
+
+    Unit-tested on the helper rather than end to end: the fallback only really
+    runs when biotite is installed, and CI does not install it.
+    """
+    helpers, _ = kernel
+    gates = _gates_module()
+    body = _two_chain_pdb(records_on="T")
+
+    # Ground truth from the kernel's own resolver.
+    assert helpers._ss_from_pdb_records(body, "T") != ""
+    assert helpers._ss_from_pdb_records(body, "B") == ""
+
+    assert gates._resolved_ss_method(helpers, body, "T", None) == "pdb-records"
+    assert gates._resolved_ss_method(helpers, body, "B", None) == "biotite-psea"
+    # Supplied codes short-circuit both, on either chain.
+    assert gates._resolved_ss_method(helpers, body, "B", ["H"] * 60) == "supplied"
+
+
+def _ss_pool(tmp_path: Path, codes, chain: str = "B", res: int = 60):
+    pdb = tmp_path / "complex.pdb"
+    pdb.write_text(_two_chain_pdb(records_on="T", b_res=res))
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps(
+            [
+                {
+                    "design_id": "d1",
+                    "sequence": _SEQUENCES[1][:res].ljust(res, "A"),
+                    "designed_structure_path": str(pdb),
+                    "binder_chain": chain,
+                    "ss_codes": codes,
+                }
+            ]
+        )
+    )
+    return _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+
+
+def test_ss_codes_of_the_wrong_length_refuse_the_pool(tmp_path: Path) -> None:
+    """A stale array still classifies -- it just classifies something else.
+
+    `_normalize_ss_codes` maps every unrecognized character to coil and checks
+    no length, and `_fold_class_from_ss` takes fractions over whatever it is
+    handed. So a 40-code array joined onto a 60-residue design returns a
+    plausible class rather than failing, and it lands in the diversity evidence.
+    """
+    done = _ss_pool(tmp_path, ["E"] * 40, res=60)
+    assert done.returncode != 0
+    combined = done.stdout + done.stderr
+    assert "supplies 40 ss_codes" in combined and "60 residues" in combined
+
+
+def test_ss_codes_for_a_chain_that_does_not_exist_refuse_the_pool(
+    tmp_path: Path,
+) -> None:
+    """Codes describing a chain the structure does not have describe nothing."""
+    done = _ss_pool(tmp_path, ["H"] * 60, chain="Z")
+    assert done.returncode != 0
+    assert "has no residues in its structure" in (done.stdout + done.stderr)
+
+
+def test_a_stringified_ss_code_list_is_refused_on_its_length(
+    tmp_path: Path,
+) -> None:
+    """The trap round 3 introduced, caught by the check that was already there.
+
+    An alphabet check used to catch this too, and it was deleted: the kernel
+    owns the secondary-structure alphabet, a second copy in the wrapper went
+    stale against it (no `P`, which current DSSP emits), and it was redundant
+    anyway -- a stringified list of 60 codes is 300 characters against a
+    60-residue chain, so the length check refuses it on those grounds alone.
+    """
+    done = _ss_pool(tmp_path, str(["E"] * 60))
+    assert done.returncode != 0
+    assert "supplies 300 ss_codes" in (done.stdout + done.stderr)
+
+
+def test_well_formed_ss_codes_still_reach_the_classifier(tmp_path: Path) -> None:
+    """The control: the validation must not refuse the canonical path."""
+    done = _ss_pool(tmp_path, ["H"] * 60)
+    assert done.returncode == 0, done.stderr
+    import csv
+
+    row = list(csv.DictReader((tmp_path / "g.csv").read_text().splitlines()))[0]
+    assert row["fold_class"] == "all_alpha"
+    assert row["fold_ss_method"] == "supplied"
+
+
+# ── PR-22 round 1: the novelty gate runs, but nothing downstream enforced it ─
+
+
+def test_a_malformed_reference_cannot_discard_a_rejection_already_made(
+    tmp_path: Path,
+) -> None:
+    """The same failure as a malformed hits file, one call site over.
+
+    The kernel converts target/control chains AFTER running the ubiquitin and
+    known-binder arms, so a reference like "123" raises on top of an
+    ALREADY-ESTABLISHED REJECT -- and a per-row `except Exception` reports the
+    whole verdict as NOT_RUN, which the sheet writer used to admit. A design
+    that IS a copy would keep its rejection nowhere.
+    """
+    refs = tmp_path / "refs.json"
+    refs.write_text(
+        json.dumps([{"pdb": "r.pdb", "chain": "A", "sequence": "123",
+                     "role": "target"}])
+    )
+    design = _UBIQUITIN[:40] + "GSGSEEALKKAEELLKKAEELLKKGSG"
+    done, _ = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": design}],
+        "--reference-chains", str(refs),
+    )
+    assert done.returncode != 0
+    assert "is unusable" in (done.stdout + done.stderr)
+
+
+def test_a_not_run_novelty_verdict_states_which_subject_was_missing(
+    tmp_path: Path,
+) -> None:
+    """The kernel routes its explanation by outcome; read the right key.
+
+    A REJECT fills `reason`; a NOT_RUN fills `not_run_reason` and leaves
+    `reason` None. Reading only `reason` left the actionable half -- WHICH
+    required subject set was unavailable -- out of the artifact entirely.
+    """
+    done, rows = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}]
+    )
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "NOT_RUN"
+    assert "known-binder corpus" in rows[0]["gate_not_run_reason"]
+
+
+def test_lcp_says_why_it_is_absent_rather_than_going_blank(
+    tmp_path: Path,
+) -> None:
+    """The pool validator accepts X/B/Z/J/U/O; the LCP port accepts only AA20.
+
+    A blanket catch returning None dropped a MANDATORY recorded metric on every
+    design carrying an ambiguity code, with nothing on the row to say so.
+    """
+    done, rows = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1][:-1] + "X"}]
+    )
+    assert done.returncode == 0, done.stderr
+    assert not rows[0]["lcp_score"]
+    assert "LcpInputError" in rows[0]["lcp_not_run_reason"]
+
+
+def test_the_rejects_ledger_carries_the_numbers_that_decided_each_rejection(
+    tmp_path: Path,
+) -> None:
+    """An entry of {design_id, gate} gives a reader no way to audit the removal."""
+    rejects = tmp_path / "rejects.json"
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{"design_id": "d_ubq",
+                     "sequence": _UBIQUITIN[:40] + "GSGSEEALKKAEELLKKAEELLKKGSG"}])
+    )
+    done = _run("campaign_gates.py", str(pool), "--rejects", str(rejects),
+                "--out", str(tmp_path / "g.csv"))
+    assert done.returncode == 0, done.stderr
+    entry = next(e for e in json.loads(rejects.read_text())["rejected"]
+                 if e["gate"] == "novelty")
+    assert entry["novelty_top_subject_kind"] == "ubiquitin"
+    assert float(entry["novelty_top_identity"]) == 1.0
+    assert int(entry["novelty_top_aligned_columns"]) == 40
+
+
+def test_dispatch_tier_novelty_evidence_cannot_reach_the_ranked_sheet(
+    tmp_path: Path,
+) -> None:
+    """The protocol exempts UniRef90 before dispatch and requires it before the sheet.
+
+    Without the tier column a dispatch clearance and a final one are
+    indistinguishable to the writer, so dispatch evidence shipped as final
+    evidence. NOT_RUN is likewise not a pass here -- this is the same rule the
+    mimic screen already gets, applied at the stage the protocol names.
+    """
+    gate = _gate(tmp_path)
+    for over, expected in (
+        ({"novelty_verdict": "NOT_RUN"}, "novelty_verdict is NOT_RUN"),
+        ({"novelty_tier": "dispatch"}, "not 'final'"),
+        ({"novelty_tier": ""}, "not 'final'"),
+    ):
+        pool = tmp_path / "c.json"
+        pool.write_text(json.dumps([_candidate(f"p{i}", float(i), _index=i, **over)
+                                    for i in range(3)]))
+        done = _run("select_panel.py", str(pool), "--gate", str(gate),
+                    "--panel-size", "3", "--out", str(tmp_path / "s.csv"))
+        assert expected in (done.stdout + done.stderr), (over, done.stdout[-400:])
+
+    # And the disclosed escape still ships, because a campaign that genuinely
+    # cannot run the search must be able to say so rather than be stuck.
+    pool = tmp_path / "c2.json"
+    pool.write_text(json.dumps([_candidate(f"p{i}", float(i), _index=i,
+                                           novelty_tier="dispatch")
+                                for i in range(3)]))
+    done = _run("select_panel.py", str(pool), "--gate", str(gate),
+                "--panel-size", "3", "--allow-novelty-not-final",
+                "--out", str(tmp_path / "s2.csv"))
+    assert done.returncode == 0, done.stderr
+
+
+def test_terminal_coil_survives_a_scalar_dssp_string(tmp_path: Path) -> None:
+    """`.strip()` on a scalar deletes per-residue codes DSSP actually wrote.
+
+    DSSP writes SPACE for coil and the kernel accepts it -- ` ` is in
+    `_SS_ANY_CODES` and normalises to C. So a real assignment with coil at
+    either terminus loses two codes to a strip. That was harmless while the
+    codes were merely forwarded; once the count is checked against the chain it
+    turns a VALID canonical input into a refused pool, on exactly the path this
+    wiring exists to make reachable.
+
+    Incidental CSV padding is not a reason to trim: the length check tells them
+    apart, because padding makes the count wrong and a true DSSP string matches.
+    """
+    res = 60
+    pdb = tmp_path / "b.pdb"
+    pdb.write_text(_two_chain_pdb(records_on="T", b_res=res))
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{
+            "design_id": "d1",
+            "sequence": _SEQUENCES[1][:res].ljust(res, "A"),
+            "designed_structure_path": str(pdb),
+            "binder_chain": "B",
+            "ss_codes": " " + "H" * (res - 2) + " ",
+        }])
+    )
+    out = tmp_path / "g.csv"
+    done = _run("campaign_gates.py", str(pool), "--out", str(out))
+    assert done.returncode == 0, done.stdout + done.stderr
+    import csv
+
+    row = list(csv.DictReader(out.read_text().splitlines()))[0]
+    assert row["fold_class"] == "all_alpha"
+    assert row["fold_ss_method"] == "supplied"
+
+
+# ── PR-22 round 2 ──────────────────────────────────────────────────────────
+
+
+def _corpus(tmp_path: Path, n: int) -> Path:
+    """A FASTA corpus of `n` distinct entries."""
+    import random
+
+    rng = random.Random(0)
+    lines = []
+    for i in range(n):
+        seq = "".join(rng.choice("ACDEFGHIKLMNPQRSTVWY") for _ in range(80))
+        lines.append(f">kb{i}\n{seq}")
+    p = tmp_path / "corpus.fasta"
+    p.write_text("\n".join(lines) + "\n")
+    return p
+
+
+def test_the_corpus_arm_refuses_a_workload_it_cannot_finish(
+    tmp_path: Path,
+) -> None:
+    """The kernel's cap is per invocation; the POOL multiplies it.
+
+    `CORPUS_LOCAL_ALIGNMENT_MAX_PAIRS` is compared against `len(corpus.entries)`
+    alone, so the ~16,500-entry corpus the protocol ships never trips it -- while
+    a 20,000-design pool against it is ~330M local alignments. Measured at
+    ~0.5 ms per alignment that is about 46 hours single-core, on a campaign with
+    a 24-hour clock. Refusing up front with the arithmetic beats discovering it
+    two days in.
+    """
+    sys.path.insert(0, str(MCP_SCRIPTS))
+    from _kernel import novelty_gate as ng  # noqa: E402
+
+    cap = ng.CORPUS_LOCAL_ALIGNMENT_MAX_PAIRS
+    entries = 400
+    designs = cap // entries + 2          # just over the aggregate cap
+    corpus = _corpus(tmp_path, entries)
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{"design_id": f"d{i}", "sequence": _SEQUENCES[i % 4]}
+                    for i in range(designs)])
+    )
+    done = _run("campaign_gates.py", str(pool), "--known-binders", str(corpus),
+                "--out", str(tmp_path / "g.csv"))
+    assert done.returncode != 0
+    combined = done.stdout + done.stderr
+    assert "local alignments, above the" in combined
+    # Names the way forward, not just the refusal.
+    assert "--known-binder-hits" in combined
+
+
+def test_precomputed_corpus_hits_replace_the_in_process_aligner(
+    tmp_path: Path,
+) -> None:
+    """The seam the kernel's own cap message points at, exposed on the wrapper."""
+    hits = tmp_path / "kb.json"
+    hits.write_text(
+        json.dumps({"d1": [{"target": "known_binder_7", "fident": 0.91,
+                            "qcov": 0.83}]})
+    )
+    done, rows = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--known-binder-hits", str(hits),
+    )
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "REJECT"
+    assert rows[0]["novelty_top_subject"] == "known_binder_7"
+
+
+def test_the_corpus_cannot_be_supplied_twice_in_different_forms(
+    tmp_path: Path,
+) -> None:
+    """Two subject sets under one arm, and the row could not say which decided."""
+    hits = tmp_path / "kb.json"
+    hits.write_text(json.dumps({"d1": []}))
+    done, _ = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--known-binders", str(_corpus(tmp_path, 5)),
+        "--known-binder-hits", str(hits),
+    )
+    assert done.returncode != 0
+    assert "not both" in (done.stdout + done.stderr)
+
+
+def test_the_final_tier_requires_target_sequences_not_just_chain_ids(
+    tmp_path: Path,
+) -> None:
+    """`final` certifies the whole gate ran, including the self-similarity arm.
+
+    With the documented `[pdb, chain]` pair form there are no sequences to align,
+    so the kernel records `target_chain` in `arms_not_run` -- and a clean row
+    could still carry PASS at tier `final`, promising an arm that never ran.
+    """
+    refs = tmp_path / "refs.json"
+    refs.write_text(json.dumps([["ref.pdb", "A"]]))
+    done, _ = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--reference-chains", str(refs), "--novelty-tier", "final",
+    )
+    assert done.returncode != 0
+    assert "requires a SEQUENCE on every reference chain" in (done.stdout + done.stderr)
+
+    # Controls count as much as targets: a campaign that never compared its
+    # designs against its own controls has not run this gate either, and the
+    # kernel records `control_chain` in arms_not_run without blocking on it.
+    refs.write_text(json.dumps([
+        {"pdb": "t.pdb", "chain": "A", "sequence": _TARGET_PDL1, "role": "target"},
+        ["ctrl.pdb", "C"],
+    ]))
+    done, _ = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}],
+        "--reference-chains", str(refs), "--novelty-tier", "final",
+    )
+    assert done.returncode != 0
+    combined = done.stdout + done.stderr
+    assert "requires a SEQUENCE on every reference chain" in combined
+    assert "ctrl.pdb:C" in combined          # names the offender
+
+
+def test_the_novelty_escape_covers_the_tier_but_never_a_not_run(
+    tmp_path: Path,
+) -> None:
+    """Its help text promises the UniRef90 gap; it must not admit more.
+
+    A missing known-binder corpus also yields NOT_RUN, and that is the gate not
+    clearing the design at all -- a wider hole than the flag advertises.
+    """
+    gate = _gate(tmp_path)
+    pool = tmp_path / "c.json"
+    pool.write_text(json.dumps([_candidate(f"p{i}", float(i), _index=i,
+                                           novelty_verdict="NOT_RUN")
+                                for i in range(3)]))
+    done = _run("select_panel.py", str(pool), "--gate", str(gate),
+                "--panel-size", "3", "--allow-novelty-not-final",
+                "--out", str(tmp_path / "s.csv"))
+    assert "novelty_verdict is NOT_RUN" in (done.stdout + done.stderr)
+
+
+def test_lcp_ships_the_parameterisation_that_produced_it(tmp_path: Path) -> None:
+    """Figure 1's exact settings are not recoverable and the public ports disagree.
+
+    A bare scalar separated from this revision is uninterpretable, and two
+    campaigns' values are not comparable without the window, estimator and
+    entropy floor that produced them. The kernel exports its choice for exactly
+    this reason.
+    """
+    done, rows = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}]
+    )
+    assert done.returncode == 0, done.stderr
+    # LCP is a penalty and a well-behaved sequence can legitimately score 0.0 --
+    # what must always travel is the parameterisation that produced it.
+    assert rows[0]["lcp_score"] != ""
+    assert "w=30" in rows[0]["lcp_parameterisation"]
+    assert "entropy_min" in rows[0]["lcp_parameterisation"]
+
+
+def _ca_line(serial: int, chain: str, resseq: int, x: float, alt: str = " ") -> str:
+    """One CA record at the real PDB columns (name[12:16], altLoc[16])."""
+    s = list(" " * 80)
+    s[0:6] = list("ATOM  ")
+    s[6:11] = list(f"{serial:5d}")
+    s[12:16] = list(" CA ")
+    s[16] = alt
+    s[17:20] = list("ALA")
+    s[21] = chain
+    s[22:26] = list(f"{resseq:4d}")
+    s[30:38] = list(f"{x:8.3f}")
+    s[38:46] = list(f"{0.0:8.3f}")
+    s[46:54] = list(f"{0.0:8.3f}")
+    return "".join(s).rstrip()
+
+
+@pytest.mark.parametrize(
+    "shape", ["two_models", "altloc"],
+)
+def test_repeated_ca_records_do_not_inflate_the_expected_code_count(
+    tmp_path: Path, shape: str
+) -> None:
+    """DSSP emits one code per RESIDUE, not per CA record.
+
+    The kernel's CA scan appends an entry per record, and two realistic shapes
+    emit more than one per residue -- measured on a 30-residue chain, a
+    two-MODEL file counts 60 and alternate-location CAs count 60. Comparing the
+    supplied code count against the raw record count refuses valid input, the
+    same false-refusal class as stripping terminal coil.
+    """
+    res = 40                      # inside the frozen 35-160 length policy
+    rows, serial = [], 0
+    if shape == "two_models":
+        for model in (1, 2):
+            rows.append(f"MODEL     {model:>4}")
+            for i in range(res):
+                serial += 1
+                rows.append(_ca_line(serial, "B", i + 1, i * 1.5))
+            rows.append("ENDMDL")
+    else:
+        for alt in ("A", "B"):
+            for i in range(res):
+                serial += 1
+                rows.append(_ca_line(serial, "B", i + 1, i * 1.5, alt=alt))
+    pdb = tmp_path / "s.pdb"
+    pdb.write_text("\n".join(rows) + "\nEND\n")
+
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{
+            "design_id": "d1",
+            "sequence": _SEQUENCES[1][:res].ljust(res, "A"),
+            "designed_structure_path": str(pdb),
+            "binder_chain": "B",
+            "ss_codes": "H" * res,
+        }])
+    )
+    done = _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_an_entirely_coil_assignment_is_data_not_an_empty_field(
+    tmp_path: Path,
+) -> None:
+    """DSSP writes coil as a space, so an all-coil assignment is all spaces.
+
+    Stripping discarded it whole and the row came back NOT_RUN -- throwing away
+    the evidence, because an all-coil design classifies as `other` and `other`
+    is exactly what counts toward the non-all-alpha diversity target. Only a
+    genuinely empty field means "no codes supplied"; a stray whitespace cell now
+    fails the count check loudly instead of vanishing.
+    """
+    res = 40                      # inside the frozen 35-160 length policy
+    pdb = tmp_path / "s.pdb"
+    pdb.write_text(
+        "\n".join(_ca_line(i + 1, "B", i + 1, i * 1.5) for i in range(res))
+        + "\nEND\n"
+    )
+
+    def run(ss_codes):
+        pool = tmp_path / "pool.json"
+        pool.write_text(
+            json.dumps([{
+                "design_id": "d1",
+                "sequence": _SEQUENCES[1][:res].ljust(res, "A"),
+                "designed_structure_path": str(pdb),
+                "binder_chain": "B",
+                "ss_codes": ss_codes,
+            }])
+        )
+        return _run("campaign_gates.py", str(pool), "--out", str(tmp_path / "g.csv"))
+
+    import csv
+
+    done = run(" " * res)
+    assert done.returncode == 0, done.stdout + done.stderr
+    row = list(csv.DictReader((tmp_path / "g.csv").read_text().splitlines()))[0]
+    assert row["fold_class"] == "other"
+    assert row["fold_ss_method"] == "supplied"
+
+    # A stray one-space cell is not a 1-residue assignment: it is refused, by name.
+    done = run(" ")
+    assert done.returncode != 0
+    assert "supplies 1 ss_codes" in (done.stdout + done.stderr)
+
+
+def test_precomputed_corpus_hits_suppress_the_environment_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hits REPLACE the in-process arm, including the environment route.
+
+    Testing only `--known-binders` missed `$CAMPAIGN_KNOWN_BINDER_CORPUS`: with
+    one staged, the corpus still resolved and the row reported BOTH
+    `known_binder_corpus=1` and `known_binder_corpus_hits_are_precomputed=1` --
+    the arm run twice against different subject sets. At protocol scale it is
+    worse than redundant, because the aggregate alignment cap then refuses the
+    very path that was supposed to scale.
+    """
+    corpus = tmp_path / "kb.fasta"
+    corpus.write_text(">kb1\n" + "ACDEFGHIKLMNPQRSTVWY" * 4 + "\n")
+    hits = tmp_path / "kbh.json"
+    hits.write_text(json.dumps({"d1": [{"target": "kb1", "fident": 0.2,
+                                        "qcov": 0.2}]}))
+    monkeypatch.setenv("CAMPAIGN_KNOWN_BINDER_CORPUS", str(corpus))
+
+    pool = tmp_path / "pool.json"
+    pool.write_text(json.dumps([{"design_id": "d1", "sequence": _SEQUENCES[1]}]))
+    out = tmp_path / "g.csv"
+    done = subprocess.run(
+        [sys.executable, str(MCP_SCRIPTS / "campaign_gates.py"), str(pool),
+         "--known-binder-hits", str(hits), "--out", str(out)],
+        capture_output=True, text=True,
+    )
+    assert done.returncode == 0, done.stderr
+    import csv
+
+    row = list(csv.DictReader(out.read_text().splitlines()))[0]
+    screened = row["novelty_subjects_screened"]
+    assert "known_binder_corpus_hits_are_precomputed=1" in screened
+    assert "known_binder_corpus_local_arm_not_run=1" in screened
+    assert "known_binder_corpus=1" not in screened
+
+
+def test_current_dssp_polyproline_codes_are_not_refused(tmp_path: Path) -> None:
+    """DSSP 4 emits `P` for polyproline-II, and the kernel takes it in its stride.
+
+    A wrapper-side alphabet check refused the whole pool on it, because the
+    kernel's `_SS_ANY_CODES` has no `P` and the wrapper had made its own copy of
+    a rule the kernel owns. That is the shape of guard worth deleting rather
+    than extending: it broke ordinary output from current DSSP while duplicating
+    a length check that already caught the case it was added for.
+    """
+    res = 60
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{
+            "design_id": "d1",
+            "sequence": _SEQUENCES[1][:res].ljust(res, "A"),
+            "ss_codes": "H" * 30 + "P" * 6 + "H" * 24,
+        }])
+    )
+    out = tmp_path / "g.csv"
+    done = _run("campaign_gates.py", str(pool), "--out", str(out))
+    assert done.returncode == 0, done.stdout + done.stderr
+    import csv
+
+    row = list(csv.DictReader(out.read_text().splitlines()))[0]
+    assert row["fold_class"] == "all_alpha"
+    assert row["fold_ss_method"] == "supplied"
+
+
+def test_supplied_codes_classify_without_a_structure_file(tmp_path: Path) -> None:
+    """`dssp_fold_class(None, ss_codes=...)` returns a real class; expose it.
+
+    Gating the whole classification block on a structure path blocked a kernel
+    capability the wrapper exists to reach, and it cost the fold-diversity
+    column on exactly the rows that had already done the DSSP work.
+    """
+    res = 60
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{
+            "design_id": "d1",
+            "sequence": _SEQUENCES[2][:res].ljust(res, "A"),
+            "ss_codes": "E" * 8 + "C" * 4 + "E" * 8 + "C" * 40,
+        }])
+    )
+    out = tmp_path / "g.csv"
+    done = _run("campaign_gates.py", str(pool), "--out", str(out))
+    assert done.returncode == 0, done.stdout + done.stderr
+    import csv
+
+    row = list(csv.DictReader(out.read_text().splitlines()))[0]
+    assert row["fold_class"] == "all_beta"      # a real class, not NOT_RUN
+    assert row["fold_ss_method"] == "supplied"

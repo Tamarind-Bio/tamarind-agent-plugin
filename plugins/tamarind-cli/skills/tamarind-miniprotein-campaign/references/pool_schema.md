@@ -55,6 +55,11 @@ So the two tools you are most likely to pair actually **agree** — both put the
 
 - **RFdiffusion** `seq`, slash-joined — binder measured **last**.
 - **ProteinMPNN** `sequence`, colon-joined — "the designed chain is appended last", so binder **last**.
+- **Genie 3's per-design FASTA** `sequences/<name>.fasta`, colon-joined — binder measured **FIRST**. Different delimiter, opposite order, same campaign.
+
+So "the binder is last" is a rule about ONE tool's ONE file, not about this platform. Measured on the same PD-L1 run: RFdiffusion's CSV put the target at index 0 on 18 of 18 rows, while Genie 3's FASTA put it at index 1. Carry the rule per FILE, never per campaign — and prefer Genie 3's `binder_seq` CSV column, which is the binder alone and needs no split.
+
+**Parse Genie 3's `target_seq` before comparing it — do not skip the comparison.** That cell is a stringified Python list, brackets and quotes included — literally `"['AFTVTVPKDLY…']"` — so a raw equality test against the frozen target fails silently on a perfectly correct run. `ast.literal_eval` turns it back into the list of chains; compare those against your frozen construct. Skipping the check instead is worse than the false mismatch: it is the only output-side evidence that this method ran against the target you froze, and a wrong chain or a differently-cropped construct would otherwise enter the pool looking normal. `binder_seq` needs no such handling — it is a clean sequence.
 
 A target chain of ordinary composition and legal length gates cleanly as if it were a design. Every row then carries the same target sequence, and the numbers that come back are a scoring method's opinion of the target against itself.
 
@@ -99,9 +104,9 @@ Read the chain off each structure rather than assuming: the binder is the chain 
 
 `boltzgen` returned a 75-residue "de novo design" that is **93.3% identical to human ubiquitin** and matches its first 40 residues exactly. It passed the liability gate cleanly — composition, entropy, patches and cysteine parity are all unremarkable, because ubiquitin is a perfectly well-behaved protein.
 
-Nothing in `campaign_gates.py` catches this. The self-similarity and known-binder limbs of novelty compare against the target and the control chains, and ubiquitin is neither. **Only the database limb — a sequence-identity search against the wider protein universe — sees it**, and that limb is a Tamarind job, which is exactly why this script emits `novelty_verdict = NOT_RUN` with a reason instead of a pass.
+**`campaign_gates.py` now catches exactly this, locally, with no job at all.** Ubiquitin is one of the novelty gate's five subject sets, and the protocol names it explicitly because it "often emerges with short terminal extensions" — so the kernel detects it by local alignment rather than exact match. The design above comes back REJECT at 1.0 gapped identity over 40 aligned columns against `P0CG47/P0CG48`.
 
-So treat that NOT_RUN as a live liability, not a formality: run the database novelty search on the survivors before the panel, and if you genuinely cannot, say in the report that the shipped designs were **not** checked against known proteins — because a campaign can otherwise ship ubiquitin as a de novo binder and every other gate will agree it looks fine.
+That closes the specific escape, not the general one. Ubiquitin is *one* natural protein; the wider protein universe is still only visible to the database limb, which is a Tamarind job. So the rule stands for everything that is not ubiquitin, the target, a control, or a staged known binder: run the sequence-identity search on the survivors before the panel and re-gate at `--novelty-tier final`, and if you genuinely cannot, say in the report that the shipped designs were **not** checked against known proteins.
 
 ## Which structure you hand the structural gates changes their verdict
 
@@ -118,6 +123,28 @@ Measured across three methods, one design each, every structure taken straight f
 So this is not simply "unrelaxed rejects" — an explicitly unrelaxed AF2-multimer structure passed while a refolded one did not. The gate discriminates on the actual geometry, and which file a generator hands you varies more than its label suggests.
 
 So when plausibility rejects everything, **investigate the input before the threshold.** The thresholds are vendored frozen values and retuning them to admit your pool is the defect this campaign exists to prevent; the honest fixes are to relax the structures first, or to feed the gate the co-folded complex rather than the raw generator output, or to disclose the gate as NOT_RUN. The skill's "a gate that passes everything, fails everything, or returns a constant is broken until investigated" rule fires here exactly as intended — and on a two-design pool it fires on sample size alone, so read it as a prompt, not a verdict.
+
+## Fold class: which method resolved it, measured
+
+`fold_class` feeds the >=10% non-all-alpha diversity target, and the number is only
+meaningful next to the method that produced it. Measured on five real designs from three
+generators on one PD-L1 campaign — a grounded snapshot, not an authority:
+
+| condition | result |
+|---|---|
+| generator PDBs carrying HELIX/SHEET records | **0 of 5** — none of them did |
+| no `ss_codes`, no biotite | `fold_class = NOT_RUN` on all 5; the diversity evidence is absent |
+| no `ss_codes`, biotite present (P-SEA) | `all_alpha` on all 5 — a pool at **0%** non-all-alpha |
+
+Two things follow. The pool at 0% is a real result worth reporting: it misses the target, and
+a NOT_RUN column would have hidden that rather than surfaced it. But `all_alpha` there came
+from **P-SEA**, while the target is written "not-all-alpha **under DSSP**" — different rules
+for helix fraction and strand runs, so the two can disagree on exactly this call.
+
+So prefer the canonical path: run DSSP over the designed chain yourself and put the 8-state
+codes on the row as `ss_codes`. `campaign_gates.py` forwards them and stamps
+`fold_ss_method: supplied`, and it needs no extra dependency. Where you fall back to biotite
+instead, say so in the report — a diversity figure with no method beside it is not evidence.
 
 ## Clustering is a stage you run
 
