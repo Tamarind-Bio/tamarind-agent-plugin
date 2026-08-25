@@ -42,6 +42,14 @@ gated on UniRef90 staging. `--novelty-tier final` adds UniRef90, which the proto
 requires **before any row reaches the ranked sheet**. Run the dispatch tier before
 scoring and the final tier before the panel.
 
+Each evidence row is stamped with the tier that produced it, and **`select_panel.py`
+enforces it**: a `NOT_RUN` novelty verdict, or a `PASS` earned only at the dispatch
+tier, does not rank. Without the stamp the two clearances are indistinguishable to
+the sheet writer and dispatch evidence ships as final evidence. A campaign that
+genuinely cannot run the search passes `--allow-novelty-not-final`, which ranks the
+rows and obliges the report to say the shipped designs were never checked against
+known proteins.
+
 **What runs locally, with no job at all:** ubiquitin, the target chains, the control
 chains, and the TM screen. This is most of the gate. **What needs a job:** the
 UniRef90 arm only.

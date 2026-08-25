@@ -176,7 +176,13 @@ def _novelty(novelty, seq, corpus, target_seqs, control_seqs, uniref_hits, scree
         "novelty_top_subject_kind": top.get("kind"),
         "novelty_top_aligned_columns": top.get("aligned_columns"),
     }
-    return out.get("verdict", VERDICT_NOT_RUN), ev, str(out.get("reason") or "")
+    # The kernel routes its explanation by outcome: a REJECT fills `reason`, and
+    # a NOT_RUN fills `not_run_reason` and leaves `reason` None. Reading only
+    # `reason` left the actionable half -- WHICH required subject was missing --
+    # out of the artifact, while `novelty_arms_not_run` kept only bare arm names.
+    verdict = out.get("verdict", VERDICT_NOT_RUN)
+    explanation = out.get("not_run_reason") if verdict == VERDICT_NOT_RUN else out.get("reason")
+    return verdict, ev, str(explanation or out.get("reason") or "")
 
 
 # L81's own term is "gapped local identity", and `gapped_identity` is the key
@@ -209,18 +215,27 @@ def _top_hit(hits):
 
 
 def _lcp(lcp, seq):
-    """L73's mandatory sequence restraint, recorded per design.
+    """L73's mandatory sequence restraint. Returns (score, not_run_reason).
 
     Reported, never a gate: the protocol makes LCP a restraint on sequence
     DESIGN and a recorded metric, not a rejection threshold, so this writes the
     number and lets selection and the report use it.
+
+    It says WHY it is absent rather than going blank, and the reason is not
+    hypothetical: the pool validator accepts the ambiguity codes X, B, Z, J, U
+    and O, and the LCP implementation accepts only the standard twenty and
+    raises on each of those six. A blanket catch returning None therefore
+    dropped a MANDATORY recorded metric on every design carrying an X, with
+    nothing on the row to say it had been dropped.
     """
-    if lcp is None or not seq:
-        return None
+    if lcp is None:
+        return None, "numpy unavailable in this environment"
+    if not seq:
+        return None, "no sequence on this row"
     try:
-        return lcp.lcp_score(seq)
-    except Exception:
-        return None
+        return lcp.lcp_score(seq), ""
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def _pdb_body(pdb_path):
@@ -390,6 +405,27 @@ def main():
                     refs.append((pdb_path, chain_id))
             else:
                 refs.append(tuple(item))
+
+    if novelty is not None and (target_seqs or control_seqs):
+        # Judge every reference ONCE, here, for exactly the reason the hits file
+        # is judged here: `_as_entry` raises while CONVERTING a subject, and the
+        # kernel converts the target/control chains AFTER it has already run the
+        # ubiquitin and corpus arms. So a reference like "123" raises on top of
+        # an ALREADY-ESTABLISHED REJECT, and a per-row catch reports the whole
+        # verdict as NOT_RUN -- the copied design keeps its rejection nowhere.
+        # Same failure as a malformed hits file, one call site over.
+        for label, sequence in list(target_seqs) + list(control_seqs):
+            try:
+                novelty._as_entry((label, sequence))
+            except Exception as exc:
+                raise SystemExit(
+                    f"{args.reference_chains}: reference {label!r} is unusable -- {exc}\n"
+                    "Refusing here rather than per row: the kernel converts references "
+                    "AFTER running the\n"
+                    "ubiquitin and known-binder arms, so a bad one raises on top of a "
+                    "rejection already made\n"
+                    "and the catch would report novelty NOT_RUN for a design that IS a copy."
+                )
 
     corpus = None
     if novelty is not None:
@@ -705,10 +741,18 @@ def main():
             uniref_hits.get(did), mscreen, novelty_tier,
         )
         row["novelty_verdict"] = nv
+        # WHICH tier cleared it. A dispatch-tier PASS did not screen UniRef90 --
+        # the protocol exempts it before dispatch and requires it before the
+        # ranked sheet -- so without this column the two clearances are
+        # indistinguishable to the sheet writer and dispatch evidence ships as
+        # final evidence.
+        row["novelty_tier"] = args.novelty_tier if novelty is not None else ""
         row.update(nev)
 
         # L73's restraint, recorded per design. Higher is worse.
-        row["lcp_score"] = _lcp(lcp, seq)
+        row["lcp_score"], lcp_reason = _lcp(lcp, seq)
+        if lcp_reason:
+            row["lcp_not_run_reason"] = lcp_reason
 
         # Route each reason by ITS OWN verdict. The kernel returns a `reason`
         # for any outcome, so folding them together wrote REJECT rationales
@@ -726,6 +770,22 @@ def main():
         if rejected_because:
             row["gate_reject_reason"] = "; ".join(rejected_because)
 
+        # The ledger carries the MEASUREMENTS beside each rejection, not just
+        # the gate's name. A ledger entry reading {design_id, gate} says a
+        # design was removed and gives a reader no way to check whether it
+        # should have been -- which is the audit the rejects file exists for,
+        # and what the deliverables page promises it holds.
+        gate_evidence = {
+            "liability": lev,
+            "structural_plausibility": pev,
+            "target_mimic": mev,
+            "novelty": nev,
+            "monomer_foldability": {},
+        }
+        gate_reason = {
+            "structural_plausibility": preason, "target_mimic": mreason,
+            "novelty": nreason,
+        }
         for gate, verdict in (
             ("liability", lv), ("structural_plausibility", pv), ("target_mimic", mv),
             ("novelty", nv), ("monomer_foldability", VERDICT_NOT_RUN),
@@ -733,7 +793,12 @@ def main():
             counts.setdefault(gate, {}).setdefault(verdict, 0)
             counts[gate][verdict] += 1
             if verdict == VERDICT_REJECT:
-                rejects.append({"design_id": did, "gate": gate})
+                entry = {"design_id": did, "gate": gate}
+                entry.update({k: v for k, v in (gate_evidence.get(gate) or {}).items()
+                              if v is not None and v != ""})
+                if gate_reason.get(gate):
+                    entry["reason"] = gate_reason[gate]
+                rejects.append(entry)
         rows.append(row)
 
     if args.out and rows:

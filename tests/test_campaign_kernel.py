@@ -214,7 +214,12 @@ def _candidate(design_id: str, z: float, _index: int = 0, **over) -> dict:
         "tm_cluster": f"c-{design_id}",
         "target_mimic": "PASS", "opt_round": 0, "n_seeds": 5,
         "liability_verdict": "PASS", "structural_plausibility_verdict": "PASS",
-        "target_mimic_verdict": "PASS", "novelty_verdict": "NOT_RUN",
+        # novelty PASS at the FINAL tier: this fixture is a design that IS
+        # clearable. It read NOT_RUN while the gate could not run at all; now
+        # that it runs, the sheet writer requires the full-UniRef90 tier, and a
+        # fixture carrying the old value would be asserting the gap is fine.
+        "target_mimic_verdict": "PASS", "novelty_verdict": "PASS",
+        "novelty_tier": "final",
         "monomer_foldability_verdict": "NOT_RUN",
         "ipsae_ef2full": 0.5 + z / 100, "sc_DockQ_ef2full": 0.3 + z / 100,
     }
@@ -1807,6 +1812,122 @@ def test_well_formed_ss_codes_still_reach_the_classifier(tmp_path: Path) -> None
     row = list(csv.DictReader((tmp_path / "g.csv").read_text().splitlines()))[0]
     assert row["fold_class"] == "all_alpha"
     assert row["fold_ss_method"] == "supplied"
+
+
+# ── PR-22 round 1: the novelty gate runs, but nothing downstream enforced it ─
+
+
+def test_a_malformed_reference_cannot_discard_a_rejection_already_made(
+    tmp_path: Path,
+) -> None:
+    """The same failure as a malformed hits file, one call site over.
+
+    The kernel converts target/control chains AFTER running the ubiquitin and
+    known-binder arms, so a reference like "123" raises on top of an
+    ALREADY-ESTABLISHED REJECT -- and a per-row `except Exception` reports the
+    whole verdict as NOT_RUN, which the sheet writer used to admit. A design
+    that IS a copy would keep its rejection nowhere.
+    """
+    refs = tmp_path / "refs.json"
+    refs.write_text(
+        json.dumps([{"pdb": "r.pdb", "chain": "A", "sequence": "123",
+                     "role": "target"}])
+    )
+    design = _UBIQUITIN[:40] + "GSGSEEALKKAEELLKKAEELLKKGSG"
+    done, _ = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": design}],
+        "--reference-chains", str(refs),
+    )
+    assert done.returncode != 0
+    assert "is unusable" in (done.stdout + done.stderr)
+
+
+def test_a_not_run_novelty_verdict_states_which_subject_was_missing(
+    tmp_path: Path,
+) -> None:
+    """The kernel routes its explanation by outcome; read the right key.
+
+    A REJECT fills `reason`; a NOT_RUN fills `not_run_reason` and leaves
+    `reason` None. Reading only `reason` left the actionable half -- WHICH
+    required subject set was unavailable -- out of the artifact entirely.
+    """
+    done, rows = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1]}]
+    )
+    assert done.returncode == 0, done.stderr
+    assert rows[0]["novelty_verdict"] == "NOT_RUN"
+    assert "known-binder corpus" in rows[0]["gate_not_run_reason"]
+
+
+def test_lcp_says_why_it_is_absent_rather_than_going_blank(
+    tmp_path: Path,
+) -> None:
+    """The pool validator accepts X/B/Z/J/U/O; the LCP port accepts only AA20.
+
+    A blanket catch returning None dropped a MANDATORY recorded metric on every
+    design carrying an ambiguity code, with nothing on the row to say so.
+    """
+    done, rows = _gates_rows(
+        tmp_path, [{"design_id": "d1", "sequence": _SEQUENCES[1][:-1] + "X"}]
+    )
+    assert done.returncode == 0, done.stderr
+    assert not rows[0]["lcp_score"]
+    assert "LcpInputError" in rows[0]["lcp_not_run_reason"]
+
+
+def test_the_rejects_ledger_carries_the_numbers_that_decided_each_rejection(
+    tmp_path: Path,
+) -> None:
+    """An entry of {design_id, gate} gives a reader no way to audit the removal."""
+    rejects = tmp_path / "rejects.json"
+    pool = tmp_path / "pool.json"
+    pool.write_text(
+        json.dumps([{"design_id": "d_ubq",
+                     "sequence": _UBIQUITIN[:40] + "GSGSEEALKKAEELLKKAEELLKKGSG"}])
+    )
+    done = _run("campaign_gates.py", str(pool), "--rejects", str(rejects),
+                "--out", str(tmp_path / "g.csv"))
+    assert done.returncode == 0, done.stderr
+    entry = next(e for e in json.loads(rejects.read_text())["rejected"]
+                 if e["gate"] == "novelty")
+    assert entry["novelty_top_subject_kind"] == "ubiquitin"
+    assert float(entry["novelty_top_identity"]) == 1.0
+    assert int(entry["novelty_top_aligned_columns"]) == 40
+
+
+def test_dispatch_tier_novelty_evidence_cannot_reach_the_ranked_sheet(
+    tmp_path: Path,
+) -> None:
+    """The protocol exempts UniRef90 before dispatch and requires it before the sheet.
+
+    Without the tier column a dispatch clearance and a final one are
+    indistinguishable to the writer, so dispatch evidence shipped as final
+    evidence. NOT_RUN is likewise not a pass here -- this is the same rule the
+    mimic screen already gets, applied at the stage the protocol names.
+    """
+    gate = _gate(tmp_path)
+    for over, expected in (
+        ({"novelty_verdict": "NOT_RUN"}, "novelty_verdict is NOT_RUN"),
+        ({"novelty_tier": "dispatch"}, "not 'final'"),
+        ({"novelty_tier": ""}, "not 'final'"),
+    ):
+        pool = tmp_path / "c.json"
+        pool.write_text(json.dumps([_candidate(f"p{i}", float(i), _index=i, **over)
+                                    for i in range(3)]))
+        done = _run("select_panel.py", str(pool), "--gate", str(gate),
+                    "--panel-size", "3", "--out", str(tmp_path / "s.csv"))
+        assert expected in (done.stdout + done.stderr), (over, done.stdout[-400:])
+
+    # And the disclosed escape still ships, because a campaign that genuinely
+    # cannot run the search must be able to say so rather than be stuck.
+    pool = tmp_path / "c2.json"
+    pool.write_text(json.dumps([_candidate(f"p{i}", float(i), _index=i,
+                                           novelty_tier="dispatch")
+                                for i in range(3)]))
+    done = _run("select_panel.py", str(pool), "--gate", str(gate),
+                "--panel-size", "3", "--allow-novelty-not-final",
+                "--out", str(tmp_path / "s2.csv"))
+    assert done.returncode == 0, done.stderr
 
 
 def test_terminal_coil_survives_a_scalar_dssp_string(tmp_path: Path) -> None:

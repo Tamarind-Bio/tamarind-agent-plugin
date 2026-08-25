@@ -35,11 +35,16 @@ calibration have no analogue here and are simply out of scope.
 | Slack thread, Drive folder, sub-agent swarm | this conversation and the host workspace |
 | 24-hour clock, 20k–200k designs | the user's actual budget — say what you scaled to |
 
-Two protocol tools have **no Tamarind equivalent**: **FoldCraft** and
-**HalluDesign**. FoldCraft is the one the protocol names for beta-containing and
-mixed alpha-beta folds, so losing it costs the fold-diversity objective
-specifically. Record both as dropped with that consequence stated — never as
-though the roster were complete.
+**Resolve the roster against the live catalog, and drop only what discovery says
+is absent.** The protocol's starred set is seven methods; it also names FoldCraft
+and HalluDesign, which were **not in the catalog when this was written** — see
+[references/roster.md](references/roster.md), which holds that snapshot and is
+not an authority. Check them yourself: a tool added or renamed since would
+otherwise be omitted from every campaign and reported unavailable, which is the
+same silent drop this section exists to prevent, pointing the other way. Whatever
+discovery says is genuinely missing, record as dropped **with the objective it
+costs** — for FoldCraft that is specifically the fold-diversity target, since it
+is the one the protocol names for beta-containing and mixed alpha-beta folds.
 
 ## 0. Own the science; delegate the mechanics
 
@@ -353,7 +358,7 @@ spent, so your own verification discipline is the only gate there is.
 ## 11. Disclose what this campaign did not do
 
 Name in the report, in the user's words: every method dropped and what it cost —
-including FoldCraft and HalluDesign, which this platform does not carry; any gate
+including any the live catalog does not carry; any gate
 that did not run and what it no longer catches; any instrument term missing and
 why; the stoichiometry beside every number on a multimeric target; and any
 substitution made for a check the protocol specifies. A disclosed gap is a result.

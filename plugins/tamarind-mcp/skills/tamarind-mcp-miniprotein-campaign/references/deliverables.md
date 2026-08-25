@@ -53,9 +53,10 @@ and citations. Its headline states the **worst defensible reading** of the data.
 
 It must name, in the user's own words:
 
-- every method dropped and the diversity objective it cost — **including FoldCraft
-  and HalluDesign**, which this platform does not carry, and FoldCraft is the one
-  the protocol names for beta-containing folds;
+- every method dropped and the diversity objective it cost, including any the
+  live catalog turned out not to carry. Name the objective, not just the tool:
+  FoldCraft, for instance, is the one the protocol names for beta-containing
+  folds, so its absence is a fold-diversity gap specifically;
 - every gate that did not run and what it no longer catches;
 - every instrument term missing and why, and under a reduced mask, which terms the
   score actually ran over;

@@ -19,12 +19,12 @@ The lowercase token is the job `type`; the name in parentheses is the only spell
 | `boltzdesign` | BoltzDesign1 | optional |
 | `protein-hunter` | Protein Hunter | optional |
 
-## What the protocol names that this platform does not carry
+## What the protocol names — and what the catalog carried when this was written
 
 The protocol's structure-design roster is RFdiffusion*, RFdiffusion3*,
 FreeBindCraft*, BoltzGen*, PXDesign*, Proteina-Complexa*, Genie3* (starred, and
 owing the floor), plus Mosaic, FoldCraft, BoltzDesign1, HalluDesign and Protein
-Hunter. **All seven starred methods are above.** Two unstarred ones are not:
+Hunter. **All seven starred methods were present.** Two unstarred ones were not — re-check both against `tamarind --json tools` before recording either as dropped:
 
 - **FoldCraft** — the protocol names it specifically as the way to design binders
   "that include beta-sheets and mixed alpha-beta folds, not only all-alpha helical
