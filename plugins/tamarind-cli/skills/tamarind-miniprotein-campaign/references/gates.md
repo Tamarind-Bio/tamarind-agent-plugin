@@ -79,16 +79,31 @@ UniRef90 arm only.
   against different subject sets and the row could not say which produced its
   verdict.
 
-  **The hits path is a DISCLOSED REDUCTION of the corpus arm, and you must say so.**
-  Precomputed rows are judged on the global clause only — above 60% identity over
-  more than 50% coverage. The **local-alignment arm does not run**: a partial copy
+  **The corpus's local-alignment arm switches itself off above 17 entries — on
+  BOTH routes.** The kernel decides the arm set from the corpus SIZE, not from how
+  the corpus arrived: past `CORPUS_LOCAL_ARM_MAX_ENTRIES` it screens the corpus on
+  the global clause only (above 60% identity over more than 50% coverage) and stamps
+  `known_binder_corpus_local_arm_not_run=1` in `novelty_subjects_screened`. A
+  precomputed-hits corpus is stamped the same way for the same reason, since a hit
+  row carries identity and coverage and no alignment.
+
+  **So the two routes are equivalent on this arm for any corpus a real campaign
+  would stage**, and an earlier version of this page was wrong to present the
+  suppression as a cost of the hits path specifically. Measured on prod: at 17
+  entries the local arm runs and rejects **4 of 4** designs including a clean de
+  novo one; at 18 it is suppressed and the same pool separates 1 PASS / 3 REJECT.
+  That is the behaviour the threshold exists to prevent — against thousands of
+  curated binders a 30%-over-40-columns hit is reached by chance, and a gate that
+  rejects the entire pool is not a stricter gate.
+
+  **What this costs is real and belongs in the report either way.** A partial copy
   at 100% identity over 40 aligned columns but only 33% coverage — precisely the
-  "short terminal extensions" shape the protocol calls out — is rejected by the
-  in-process arm and **passes** on the hits path. The row discloses it
-  (`known_binder_corpus_local_arm_not_run=1` in `novelty_subjects_screened`), so the
-  gap is auditable rather than silent, but it is a real difference between the two
-  routes. Choose the hits path for scale, then set the search's own thresholds to
-  surface short high-identity alignments, and name the reduction in the report.
+  "short terminal extensions" shape the protocol calls out — clears the corpus arm
+  at any realistic corpus size. It is still caught against ubiquitin, the target
+  chains and the controls, which are curated subject sets small enough to keep the
+  local arm. Choose the hits path for scale on its own merits, set the search's
+  thresholds to surface short high-identity alignments, and say in the report that
+  the corpus was screened on the global clause alone.
 - **`--uniref90-hits`** takes `{design_id: [hit, …]}` from a sequence-identity
   search job, with the search's own columns — `identity`/`fident`/`pident` and
   `coverage`/`qcov`/`cov`. Percentages and fractions are disambiguated by value;

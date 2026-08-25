@@ -41,6 +41,40 @@ Three constructs are needed and they are different submissions:
 - **monomer binder** — the binder alone, for the foldability gate.
 - **target only** — the target alone, for the fold-recapitulation check at validation.
 
+**MEASURED PLATFORM DEFECT — repeated identical chains are submitted SQUARED, and
+validation does not reproduce it.** A construct whose chain string repeats the same
+sequence N times arrives at the runner with **N x N** copies of it. Measured on prod
+2026-08-25, on a homodimeric target:
+
+| what was submitted | what the job actually ran |
+|---|---|
+| target x2 (the native dimer) | **4 copies** — completed, and every column looked normal |
+| target x3 | **9 copies** — 2394 residues, over the 2000-residue cap, Stopped |
+| barnase + barstar (2 DISTINCT chains) | 2 copies — correct |
+| target + lysozyme (2 DISTINCT chains) | 2 copies — correct |
+
+Distinct chains are unaffected; only repeats are expanded. It reproduces on **both**
+the single-job and the batch submit paths, and on both the file fan-out and an
+explicit per-job settings list — so it is the submit path, not the FASTA parser.
+
+**The pre-submit validation check cannot catch it.** Validating the same three-chain
+string returns it normalized with exactly three chains. The expansion happens after
+validation, so a clean validate is not evidence the runner got your construct.
+
+**This lands squarely on this campaign.** A homo-oligomeric target is the common case,
+and every one of its scoring constructs repeats a chain — so the ranking construct is
+the thing being corrupted. The dimer case is the dangerous one: it did not error, it
+scored a **4-mer** and returned a full set of plausible interface numbers under the
+design's own id.
+
+**The only thing that catches it is reading the stored input back after submitting**,
+which is the discipline this page already requires for a different reason. Reconcile
+every scored row against the job's stored input **by sequence**, assert the chain
+count and each chain's length against the frozen construct, and fail the row rather
+than ranking it. Until the platform is fixed, treat any construct with a repeated
+chain as unsubmittable and say so — do not silently score a monomeric crop instead,
+because that is a different construct and the protocol forbids the swap.
+
 ## Score algebra — fix it, then never touch it
 
 - **Interface confidence per arm** = minimum over both alignment directions, then **max over seeds**.
