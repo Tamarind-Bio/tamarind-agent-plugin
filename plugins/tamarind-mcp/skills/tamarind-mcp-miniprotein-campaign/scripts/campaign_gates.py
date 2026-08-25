@@ -282,9 +282,20 @@ def main():
 
         # Fold class feeds the >=10% non-all-alpha diversity target. Reported,
         # never a ranking gate.
+        #
+        # A row MAY carry `ss_codes` -- DSSP 8-state (HGIEBTSC-) or biotite's
+        # 3-state (abc) for the designed chain. Forward it, because the target
+        # is defined "not-all-alpha under DSSP" while the classifier's only
+        # dependency-free fallback is P-SEA, a different assignment. Without
+        # this the canonical path was unreachable from here: generator PDBs
+        # carry no HELIX/SHEET records, so the run silently fell to P-SEA or
+        # to NOT_RUN no matter what DSSP the campaign had in hand.
+        ss_codes = str(entry.get("ss_codes") or "").strip() or None
+        if ss_codes:
+            row["fold_ss_method"] = "supplied"
         if pdb and os.path.exists(pdb):
             try:
-                fold = helpers.dssp_fold_class(pdb, chain=chain)
+                fold = helpers.dssp_fold_class(pdb, chain=chain, ss_codes=ss_codes)
             except Exception as exc:
                 row["fold_class"] = VERDICT_NOT_RUN
                 row["fold_class_not_run_reason"] = f"{type(exc).__name__}: {exc}"

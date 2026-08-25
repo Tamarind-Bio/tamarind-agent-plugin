@@ -1397,3 +1397,27 @@ def test_the_measurement_not_the_word_goes_where_the_ban_reads(tmp_path: Path) -
         f"target_mimic={carried!r}"
     )
     assert number(carried) == number(row["target_mimic_tm_max"]), row
+
+
+def test_supplied_dssp_codes_reach_the_fold_classifier(tmp_path: Path) -> None:
+    """The canonical path has to be reachable from the gate, not just the kernel.
+
+    The target is defined "not-all-alpha under DSSP", but the classifier's only
+    dependency-free fallback is P-SEA -- a different assignment. Generator PDBs
+    carry no HELIX/SHEET records, so without forwarding `ss_codes` the run fell
+    to P-SEA or to NOT_RUN no matter what DSSP the campaign had in hand.
+    """
+    pdb = _helix_pdb(tmp_path / "plain.pdb", n=40, annotated=False, chain="B")
+    strand = "E" * 40                      # DSSP 8-state: an all-beta chain
+    rows = _gated(tmp_path, [
+        {"design_id": f"d{i}", "sequence": seq, "designed_structure_path": str(pdb),
+         "binder_chain": "B", "ss_codes": strand}
+        for i, seq in enumerate(_SEQUENCES)
+    ])
+    assert rows
+    for row in rows:
+        assert row["fold_class"] == "all_beta", (
+            f"{row['design_id']}: supplied DSSP codes must decide the class, got "
+            f"{row['fold_class']!r}"
+        )
+        assert row.get("fold_ss_method") == "supplied", row

@@ -124,6 +124,28 @@ So this is not simply "unrelaxed rejects" — an explicitly unrelaxed AF2-multim
 
 So when plausibility rejects everything, **investigate the input before the threshold.** The thresholds are vendored frozen values and retuning them to admit your pool is the defect this campaign exists to prevent; the honest fixes are to relax the structures first, or to feed the gate the co-folded complex rather than the raw generator output, or to disclose the gate as NOT_RUN. The skill's "a gate that passes everything, fails everything, or returns a constant is broken until investigated" rule fires here exactly as intended — and on a two-design pool it fires on sample size alone, so read it as a prompt, not a verdict.
 
+## Fold class: which method resolved it, measured
+
+`fold_class` feeds the >=10% non-all-alpha diversity target, and the number is only
+meaningful next to the method that produced it. Measured on five real designs from three
+generators on one PD-L1 campaign — a grounded snapshot, not an authority:
+
+| condition | result |
+|---|---|
+| generator PDBs carrying HELIX/SHEET records | **0 of 5** — none of them did |
+| no `ss_codes`, no biotite | `fold_class = NOT_RUN` on all 5; the diversity evidence is absent |
+| no `ss_codes`, biotite present (P-SEA) | `all_alpha` on all 5 — a pool at **0%** non-all-alpha |
+
+Two things follow. The pool at 0% is a real result worth reporting: it misses the target, and
+a NOT_RUN column would have hidden that rather than surfaced it. But `all_alpha` there came
+from **P-SEA**, while the target is written "not-all-alpha **under DSSP**" — different rules
+for helix fraction and strand runs, so the two can disagree on exactly this call.
+
+So prefer the canonical path: run DSSP over the designed chain yourself and put the 8-state
+codes on the row as `ss_codes`. `campaign_gates.py` forwards them and stamps
+`fold_ss_method: supplied`, and it needs no extra dependency. Where you fall back to biotite
+instead, say so in the report — a diversity figure with no method beside it is not evidence.
+
 ## Clustering is a stage you run
 
 `select_panel.py` refuses a row with no `tm_cluster`, and no bundled script writes one. Cluster the surviving pool at ~90% identity and join the cluster id on before selection. The vendored kernel has the single-linkage TM clusterer; nothing calls it for you.
