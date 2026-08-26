@@ -9,6 +9,25 @@
 `tamarind --json schema TOOL` carries an **`outputs`** block, and it answers the question that costs a method its floor:
 
 - **`outputs.mainCSV`** — *which file is the actual result table.* Every other table the job wrote is an intermediate. It may be a glob (`designability/design*/mpnn_results.csv`) or a job-name template (`{JobName}.csv`), so resolve it against the job's **downloaded** bundle (`tamarind --json results JOB_NAME --download <dir>`) rather than expecting a literal name — `tamarind --json files` lists the inputs you uploaded, not a job's outputs.
+
+**A declared result path can be absent from disk entirely — not a glob to expand, just
+not there.** Measured: a starred method declared `results.csv` and wrote a job-name-prefixed
+rollup instead; another split the columns the campaign screens on into a *second*, wider
+table beside the one it declared. So the declared name is a lead, and the listing is the
+authority: resolve it, and when nothing matches, read the listing for what the job actually
+wrote before concluding the method produced nothing. Record the resolved path in the
+method's output contract so no later stage repeats the search.
+
+**Establish the residue-numbering frame before measuring anything against the epitope.**
+A generator's output structure is not obliged to preserve the numbering of the construct
+you submitted, and typically renumbers each chain from 1. An epitope defined in the
+target's own numbering — which is the only numbering §2 lets you freeze it in — therefore
+does not index the output structure, and contact counts computed in the wrong frame come
+back plausibly low rather than erroring: measured, an epitope engaged on every design read
+as zero contacts, on the wrong amino acids. Recover the offset per method by aligning the
+output's target chain to the frozen construct, never by assuming either frame, and carry
+it in the method's output contract with the direction it applies in. Then confirm it: the
+residues the offset selects must be the amino acids the frozen epitope names.
 - **`outputs.columns`** — each column's name, type, description and units.
 - **`outputs.taskType`** — `generate` vs `score`. A scoring tool's table can *echo* an input sequence, so a `produces: ["sequence"]` claim is not proof the tool created one.
 - **`outputs.byTask`** — the per-task contract where a tool has one. **Authoritative for the task you set**, over the scalar fields. Most tools do not carry it; some express per-task variation as a `tasks` list on individual columns instead. Read the columns as well as the block.
@@ -50,9 +69,9 @@ The general form: **a verdict function that fails closed on an unrecognised valu
 | `genie3` | `binder_seq` | **`name`** — but see the row explosion below; `rank` is a MODEL rank, not an identifier |
 | `mosaic-hallucinate` | `sequence` | `design_id` |
 | `protein-hunter` | `best_seq` — **undetermined**, confirm on the canary | `run_id` |
-| `proteina-complexa` | **none** — backbone-only | `Rank`, job-local |
+| `proteina-complexa` | **none on the table** — but its output complexes carry co-designed sequences; read them from the structures (see [roster.md](roster.md)) | `Rank`, job-local |
 | `boltzdesign` | **undetermined** — read its canary table before assuming either | `target` + `iteration` |
-| `pxdesign` | **none** — backbone-only | — |
+| `pxdesign` | `sequence` on `summary.csv` in **`extended`** mode — measured twice; it is NOT backbone-only | per-design row on `summary.csv` |
 | *(`proteinmpnn`)* | `sequence` — **colon-joined, designed chain LAST** | `sequence_index` |
 
 `sequence` is the live name on exactly one of these. Everything else needs renaming.
