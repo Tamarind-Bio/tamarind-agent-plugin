@@ -118,11 +118,16 @@ CLI_SNIPPET_GUARDS = [
     ('the failure branch drains the logs in the process that still holds the version',
      r'except CustomToolBuildFailedError[\s\S]{0,400}drain_logs\('),
     ('publishing is a second invocation that refetches the version',
-     r'version = tool\.get_version\(VERSION_NAME\)'),
-    ('the publish process fails on a stale generation rather than resolving the name',
-     r'if tool\.generation != EXPECTED_GENERATION:'),
-    ('the build process hands over the generation, not just the version handle',
-     r'in generation \{tool\.generation\}'),
+     r'version = tool\.get_version\(VERSION_ID\)'),
+    # tamarind-cli 0.3.2 made Version.id the addressable handle and made
+    # get_version REJECT a numbered name (`_require_opaque_version_id`), so a
+    # snippet passing "v3" raises before it can publish. The id also encodes the
+    # generation, which is why the hand-rolled generation comparison this
+    # replaced is gone rather than merely restated.
+    ('the build process hands over the opaque id, not just the numbered name',
+     r'id \{version\.id\}'),
+    ('the publish snippet is pinned by the opaque id',
+     r'VERSION_ID = "ver_'),
     ('a repeated log cursor sleeps and retries rather than ending the drain',
      r'if page\.next_cursor == cursor:[\s\S]{0,300}time\.sleep'),
     # Only the AGENT-side python invocations need -P; the container's own
@@ -130,6 +135,10 @@ CLI_SNIPPET_GUARDS = [
     # blanket "every python line carries -P" check was tried and deleted: it
     # flagged the Dockerfile, the runtime entry point and every ```python fence,
     # and a guard that needs an exemption list is worse than two exact ones.
+    ('the SDK pin is at least 0.3.2, where get_version takes the opaque id',
+     r"tamarind-cli>=0\.3\.2"),
+    ('the runtime-network warning is surfaced, not just described in prose',
+     r'problem\.code == "runtime_network_access"'),
     ('the version probe keeps the repo off sys.path',
      r'python -P -c "import tamarind'),
     ('the lifecycle script keeps the repo off sys.path',
@@ -237,6 +246,12 @@ FORBIDDEN = [
     # exactly that form, so this "cause" sends an agent to rebuild for a non-problem.
     ('an unset execute bit is not a cause of startup failure',
      r"not executable"),
+    # tamarind-cli 0.3.2 `_require_opaque_version_id` raises on ^v[1-9][0-9]*$, so
+    # a snippet handing get_version a numbered name cannot publish at all. Pin the
+    # CALL, not the string "v3": the prose legitimately names v3 when explaining
+    # why a numbered handle is not an identity.
+    ('get_version is never handed a numbered version name',
+     r'get_version\(\s*["\']v[1-9]'),
 ]
 
 
@@ -245,6 +260,17 @@ def test_neither_skill_contains_a_contradicted_claim(rule, pattern):
     for label, skill_dir in (("cli", CLI), ("mcp", MCP)):
         found = re.search(pattern, _text(skill_dir))
         assert not found, f"the {label} skill still contains a contradicted claim — {rule}"
+
+
+def _bound_parameters(args) -> set:
+    """Every name an argument list binds, across all five parameter kinds."""
+    if args is None:
+        return set()
+    names = {a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)}
+    for extra in (args.vararg, args.kwarg):
+        if extra is not None:
+            names.add(extra.arg)
+    return names
 
 
 def test_the_lifecycle_script_defines_every_name_it_uses():
@@ -272,9 +298,11 @@ def test_the_lifecycle_script_defines_every_name_it_uses():
                 assigned.add((alias.asname or alias.name).split(".")[0])
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             assigned.add(node.name)
-            for arg in getattr(node, "args", ast.arguments(
-                    posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[])).args:
-                assigned.add(arg.arg)
+            assigned |= _bound_parameters(getattr(node, "args", None))
+        elif isinstance(node, ast.Lambda):
+            # A lambda binds its parameters too. Missing this reported a correct
+            # `on_event=lambda e: print(e.message)` as an undefined name.
+            assigned |= _bound_parameters(node.args)
         elif isinstance(node, ast.ExceptHandler) and node.name:
             assigned.add(node.name)          # `except E as exc` binds exc
     builtins = set(dir(__builtins__)) | {"print", "SystemExit", "range", "len"}
