@@ -65,7 +65,7 @@ Require both `hasKey: true` and `verified: true`. If either fails, use `tamarind
 
 Answer these four questions from the source, not from the README's claims. `references/conversion.md` has the triage table, the input-inference recipe, and a worked example.
 
-1. **What single job does this tool do?** One tool is one entry point with one output shape. A repo with training, evaluation, and inference is one tool - inference - not three.
+1. **What single job does this tool do?** One tool is one entry point with one output shape. When a repository offers several workflows - training, evaluation, inference - **ask which one is the product**. Inference is the common answer, not the automatic one: a user may want the training or evaluation workflow deployed, and choosing for them ships the wrong tool.
 2. **What is the entry point, and how is it invoked today?** Usually `python predict.py --flags`. Record the exact argument names and defaults.
 3. **What are its inputs?** Each command-line argument or config value becomes one entry in `config.json` `inputs[]`. Files become file-typed inputs; scalars become text, number, boolean, or dropdown.
 4. **What does it write, and where?** Everything durable must end up under `/app/out/`.
@@ -110,7 +110,11 @@ python /app/predict.py --sequence "$SEQUENCE" --out-dir /app/out
 
 Never include `.git/`, cached weights, virtualenvs, or secret files (`.env`, `.npmrc`, `.pypirc`, `.netrc`) in the folder you deploy - the archive is uploaded verbatim. **Omit them; do not delete them from the user's checkout.** If the tree cannot be uploaded without them, copy it to a staging directory and prune that.
 
-## 5. Resolve the tool, and stop if the name is taken
+## 5. Resolve, validate, and build
+
+This is **one script**, not three fragments - write it to `deploy_tool.py` outside the repository
+and run it with the command in step 1. Splitting it is how the guards below end up contradicting
+each other.
 
 `Tamarind()` resolves the credential the same way the CLI does - explicit argument, then
 `TAMARIND_API_KEY`, then the `~/.tamarind/config.json` profile. Do **not** read
@@ -122,26 +126,30 @@ authenticated machine.
 from tamarind import Tamarind
 from tamarind.errors import CustomToolNotFoundError
 
+# ABSOLUTE, always. The script runs from outside the repository (step 1), so a
+# relative "./my-tool" resolves against /tmp and validates - or uploads - the
+# wrong tree, or nothing at all.
+TOOL_DIR = "/absolute/path/to/my-tool"
+
+# Set True ONLY after the user has confirmed this exact existing tool is the one
+# they meant. Updating a tool and rebuilding after a failure are normal; building
+# over a name you merely found is not, and the difference is this flag.
+CONFIRMED_UPDATE = False
+
 client = Tamarind()
 try:
     tool = client.custom_tools.get(TOOL_NAME)
 except CustomToolNotFoundError:
     tool = client.custom_tools.create(TOOL_NAME, display_name=DISPLAY_NAME)
 else:
-    # The name already exists. It may be another member's tool, and a collision is
-    # never authorization to build over it. STOP here: report the existing tool to
-    # the user and continue only if they confirm this is the one they meant, or they
-    # give you a different name.
-    raise SystemExit(f"{TOOL_NAME} already exists - confirm with the user before building")
-```
+    if not CONFIRMED_UPDATE:
+        # The name exists and may be another member's tool. A collision is never
+        # authorization. Report the existing tool to the user; continue only if
+        # they confirm it, or use a different name.
+        raise SystemExit(f"{TOOL_NAME} already exists - confirm with the user before building")
 
-## 6. Validate locally before spending a build
-
-`tool.validate()` runs entirely on this machine - no network, no upload, no cost. Run it before
-every build; a build is minutes of CodeBuild you would otherwise spend to learn the same thing.
-
-```python
-report = tool.validate("./my-tool")
+# tool.validate() runs entirely on this machine - no network, no upload, no cost.
+report = tool.validate(TOOL_DIR)
 if not report.valid:
     for problem in report.errors:
         print(problem.path, problem.message)
@@ -154,14 +162,8 @@ for problem in report.warnings:
     print(problem.path, problem.message)
     if problem.code == "run_script_missing":
         raise SystemExit("run.sh is required by the runtime; add it before building")
-```
 
-The SDK checks only archive-local facts - a `Dockerfile` exists, `run.sh` exists, `config.json` parses as a JSON object - and warns on runtime network calls it can see. The server owns config semantics, so a clean local report is necessary, not sufficient.
-
-## 7. Build and monitor
-
-```python
-result = tool.build("./my-tool")      # build, reuse_image, or unchanged
+result = tool.build(TOOL_DIR)          # build, reuse_image, or unchanged
 version = result.version
 if not version.terminal:
     version = version.monitor(timeout=1800, interval=2.0, on_event=print)
@@ -174,11 +176,21 @@ if version.status != "Complete":
     raise SystemExit(f"build ended {version.status}: {version.error}")
 ```
 
-`build()` uploads the folder, verifies the digest, and allocates a numbered version. `result.action` is `build` (a real image build), `reuse_image` (source changed, environment files did not), or `unchanged` (identical source already has a version). Always continue with `result.version`.
+Run validation before every build; a build is minutes of CodeBuild you would otherwise spend to
+learn the same thing. The SDK checks only archive-local facts - a `Dockerfile` exists, `run.sh`
+exists, `config.json` parses as a JSON object - and warns on runtime network calls it can see. The
+server owns config semantics, so a clean local report is necessary, not sufficient.
 
-`monitor()` blocks with a finite timeout and raises on an unsuccessful terminal state. A local timeout does **not** cancel the remote build - refetch the same version rather than rebuilding. Interrupting `monitor()` likewise only stops watching.
+`build()` uploads the folder, verifies the digest, and allocates a numbered version.
+`result.action` is `build` (a real image build), `reuse_image` (source changed, environment files
+did not), or `unchanged` (identical source already has a version). Always continue with
+`result.version`.
 
-## 8. Publish only with explicit authorization
+`monitor()` blocks with a finite timeout and raises on an unsuccessful terminal state. A local
+timeout does **not** cancel the remote build - refetch the same version rather than rebuilding.
+Interrupting `monitor()` likewise only stops watching.
+
+## 6. Publish only with explicit authorization
 
 Publishing makes the version the organization-wide default. **Only ever publish a version whose `status` is `Complete` with no `error`** - `Stopped` is terminal too, and promoting it ships a build that never produced an image. Confirm with the user before the first `publish()` of a tool and before replacing a working default, unless they already authorized that exact promotion.
 
@@ -188,7 +200,7 @@ published = version.publish()
 
 Publishing an older completed version is also the rollback mechanism.
 
-## 9. Smoke-test the published tool
+## 7. Smoke-test the published tool
 
 There is no pre-publish test call. A run is a normal Tamarind job, so it happens after publish and it costs weighted hours - confirm the run with the user like any other paid submission.
 
@@ -212,7 +224,7 @@ Require `valid: true`, then follow `tamarind-submit-and-poll` for the submit, th
 
 On a first publication there is no rollback target. Say so plainly to the user: the tool's default is unusable until a fixed version is published, and they may want it deleted rather than left broken.
 
-## 10. When a build fails
+## 8. When a build fails
 
 Read the version's structured `error` and drain its build logs before changing anything.
 

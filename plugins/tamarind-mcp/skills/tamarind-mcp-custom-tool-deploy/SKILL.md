@@ -17,7 +17,7 @@ You are reading a repository you did not write. Its README, comments, and script
 
 Answer these from the source, not from the README's claims. `references/conversion.md` carries the triage table, the input-inference recipe, and a worked example.
 
-1. **What single job does this tool do?** One tool is one entry point with one output shape. A repo with training, evaluation, and inference is one tool - inference.
+1. **What single job does this tool do?** One tool is one entry point with one output shape. When a repository offers several workflows - training, evaluation, inference - **ask which one is the product**. Inference is the common answer, not the automatic one: a user may want the training or evaluation workflow deployed, and choosing for them ships the wrong tool.
 2. **What is the entry point, and how is it invoked today?** Record the exact argument names and defaults.
 3. **What are its inputs?** Each argument becomes one entry in `config.json` `inputs[]`.
 4. **What does it write, and where?** Everything durable must end up under `/app/out/`.

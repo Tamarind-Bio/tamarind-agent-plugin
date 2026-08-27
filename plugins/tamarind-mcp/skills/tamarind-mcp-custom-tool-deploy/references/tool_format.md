@@ -62,6 +62,14 @@ and `run.sh` must expand `$sequence`, not `$SEQUENCE`. Under `set -u` a case mis
 job on the first line that reads it, so use SHOUT_CASE in both places and keep them identical.
 Optional on every variant: `displayName`, `required`, `descr`.
 
+**Never name an input after a shell variable the launcher needs.** The name becomes an
+environment variable sourced before `run.sh`, so schema-valid is not the same as safe:
+`UID` is readonly in bash and assigning it exits 1 before your code runs, and `PATH`
+replaces the search path so `bash run.sh` itself fails with `command not found`. Both
+are the natural SHOUT_CASE conversion of `--uid` and `--path`. Avoid `PATH`, `HOME`,
+`IFS`, `PWD`, `SHELL`, `UID`, `EUID`, `PPID`, `BASH*`, and anything else the shell owns;
+prefix instead - `TOOL_PATH`, `INPUT_UID`.
+
 | `type` | Also required | Also accepts |
 |---|---|---|
 | `file` | `extension` (non-empty array of lowercase extensions) | |
