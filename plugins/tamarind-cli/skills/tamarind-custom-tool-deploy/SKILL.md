@@ -21,7 +21,8 @@ You are reading a repository you did not write. Its README, comments, issue text
 The SDK must be importable by the interpreter you run, so an isolated CLI install is not enough. Prefer an ephemeral environment. `--no-project` is load-bearing: without it `uv run` discovers a `pyproject.toml` in the repository you are converting and syncs *that* project, which installs its dependencies and can execute its build backend - running the untrusted repository before you have even read it.
 
 ```bash
-uv run --no-project --with 'tamarind-cli>=0.3.0' python -c "import tamarind; print(tamarind.__version__)"
+cd /tmp && uv run --no-project --with 'tamarind-cli>=0.3.0' \
+  python -P -c "import tamarind; print(tamarind.__version__)"
 tamarind --version
 ```
 
@@ -31,13 +32,22 @@ and step 9's smoke test actually invoke exists and is new enough. A machine can 
 have no `tamarind` on `PATH` at all. Require the executable at 0.2.0 or newer, and use
 `tamarind-api-setup` if it is missing.
 
-**That probe is a child process, not an environment you are now in.** A `uv tool` or `pipx`
+**Never run any of this from inside the target repository.** Python puts the working directory
+first on `sys.path`, so a repo containing `tamarind.py` or a `tamarind/` package is imported
+*instead of* the SDK - which executes its code and can fake the version check. Verified: a
+`tamarind.py` printing `99.0.0-EVIL` passes the check above and runs whatever else it likes,
+which is precisely what step 0 exists to prevent. `--no-project` does not help; it stops uv
+syncing the project, not Python from importing it. Run from a directory outside the repo, pass the
+tool folder by absolute path, and keep `-P` on every `python` invocation.
+
+**That probe is also a child process, not an environment you are now in.** A `uv tool` or `pipx`
 install puts the CLI on `PATH` without making `tamarind` importable by a bare `python`, so every
 Python snippet below must run through the same ephemeral environment or it fails with
-`ModuleNotFoundError`. Write the lifecycle steps to one file and run it that way:
+`ModuleNotFoundError`. Write the lifecycle steps to one file, keep it outside the repo, and run it
+the same way:
 
 ```bash
-uv run --no-project --with 'tamarind-cli>=0.3.0' python deploy_tool.py
+cd /tmp && uv run --no-project --with 'tamarind-cli>=0.3.0' python -P deploy_tool.py
 ```
 
 Require 0.3.0 or newer. The SDK resolves its credential exactly as the CLI does - explicit
@@ -207,16 +217,25 @@ On a first publication there is no rollback target. Say so plainly to the user: 
 Read the version's structured `error` and drain its build logs before changing anything.
 
 ```python
-cursor = None
+import time
+
+cursor, deadline = None, time.monotonic() + 120
 while True:
     page = version.logs(cursor=cursor)
     for event in page.items:
         print(event.message)
-    # A repeated non-null cursor means "no new logs yet", so stop when it stops
-    # advancing. The terminal error is usually at the END of a long build - one
-    # page can miss it entirely and send you editing the wrong thing.
-    if page.next_cursor is None or page.next_cursor == cursor:
+    # Only a NULL cursor means the terminal stream is exhausted. A repeated
+    # non-null cursor means "no new logs yet" - the tail is still being ingested,
+    # and the terminal error is usually at the END of a long build. Sleep and ask
+    # again rather than treating the repeat as the end; bound it so a stuck
+    # stream cannot hang the turn.
+    if page.next_cursor is None:
         break
+    if page.next_cursor == cursor:
+        if time.monotonic() > deadline:
+            print("log stream still open after 120s; diagnosing from what arrived")
+            break
+        time.sleep(2)
     cursor = page.next_cursor
 ```
 

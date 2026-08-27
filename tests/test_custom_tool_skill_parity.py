@@ -64,6 +64,11 @@ INVARIANTS = [
         r"never authorization|confirm with the user before building",
         r"confirm with the user before deploying over it",
     ),
+    (
+        "a failed smoke test rolls back before diagnosis, and a first publish says so",
+        r"roll back before you diagnose[\s\S]{0,900}no rollback target",
+        r"roll back before you diagnose[\s\S]{0,900}no rollback target",
+    ),
 ]
 
 
@@ -94,8 +99,19 @@ CLI_SNIPPET_GUARDS = [
      r'raise SystemExit\("run\.sh is required by the runtime'),
     ('an existing tool name stops instead of building',
      r'raise SystemExit\(f"\{TOOL_NAME\} already exists'),
-    ('build logs are drained, not read one page deep',
-     r'while True:[\s\S]{0,400}page\.next_cursor'),
+    ('build logs are drained until the cursor is NULL, not until it repeats',
+     r'if page\.next_cursor is None:[\s\S]{0,200}break'),
+    ('a repeated log cursor sleeps and retries rather than ending the drain',
+     r'if page\.next_cursor == cursor:[\s\S]{0,300}time\.sleep'),
+    # Only the AGENT-side python invocations need -P; the container's own
+    # `python /app/predict.py` runs inside the image and must not have it. A
+    # blanket "every python line carries -P" check was tried and deleted: it
+    # flagged the Dockerfile, the runtime entry point and every ```python fence,
+    # and a guard that needs an exemption list is worse than two exact ones.
+    ('the version probe keeps the repo off sys.path',
+     r'python -P -c "import tamarind'),
+    ('the lifecycle script keeps the repo off sys.path',
+     r'python -P deploy_tool\.py'),
     ('the SDK probe cannot sync the target repository',
      r'uv run --no-project'),
 ]

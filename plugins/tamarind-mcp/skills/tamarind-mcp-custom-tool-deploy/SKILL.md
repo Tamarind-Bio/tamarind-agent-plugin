@@ -41,6 +41,8 @@ That last row is the most common cause of a tool that builds cleanly and then fa
 
 `deployCustomTool` creates the tool when the name is free and updates it when it is not — so check first. Call `getCustomTool` with no arguments to list what the organization already owns. If the name is taken, another member owns that tool: confirm with the user before deploying over it, or choose a different name.
 
+**If the name was free, deploy with `expectNew=True`.** The listing is a snapshot: another member can create that name between your check and your deploy, and the plain create-or-update call would then build over their brand-new tool without anyone confirming it. `expectNew=True` refuses to update an existing tool, so the race fails loudly instead of silently.
+
 **If you are updating an existing tool, carry its `generation` into every later call.** `getCustomTool` returns it; pass it to `deployCustomTool` for the deploy, the publish, and any cancel. Without it the name is resolved fresh each time, so if someone deletes and recreates that name between the user's confirmation and your deploy, you would update the *replacement* — a tool nobody authorized you to touch. A pinned generation fails loudly instead.
 
 ## 4. Validate, then deploy
@@ -87,7 +89,11 @@ Every mutation carries `generation`, without exception. A name-only call resolve
 
 There is no pre-publish test call. A run is an ordinary Tamarind job, so it happens after publish and it costs weighted hours - confirm it with the user like any other paid submission.
 
-Then follow `tamarind-mcp-submit-and-poll`: `getJobSchema` for the new tool name, `validateJob` requiring `valid: true` with no `mutatedFields`, `estimateTime`, one `submitJob`, and a bounded `getJobs` poll. If the run fails, fix the source and build a new version; do not republish the same bytes.
+Then follow `tamarind-mcp-submit-and-poll`: `getJobSchema` for the new tool name, `validateJob` requiring `valid: true` with no `mutatedFields`, `estimateTime`, one `submitJob`, and a bounded `getJobs` poll.
+
+**If the run fails, roll back before you diagnose.** The broken version is already the organization-wide default, and every member submitting this tool gets it for as long as you spend reading logs and rebuilding. Publish the previous known-good version immediately — `getCustomTool` lists them, and `deployCustomTool(name, publishVersion=OLDER, generation=GENERATION)` on an older `Complete` one is the rollback — *then* fix the source and deploy a new version. Do not republish the same bytes.
+
+On a first publication there is no rollback target. Say so plainly to the user: the tool's default is unusable until a fixed version is published, and they may want it deleted rather than left broken.
 
 ## 8. When a build fails
 
