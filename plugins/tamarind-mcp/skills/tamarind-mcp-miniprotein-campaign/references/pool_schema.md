@@ -34,6 +34,21 @@ residues the offset selects must be the amino acids the frozen epitope names.
 
 Call this **before** you conclude a method produced nothing. "This method produced nothing" is a diagnosis only after you have opened the file `mainCSV` names.
 
+## The contract the canary writes, per method
+
+§3 requires the canary to record the output contract rather than re-derive it. Carry at
+least:
+
+- the **resolved on-disk path** of the result table — the path `listJobFiles` confirmed, not the one the schema declared;
+- the **binder sequence column**, whether it is joined, and if so the delimiter and which field is the binder;
+- the **binder chain letter** in the output structure, and whether it is stable across rows;
+- the **columns that together make a unique design id**, and the grouping key that collapses rows to one per design;
+- what `numDesigns` actually bought — requested versus realized row count;
+- the residue-numbering frame the outputs use, and the offset to the frozen construct.
+
+Where the surface is a code bridge with no argument-name visibility, the method call
+shapes belong in this same artifact (§0).
+
 ## What the scripts require
 
 `campaign_gates.py` — refuses the whole pool otherwise:
