@@ -112,9 +112,13 @@ CLI_SNIPPET_GUARDS = [
     ('the source folder is passed by absolute path, never relative',
      r'TOOL_DIR = "/absolute/'),
     ('validate and build use the same absolute path variable',
-     r'tool\.validate\(TOOL_DIR\)[\s\S]{0,900}tool\.build\(TOOL_DIR\)'),
+     r'tool\.validate\(TOOL_DIR\)[\s\S]{0,2500}tool\.build\(TOOL_DIR\)'),
     ('build logs are drained until the cursor is NULL, not until it repeats',
-     r'if page\.next_cursor is None:[\s\S]{0,200}break'),
+     r'if page\.next_cursor is None:\s*\n\s*return'),
+    ('the failure branch drains the logs in the process that still holds the version',
+     r'except CustomToolBuildFailedError[\s\S]{0,400}drain_logs\('),
+    ('publishing is a second invocation that refetches the version',
+     r'version = tool\.get_version\(VERSION_NAME\)'),
     ('a repeated log cursor sleeps and retries rather than ending the drain',
      r'if page\.next_cursor == cursor:[\s\S]{0,300}time\.sleep'),
     # Only the AGENT-side python invocations need -P; the container's own
@@ -260,6 +264,11 @@ def test_the_lifecycle_script_defines_every_name_it_uses():
                 assigned.add((alias.asname or alias.name).split(".")[0])
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             assigned.add(node.name)
+            for arg in getattr(node, "args", ast.arguments(
+                    posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[])).args:
+                assigned.add(arg.arg)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            assigned.add(node.name)          # `except E as exc` binds exc
     builtins = set(dir(__builtins__)) | {"print", "SystemExit", "range", "len"}
     free = {n: ln for n, ln in used.items() if n not in assigned and n not in builtins}
     assert not free, f"the lifecycle script uses undefined names: {free}"
@@ -275,6 +284,11 @@ def test_the_mcp_skill_never_sends_users_to_the_sdk_validator():
     assert "validateOnly" in text
     for forbidden in ("tool.validate(", "Offline, by the SDK", "offline and costs nothing"):
         assert forbidden not in text, f"MCP skill points at an SDK-only check: {forbidden!r}"
+    # This plugin has no HTTP client, so it must not send the agent to fetch the
+    # schema itself. The CLI skill cites the same URL legitimately, which is why
+    # this check is MCP-only rather than in the shared FORBIDDEN list.
+    assert "tamarind-tool.schema.json" not in text, (
+        "MCP skill tells the agent to fetch a schema over plain HTTP")
 
 
 def test_only_the_cli_skill_claims_local_validation():

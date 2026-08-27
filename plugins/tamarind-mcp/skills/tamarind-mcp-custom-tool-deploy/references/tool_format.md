@@ -1,8 +1,9 @@
 # The Tamarind custom-tool format
 
-The authoritative JSON Schema is published at `https://app.tamarind.bio/tamarind-tool.schema.json`.
-Fetch it and validate against it rather than trusting this summary, which can lag. `config.json`
-is `additionalProperties: false`, so an invented key is a hard failure.
+`config.json` is `additionalProperties: false`, so an invented key is a hard failure. Validate with
+`deployCustomTool(validateOnly=True)`, which checks the archive against the server's own contract -
+this plugin has no HTTP client and must not fetch a schema itself. The summary below can lag the
+server; `validateOnly` cannot.
 
 ## Archive layout
 

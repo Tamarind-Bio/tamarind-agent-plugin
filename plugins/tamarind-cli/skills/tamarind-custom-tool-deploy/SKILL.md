@@ -123,8 +123,10 @@ profile and no environment variable, and that lookup would raise `KeyError` on a
 authenticated machine.
 
 ```python
+import time
+
 from tamarind import Tamarind
-from tamarind.errors import CustomToolNotFoundError
+from tamarind.errors import CustomToolBuildFailedError, CustomToolNotFoundError
 
 # ABSOLUTE, always. The script runs from outside the repository (step 1), so a
 # relative "./my-tool" resolves against /tmp and validates - or uploads - the
@@ -168,17 +170,50 @@ for problem in report.warnings:
     if problem.code == "run_script_missing":
         raise SystemExit("run.sh is required by the runtime; add it before building")
 
+def drain_logs(version):
+    """Print every build-log page. Only a NULL cursor ends the stream."""
+    cursor, deadline = None, time.monotonic() + 120
+    while True:
+        page = version.logs(cursor=cursor)
+        for event in page.items:
+            print(event.message)
+        # A repeated non-null cursor means "no new logs yet" - the tail is still
+        # being ingested, and the terminal error is usually at the END of a long
+        # build. Sleep and ask again rather than treating the repeat as the end;
+        # bound it so a stuck stream cannot hang the turn.
+        if page.next_cursor is None:
+            return
+        if page.next_cursor == cursor:
+            if time.monotonic() > deadline:
+                print("log stream still open after 120s; diagnosing from what arrived")
+                return
+            time.sleep(2)
+        cursor = page.next_cursor
+
+
 result = tool.build(TOOL_DIR)          # build, reuse_image, or unchanged
 version = result.version
-if not version.terminal:
-    version = version.monitor(timeout=1800, interval=2.0, on_event=print)
+try:
+    if not version.terminal:
+        version = version.monitor(timeout=1800, interval=2.0, on_event=print)
+except CustomToolBuildFailedError as exc:
+    # monitor() RAISES on failure, so anything after it never runs. Drain the logs
+    # here, in the only process that still holds `version` - a later snippet in a
+    # fresh process would have nothing to drain.
+    print(exc)
+    drain_logs(exc.detail if exc.detail is not None else version)
+    raise SystemExit("build failed; see the log above")
 
-# monitor() raises on an unsuccessful terminal state, but it is SKIPPED when the
-# returned version is already terminal - a fast failure, or a terminal
-# reuse_image/unchanged result. Check the status yourself, or that path reaches
-# publish() having verified nothing.
+# monitor() is SKIPPED when the returned version is already terminal - a fast
+# failure, or a terminal reuse_image/unchanged result - so its raise cannot be the
+# only status check.
 if version.status != "Complete":
+    drain_logs(version)
     raise SystemExit(f"build ended {version.status}: {version.error}")
+
+# The build is good and NOT yet published. Print what the publish step needs; the
+# approval boundary is a process boundary, because a human decides in between.
+print(f"built {TOOL_NAME} {version.name} - awaiting approval to publish")
 ```
 
 Run validation before every build; a build is minutes of CodeBuild you would otherwise spend to
@@ -199,11 +234,28 @@ Interrupting `monitor()` likewise only stops watching.
 
 Publishing makes the version the organization-wide default. **Only ever publish a version whose `status` is `Complete` with no `error`** - `Stopped` is terminal too, and promoting it ships a build that never produced an image. Confirm with the user before the first `publish()` of a tool and before replacing a working default, unless they already authorized that exact promotion.
 
+The approval boundary is a **process** boundary: `deploy_tool.py` has exited by the time the user
+answers, so `version` is gone. Do not append this to that script - appending it publishes without
+ever pausing for the approval this section exists to require. Refetch the exact version instead,
+in a second invocation run the same way:
+
 ```python
+# publish_tool.py - run only after the user approves the version deploy_tool.py printed
+from tamarind import Tamarind
+
+TOOL_NAME = "my-tool"
+VERSION_NAME = "v3"                    # exactly what deploy_tool.py reported
+
+tool = Tamarind().custom_tools.get(TOOL_NAME)
+version = tool.get_version(VERSION_NAME)
+if version.status != "Complete":
+    raise SystemExit(f"{VERSION_NAME} is {version.status}; only a Complete version may be published")
 published = version.publish()
+print(f"published {published.name} {published.default_version}")
 ```
 
-Publishing an older completed version is also the rollback mechanism.
+Publishing an older completed version is the rollback mechanism - pass its handle as
+`VERSION_NAME`.
 
 ## 7. Smoke-test the published tool
 
@@ -237,34 +289,17 @@ On a first publication there is no rollback target. Say so plainly to the user: 
 
 ## 8. When a build fails
 
-Read the version's structured `error` and drain its build logs before changing anything.
+`deploy_tool.py` already drained the logs and printed the version's structured `error` - that is
+what its `drain_logs` call in the failure branch is for, and it has to happen there because
+`monitor()` raises and the process ends. Read that output; do not start a fresh process expecting
+`version` to still exist.
 
-```python
-import time
-
-cursor, deadline = None, time.monotonic() + 120
-while True:
-    page = version.logs(cursor=cursor)
-    for event in page.items:
-        print(event.message)
-    # Only a NULL cursor means the terminal stream is exhausted. A repeated
-    # non-null cursor means "no new logs yet" - the tail is still being ingested,
-    # and the terminal error is usually at the END of a long build. Sleep and ask
-    # again rather than treating the repeat as the end; bound it so a stuck
-    # stream cannot hang the turn.
-    if page.next_cursor is None:
-        break
-    if page.next_cursor == cursor:
-        if time.monotonic() > deadline:
-            print("log stream still open after 120s; diagnosing from what arrived")
-            break
-        time.sleep(2)
-    cursor = page.next_cursor
-```
+To re-read a failed build later, refetch it the way `publish_tool.py` does
+(`tool.get_version(VERSION_NAME)`) and call `drain_logs` on the result.
 
 | Symptom | Likely cause |
 |---|---|
-| Image builds, job fails immediately | `run.sh` missing, not executable, or reading an input name that is not in `inputs[]` |
+| Image builds, job fails immediately | `run.sh` missing or unreadable, or reading an input name that is not in `inputs[]` |
 | Job runs then produces nothing | Results written outside `/app/out/` |
 | Job hangs or fails fetching something | Runtime network access - bake it into the image instead |
 | CUDA or driver errors | `gpuType` and the base image disagree |
