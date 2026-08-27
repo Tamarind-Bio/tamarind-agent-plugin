@@ -41,7 +41,7 @@ def test_every_skill_has_minimal_frontmatter_and_ui_metadata() -> None:
     skill_dirs = sorted(
         path for path in SKILLS.iterdir() if (path / "SKILL.md").is_file()
     )
-    assert len(skill_dirs) == 15
+    assert len(skill_dirs) == 16
     for skill_dir in skill_dirs:
         skill_path = skill_dir / "SKILL.md"
         assert skill_path.is_file(), skill_dir
