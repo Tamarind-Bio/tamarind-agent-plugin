@@ -41,11 +41,15 @@ That last row is the most common cause of a tool that builds cleanly and then fa
 
 `deployCustomTool` creates the tool when the name is free and updates it when it is not — so check first. Call `getCustomTool` with no arguments to list what the organization already owns. If the name is taken, another member owns that tool: confirm with the user before deploying over it, or choose a different name.
 
+**If you are updating an existing tool, carry its `generation` into every later call.** `getCustomTool` returns it; pass it to `deployCustomTool` for the deploy, the publish, and any cancel. Without it the name is resolved fresh each time, so if someone deletes and recreates that name between the user's confirmation and your deploy, you would update the *replacement* — a tool nobody authorized you to touch. A pinned generation fails loudly instead.
+
 ## 4. Validate, then deploy
 
 `deployCustomTool` takes the whole source tree as `files`, a map of archive-relative path to content. `Dockerfile`, `run.sh`, and `config.json` go at the ROOT of that map; binary members go in `binaryFiles` as base64. The server zips it, hashes the exact bytes, uploads, and mints a version.
 
 Run it with `validateOnly=True` first. It spends no build and mutates nothing, and it catches a missing `Dockerfile` or malformed `config.json` before a build is spent. It is **not** a local check: `validateOnly` still sends `files` and `binaryFiles` over the MCP transport to the Tamarind server, so the source leaves the machine either way. If the user must keep the source local until they approve the upload, ask before the first call rather than after. Fix every reported error, then call it again without the flag.
+
+**One warning is blocking.** A missing `run.sh` is reported as a *warning*, not an error, because the archive is still well-formed - but the orchestrator invokes `run.sh` directly, so the image cannot start without it. Treat `run_script_missing` as a hard stop and add the file before deploying for real.
 
 Deploying again with new source IS the update path — there is no separate update call.
 

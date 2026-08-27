@@ -22,7 +22,14 @@ The SDK must be importable by the interpreter you run, so an isolated CLI instal
 
 ```bash
 uv run --no-project --with 'tamarind-cli>=0.3.0' python -c "import tamarind; print(tamarind.__version__)"
+tamarind --version
 ```
+
+Both, because they are different things. The first proves the SDK this skill drives is importable
+in an ephemeral environment; the second proves the `tamarind` executable that step 1's auth check
+and step 9's smoke test actually invoke exists and is new enough. A machine can pass the first and
+have no `tamarind` on `PATH` at all. Require the executable at 0.2.0 or newer, and use
+`tamarind-api-setup` if it is missing.
 
 Require 0.3.0 or newer. The SDK resolves its credential exactly as the CLI does - explicit
 argument, then `TAMARIND_API_KEY`, then the `~/.tamarind/config.json` profile - so either an
@@ -139,6 +146,13 @@ result = tool.build("./my-tool")      # build, reuse_image, or unchanged
 version = result.version
 if not version.terminal:
     version = version.monitor(timeout=1800, interval=2.0, on_event=print)
+
+# monitor() raises on an unsuccessful terminal state, but it is SKIPPED when the
+# returned version is already terminal - a fast failure, or a terminal
+# reuse_image/unchanged result. Check the status yourself, or that path reaches
+# publish() having verified nothing.
+if version.status != "Complete":
+    raise SystemExit(f"build ended {version.status}: {version.error}")
 ```
 
 `build()` uploads the folder, verifies the digest, and allocates a numbered version. `result.action` is `build` (a real image build), `reuse_image` (source changed, environment files did not), or `unchanged` (identical source already has a version). Always continue with `result.version`.
@@ -147,7 +161,7 @@ if not version.terminal:
 
 ## 8. Publish only with explicit authorization
 
-Publishing makes the version the organization-wide default. Confirm with the user before the first `publish()` of a tool and before replacing a working default, unless they already authorized that exact promotion.
+Publishing makes the version the organization-wide default. **Only ever publish a version whose `status` is `Complete` with no `error`** - `Stopped` is terminal too, and promoting it ships a build that never produced an image. Confirm with the user before the first `publish()` of a tool and before replacing a working default, unless they already authorized that exact promotion.
 
 ```python
 published = version.publish()
