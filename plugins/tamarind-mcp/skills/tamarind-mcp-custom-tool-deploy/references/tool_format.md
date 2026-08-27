@@ -14,8 +14,11 @@ my-tool/
 └── ...             your code, at whatever paths run.sh expects
 ```
 
-Exclude `.git/`, virtualenvs, `__pycache__`, and cached weights. Delete `.env`, `.npmrc`,
-`.pypirc`, and `.netrc` before packaging: the archive is uploaded byte for byte.
+Never include `.git/`, virtualenvs, `__pycache__`, cached weights, or secret files
+(`.env`, `.npmrc`, `.pypirc`, `.netrc`) in the map or folder you upload — the archive is
+taken verbatim. **Omit them from the upload; do not delete them from the user's checkout.**
+If the source tree cannot be uploaded without them, copy the tree to a staging directory and
+prune that, leaving the original repository untouched.
 
 ## Runtime contract
 

@@ -45,7 +45,7 @@ That last row is the most common cause of a tool that builds cleanly and then fa
 
 `deployCustomTool` takes the whole source tree as `files`, a map of archive-relative path to content. `Dockerfile`, `run.sh`, and `config.json` go at the ROOT of that map; binary members go in `binaryFiles` as base64. The server zips it, hashes the exact bytes, uploads, and mints a version.
 
-Run it with `validateOnly=True` first. That is free, touches no network, and catches a missing `Dockerfile` or malformed `config.json` before a build is spent. Fix every reported error, then call it again without the flag.
+Run it with `validateOnly=True` first. It spends no build and mutates nothing, and it catches a missing `Dockerfile` or malformed `config.json` before a build is spent. It is **not** a local check: `validateOnly` still sends `files` and `binaryFiles` over the MCP transport to the Tamarind server, so the source leaves the machine either way. If the user must keep the source local until they approve the upload, ask before the first call rather than after. Fix every reported error, then call it again without the flag.
 
 Deploying again with new source IS the update path — there is no separate update call.
 

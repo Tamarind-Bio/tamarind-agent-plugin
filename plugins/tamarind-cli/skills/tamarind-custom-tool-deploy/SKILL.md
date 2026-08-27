@@ -24,7 +24,10 @@ The SDK must be importable by the interpreter you run, so an isolated CLI instal
 uv run --with 'tamarind-cli>=0.3.0' python -c "import tamarind; print(tamarind.__version__)"
 ```
 
-Require 0.3.0 or newer. Authentication comes from `TAMARIND_API_KEY`; never pass a key as an argument or print it. Verify the credential with the CLI first:
+Require 0.3.0 or newer. The SDK resolves its credential exactly as the CLI does - explicit
+argument, then `TAMARIND_API_KEY`, then the `~/.tamarind/config.json` profile - so either an
+exported key or `tamarind auth login` works. Never pass a key as an argument or print it.
+Verify the credential with the CLI first:
 
 ```bash
 tamarind --json auth status
@@ -79,11 +82,37 @@ mkdir -p /app/out
 python /app/predict.py --sequence "$SEQUENCE" --out-dir /app/out
 ```
 
-Exclude `.git/`, cached weights, and virtualenvs from the folder you deploy. Remove `.env`, `.npmrc`, `.pypirc`, and `.netrc` before packaging - the archive is uploaded verbatim.
+Never include `.git/`, cached weights, virtualenvs, or secret files (`.env`, `.npmrc`, `.pypirc`, `.netrc`) in the folder you deploy - the archive is uploaded verbatim. **Omit them; do not delete them from the user's checkout.** If the tree cannot be uploaded without them, copy it to a staging directory and prune that.
 
-## 5. Validate locally before spending a build
+## 5. Resolve the tool, and stop if the name is taken
 
-`validate()` is offline and costs nothing. Run it before every build; a build is minutes of CodeBuild you would otherwise spend to learn the same thing.
+`Tamarind()` resolves the credential the same way the CLI does - explicit argument, then
+`TAMARIND_API_KEY`, then the `~/.tamarind/config.json` profile. Do **not** read
+`os.environ["TAMARIND_API_KEY"]` yourself: a user who ran `tamarind auth login` has a working
+profile and no environment variable, and that lookup would raise `KeyError` on a correctly
+authenticated machine.
+
+```python
+from tamarind import Tamarind
+from tamarind.errors import CustomToolNotFoundError
+
+client = Tamarind()
+try:
+    tool = client.custom_tools.get(TOOL_NAME)
+except CustomToolNotFoundError:
+    tool = client.custom_tools.create(TOOL_NAME, display_name=DISPLAY_NAME)
+else:
+    # The name already exists. It may be another member's tool, and a collision is
+    # never authorization to build over it. STOP here: report the existing tool to
+    # the user and continue only if they confirm this is the one they meant, or they
+    # give you a different name.
+    raise SystemExit(f"{TOOL_NAME} already exists - confirm with the user before building")
+```
+
+## 6. Validate locally before spending a build
+
+`tool.validate()` runs entirely on this machine - no network, no upload, no cost. Run it before
+every build; a build is minutes of CodeBuild you would otherwise spend to learn the same thing.
 
 ```python
 report = tool.validate("./my-tool")
@@ -94,32 +123,20 @@ if not report.valid:
 
 The SDK checks only archive-local facts - a `Dockerfile` exists, `run.sh` exists, `config.json` parses as a JSON object - and warns on runtime network calls it can see. The server owns config semantics, so a clean local report is necessary, not sufficient.
 
-## 6. Create, build, and monitor
+## 7. Build and monitor
 
 ```python
-import os
-from tamarind import Tamarind
-from tamarind.errors import CustomToolNotFoundError
-
-with Tamarind(api_key=os.environ["TAMARIND_API_KEY"]) as client:
-    try:
-        tool = client.custom_tools.get(TOOL_NAME)
-    except CustomToolNotFoundError:
-        tool = client.custom_tools.create(TOOL_NAME, display_name=DISPLAY_NAME)
-
-    result = tool.build("./my-tool")      # build, reuse_image, or unchanged
-    version = result.version
-    if not version.terminal:
-        version = version.monitor(timeout=1800, interval=2.0, on_event=print)
+result = tool.build("./my-tool")      # build, reuse_image, or unchanged
+version = result.version
+if not version.terminal:
+    version = version.monitor(timeout=1800, interval=2.0, on_event=print)
 ```
-
-`get` before `create`: a name collision means another member owns that tool, and is never permission to build over it. Choose a different name and say so.
 
 `build()` uploads the folder, verifies the digest, and allocates a numbered version. `result.action` is `build` (a real image build), `reuse_image` (source changed, environment files did not), or `unchanged` (identical source already has a version). Always continue with `result.version`.
 
 `monitor()` blocks with a finite timeout and raises on an unsuccessful terminal state. A local timeout does **not** cancel the remote build - refetch the same version rather than rebuilding. Interrupting `monitor()` likewise only stops watching.
 
-## 7. Publish only with explicit authorization
+## 8. Publish only with explicit authorization
 
 Publishing makes the version the organization-wide default. Confirm with the user before the first `publish()` of a tool and before replacing a working default, unless they already authorized that exact promotion.
 
@@ -129,19 +146,27 @@ published = version.publish()
 
 Publishing an older completed version is also the rollback mechanism.
 
-## 8. Smoke-test the published tool
+## 9. Smoke-test the published tool
 
 There is no pre-publish test call. A run is a normal Tamarind job, so it happens after publish and it costs weighted hours - confirm the run with the user like any other paid submission.
 
 ```bash
 tamarind --json tools --search TOOL_NAME
 tamarind --json schema TOOL_NAME
-tamarind --json validate TOOL_NAME --name TOOL_NAME-smoke --set sequence=GYAGYAGYAGYAGYAGYAGYAGYA
+```
+
+Build the `--set` arguments from the input names that schema actually returns - they are the
+`inputs[].name` values from your own `config.json`, so a generic `--set sequence=...` fails
+validation for every tool that does not happen to declare a `sequence` input. Upload any file
+inputs first with `tamarind --json files upload` and pass the returned bare filename.
+
+```bash
+tamarind --json validate TOOL_NAME --name TOOL_NAME-smoke --set FIELD=VALUE
 ```
 
 Require `valid: true`, then follow `tamarind-submit-and-poll` for the submit, the bounded wait, and the terminal-status check. If the run fails, fix the source and build a new version; do not republish the same bytes.
 
-## 9. When a build fails
+## 10. When a build fails
 
 Read the version's structured `error` and drain its build logs before changing anything.
 
