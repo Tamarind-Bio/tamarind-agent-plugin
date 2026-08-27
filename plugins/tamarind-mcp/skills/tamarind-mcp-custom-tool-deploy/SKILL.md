@@ -81,7 +81,7 @@ Poll on a finite deadline and sleep between polls. Carry `logs.nextCursor` into 
 
 Publishing makes that version the organization-wide default - it changes what every member gets when they submit this tool. Confirm with the user before the first publish and before replacing a working default, unless they already authorized that exact promotion.
 
-Two ways, same effect. `deployCustomTool(..., publish=True, waitSeconds=N, generation=GENERATION)` builds and publishes in one call once the build completes; it refuses `publish=True` without a wait, because a version can only be published from a terminal build. `deployCustomTool(name, publishVersion="v3", generation=GENERATION)` promotes a version that already built - which is also the rollback path. Find an older completed version in `getCustomTool`.
+Two ways, same effect. `deployCustomTool(..., publish=True, waitSeconds=N, generation=GENERATION)` builds and publishes in one call once the build completes; it refuses `publish=True` without a wait, because a version can only be published from a terminal build. `deployCustomTool(name, publishVersion="v3", generation=GENERATION)` promotes a version that already built - which is also the rollback path. `getCustomTool(name, listVersions=True, generation=GENERATION)` returns the history newest-first; take the newest whose `status` is `Complete`, not simply the previous handle. A `Stopped` version never produced an image, so publishing one is not a rollback.
 
 Every mutation carries `generation`, without exception. A name-only call resolves the name again, so a delete-and-recreate between the user's approval and your call would publish or cancel inside a tool nobody authorized.
 
@@ -91,7 +91,7 @@ There is no pre-publish test call. A run is an ordinary Tamarind job, so it happ
 
 Then follow `tamarind-mcp-submit-and-poll`: `getJobSchema` for the new tool name, `validateJob` requiring `valid: true` with no `mutatedFields`, `estimateTime`, one `submitJob`, and a bounded `getJobs` poll.
 
-**If the run fails, roll back before you diagnose.** The broken version is already the organization-wide default, and every member submitting this tool gets it for as long as you spend reading logs and rebuilding. Publish the previous known-good version immediately — `getCustomTool` lists them, and `deployCustomTool(name, publishVersion=OLDER, generation=GENERATION)` on an older `Complete` one is the rollback — *then* fix the source and deploy a new version. Do not republish the same bytes.
+**If the run fails, roll back before you diagnose.** The broken version is already the organization-wide default, and every member submitting this tool gets it for as long as you spend reading logs and rebuilding. Publish the previous known-good version immediately — `getCustomTool(name, listVersions=True)` lists them, and `deployCustomTool(name, publishVersion=OLDER, generation=GENERATION)` on an older `Complete` one is the rollback — *then* fix the source and deploy a new version. Do not republish the same bytes.
 
 On a first publication there is no rollback target. Say so plainly to the user: the tool's default is unusable until a fixed version is published, and they may want it deleted rather than left broken.
 
