@@ -65,19 +65,23 @@ Always continue with the returned `version`.
 
 ## 5. Poll the build
 
-Call `getCustomTool` with the tool name. Stop when the version's `terminal` is true. Statuses are `Queued`, `Running`, `Complete`, and `Stopped`.
+Call `getCustomTool(name, version=..., generation=...)` with the **exact version handle `deployCustomTool` returned** and the generation it echoed back. Stop when that version's `terminal` is true. Statuses are `Queued`, `Running`, `Complete`, and `Stopped`.
+
+Polling by name alone resolves `latest`, which is whatever version exists *now*. If another member starts a build while yours runs, you would poll, validate, and publish **their** build. Every example below pins both handles for the same reason.
 
 **Terminal is not success.** `Stopped` is terminal too, and a terminal version can carry a structured `error`. Only advance to publishing when `status == "Complete"` and `error` is null; on anything else go to the failure section below. Publishing a `Stopped` version promotes a build that never produced an image.
 
 Poll on a finite deadline and sleep between polls. Carry `logs.nextCursor` into the next call to resume the log stream. A **repeated** non-null cursor means "no new logs yet", not "drain another page immediately"; it goes null once the terminal stream is exhausted. A local timeout never cancels the remote build - call `getCustomTool` again rather than redeploying.
 
-`deployCustomTool(name, cancelVersion="v3")` records a durable cancellation; keep polling until the version settles to `Stopped`.
+`deployCustomTool(name, cancelVersion="v3", generation=GENERATION)` records a durable cancellation; keep polling until that version settles to `Stopped`.
 
 ## 6. Publish only with explicit authorization
 
 Publishing makes that version the organization-wide default - it changes what every member gets when they submit this tool. Confirm with the user before the first publish and before replacing a working default, unless they already authorized that exact promotion.
 
-Two ways, same effect. `deployCustomTool(..., publish=True, waitSeconds=N)` builds and publishes in one call once the build completes; it refuses `publish=True` without a wait, because a version can only be published from a terminal build. `deployCustomTool(name, publishVersion="v3")` promotes a version that already built - which is also the rollback path. Find an older completed version in `getCustomTool`.
+Two ways, same effect. `deployCustomTool(..., publish=True, waitSeconds=N, generation=GENERATION)` builds and publishes in one call once the build completes; it refuses `publish=True` without a wait, because a version can only be published from a terminal build. `deployCustomTool(name, publishVersion="v3", generation=GENERATION)` promotes a version that already built - which is also the rollback path. Find an older completed version in `getCustomTool`.
+
+Every mutation carries `generation`, without exception. A name-only call resolves the name again, so a delete-and-recreate between the user's approval and your call would publish or cancel inside a tool nobody authorized.
 
 ## 7. Smoke-test the published tool
 

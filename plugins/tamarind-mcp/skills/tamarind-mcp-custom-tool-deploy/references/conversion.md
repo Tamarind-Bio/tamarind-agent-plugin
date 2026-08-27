@@ -66,6 +66,11 @@ Notes that matter:
 - `set -euo pipefail` turns a silent partial failure into a failed job.
 - Quote every expansion; sequences and paths contain characters that break unquoted words.
 - Use `${VAR:-default}` only for inputs you declared with a `default`.
+- A `store_true` flag takes no value, so it cannot be mapped like the others: passing
+  `--use-feature "$USE_FEATURE"` either makes argparse reject the argument or enables the option
+  even when the user said false. Append the flag only when the value is true:
+  `[ "$USE_FEATURE" = "true" ] && set -- "$@" --use-feature`, or build the argument list
+  conditionally before the call.
 - File inputs are read-only. If the code writes beside its input, copy it into `/app` first:
   `cp "$TARGET_STRUCTURE" /app/target.pdb`.
 - If the entry point insists on writing to a fixed directory, let it, then move the results:

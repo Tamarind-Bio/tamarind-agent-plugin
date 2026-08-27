@@ -31,6 +31,15 @@ and step 9's smoke test actually invoke exists and is new enough. A machine can 
 have no `tamarind` on `PATH` at all. Require the executable at 0.2.0 or newer, and use
 `tamarind-api-setup` if it is missing.
 
+**That probe is a child process, not an environment you are now in.** A `uv tool` or `pipx`
+install puts the CLI on `PATH` without making `tamarind` importable by a bare `python`, so every
+Python snippet below must run through the same ephemeral environment or it fails with
+`ModuleNotFoundError`. Write the lifecycle steps to one file and run it that way:
+
+```bash
+uv run --no-project --with 'tamarind-cli>=0.3.0' python deploy_tool.py
+```
+
 Require 0.3.0 or newer. The SDK resolves its credential exactly as the CLI does - explicit
 argument, then `TAMARIND_API_KEY`, then the `~/.tamarind/config.json` profile - so either an
 exported key or `tamarind auth login` works. Never pass a key as an argument or print it.
@@ -187,7 +196,11 @@ inputs first with `tamarind --json files upload` and pass the returned bare file
 tamarind --json validate TOOL_NAME --name TOOL_NAME-smoke --set FIELD=VALUE
 ```
 
-Require `valid: true`, then follow `tamarind-submit-and-poll` for the submit, the bounded wait, and the terminal-status check. If the run fails, fix the source and build a new version; do not republish the same bytes.
+Require `valid: true`, then follow `tamarind-submit-and-poll` for the submit, the bounded wait, and the terminal-status check.
+
+**If the run fails, roll back before you diagnose.** The broken version is already the organization-wide default, and every member submitting this tool gets it for as long as you spend reading logs and rebuilding. Publish the previous known-good version immediately - `tool.versions()` lists them, and `version.publish()` on an older `Complete` one is the rollback - *then* fix the source and build a new version. Do not republish the same bytes.
+
+On a first publication there is no rollback target. Say so plainly to the user: the tool's default is unusable until a fixed version is published, and they may want it deleted rather than left broken.
 
 ## 10. When a build fails
 

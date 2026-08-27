@@ -128,6 +128,57 @@ def test_the_mcp_skill_keeps_its_rules(rule, pattern):
     )
 
 
+# THE recurring defect of this review: a rule stated in prose while the copyable
+# example beside it does the opposite. It has now arrived four rounds running
+# (get-then-build, already-terminal, generation on mutations, generation on
+# polling), so the examples are checked against the rules rather than re-read.
+
+def _calls(text: str, fn: str) -> list[str]:
+    """Every `fn(...)` occurrence with its argument list, parens balanced."""
+    out, i = [], 0
+    while (i := text.find(fn + "(", i)) != -1:
+        depth, j = 0, i + len(fn)
+        while j < len(text):
+            if text[j] == "(":
+                depth += 1
+            elif text[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        out.append(text[i:j + 1])
+        i = j + 1
+    return out
+
+
+def test_every_mcp_mutation_example_pins_the_generation():
+    """A name-only mutation resolves the name again, so a delete-and-recreate
+    between approval and call lands inside a tool nobody authorized."""
+    text = (MCP / "SKILL.md").read_text()
+    mutating = [c for c in _calls(text, "deployCustomTool")
+                if any(k in c for k in ("publishVersion", "cancelVersion", "publish=True"))]
+    assert mutating, "no mutation examples found - the parser or the skill changed shape"
+    unpinned = [c for c in mutating if "generation" not in c]
+    assert not unpinned, f"MCP mutation examples missing `generation`: {unpinned}"
+
+
+def test_the_mcp_polling_example_pins_the_version_it_deployed():
+    """Polling by name resolves `latest`, which may be another member's build."""
+    text = (MCP / "SKILL.md").read_text()
+    polls = [c for c in _calls(text, "getCustomTool") if c != "getCustomTool()"]
+    assert polls, "no getCustomTool examples found"
+    assert any("version=" in c and "generation=" in c for c in polls), (
+        f"no polling example pins both version and generation: {polls}"
+    )
+
+
+def test_the_shared_conversion_reference_stays_identical():
+    """It carries no transport-specific content, so drift between the copies is
+    always a fix applied to one plugin and not the other."""
+    assert (CLI / "references/conversion.md").read_text() == (
+        MCP / "references/conversion.md").read_text()
+
+
 def test_the_mcp_skill_never_sends_users_to_the_sdk_validator():
     """The MCP plugin declares no SDK dependency, so its preflight is validateOnly.
 
