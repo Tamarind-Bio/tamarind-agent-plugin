@@ -131,6 +131,11 @@ from tamarind.errors import CustomToolNotFoundError
 # wrong tree, or nothing at all.
 TOOL_DIR = "/absolute/path/to/my-tool"
 
+# The organization-scoped tool name, and the label shown in the tool picker.
+# Both are required: the name is what submitJob and the CLI address the tool by.
+TOOL_NAME = "my-tool"
+DISPLAY_NAME = "My Tool"
+
 # Set True ONLY after the user has confirmed this exact existing tool is the one
 # they meant. Updating a tool and rebuilding after a failure are normal; building
 # over a name you merely found is not, and the difference is this flag.

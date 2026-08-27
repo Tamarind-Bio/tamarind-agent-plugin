@@ -235,6 +235,36 @@ def test_neither_skill_contains_a_contradicted_claim(rule, pattern):
         assert not found, f"the {label} skill still contains a contradicted claim — {rule}"
 
 
+def test_the_lifecycle_script_defines_every_name_it_uses():
+    """The skill says to save this block as deploy_tool.py and run it.
+
+    So it has to be runnable: a `NameError` on the first line is not a lifecycle.
+    Compiled and scanned for free names rather than eyeballed, because the block
+    is assembled from six rounds of edits.
+    """
+    import ast
+
+    text = (CLI / "SKILL.md").read_text()
+    blocks = re.findall(r"```python\n(.*?)```", text, re.DOTALL)
+    script = next((b for b in blocks if "client = Tamarind()" in b), None)
+    assert script, "the lifecycle script block was not found"
+
+    tree = ast.parse(script)                       # syntax is a precondition
+    assigned, used = set(), {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            (assigned.add(node.id) if isinstance(node.ctx, ast.Store)
+             else used.setdefault(node.id, node.lineno))
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                assigned.add((alias.asname or alias.name).split(".")[0])
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            assigned.add(node.name)
+    builtins = set(dir(__builtins__)) | {"print", "SystemExit", "range", "len"}
+    free = {n: ln for n, ln in used.items() if n not in assigned and n not in builtins}
+    assert not free, f"the lifecycle script uses undefined names: {free}"
+
+
 def test_the_mcp_skill_never_sends_users_to_the_sdk_validator():
     """The MCP plugin declares no SDK dependency, so its preflight is validateOnly.
 
