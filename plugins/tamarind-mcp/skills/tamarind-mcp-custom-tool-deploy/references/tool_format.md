@@ -57,8 +57,10 @@ Only `displayName` and `inputs` are required.
 ## inputs[]
 
 Every entry needs `name` and `type`. `name` must match `^[A-Za-z][A-Za-z0-9_]*$` and becomes the
-environment variable your `run.sh` reads. Optional on every variant: `displayName`, `required`,
-`descr`.
+environment variable your `run.sh` reads, **verbatim and case-sensitively** — declare `sequence`
+and `run.sh` must expand `$sequence`, not `$SEQUENCE`. Under `set -u` a case mismatch aborts the
+job on the first line that reads it, so use SHOUT_CASE in both places and keep them identical.
+Optional on every variant: `displayName`, `required`, `descr`.
 
 | `type` | Also required | Also accepts |
 |---|---|---|
@@ -105,7 +107,7 @@ pipeline builder. You can add outputs later without rebuilding the image.
   "memory": "8Gi",
   "cpu": 1,
   "inputs": [
-    { "name": "sequence", "type": "sequence", "displayName": "Protein sequence", "required": true }
+    { "name": "SEQUENCE", "type": "sequence", "displayName": "Protein sequence", "required": true }
   ],
   "producedOutputs": [{ "type": "csv", "name": "summary" }]
 }
@@ -113,11 +115,12 @@ pipeline builder. You can add outputs later without rebuilding the image.
 
 ## What is validated where
 
-- **Offline, by the SDK**: `Dockerfile` present, `run.sh` present (warning if absent),
-  `config.json` parses as a JSON object, plus a warning when runtime source appears to make
-  network calls.
+- **By `deployCustomTool(validateOnly=True)`**: `Dockerfile` present, `run.sh` present (warning
+  if absent), `config.json` parses as a JSON object, and archive paths are safe. This spends no
+  build and mutates nothing, but it is **not** a local check — `files` and `binaryFiles` travel
+  to the server either way.
 - **By the server, at build admission**: everything else, including the full `config.json`
-  contract. A clean local report is necessary but not sufficient.
+  contract. A clean `validateOnly` report is necessary but not sufficient.
 
 Editing `config.json` and editing the Config tab in the web UI are equivalent; both write the same
 tool record, and neither mints a version on its own.

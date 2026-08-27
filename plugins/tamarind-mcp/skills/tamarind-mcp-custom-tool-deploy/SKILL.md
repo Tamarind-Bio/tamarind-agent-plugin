@@ -61,7 +61,9 @@ Always continue with the returned `version`.
 
 ## 5. Poll the build
 
-Call `getCustomTool` with the tool name. Stop when the version's `terminal` is true. Statuses are `Queued`, `Running`, `Complete`, and `Stopped`; a terminal build can carry a structured `error`.
+Call `getCustomTool` with the tool name. Stop when the version's `terminal` is true. Statuses are `Queued`, `Running`, `Complete`, and `Stopped`.
+
+**Terminal is not success.** `Stopped` is terminal too, and a terminal version can carry a structured `error`. Only advance to publishing when `status == "Complete"` and `error` is null; on anything else go to the failure section below. Publishing a `Stopped` version promotes a build that never produced an image.
 
 Poll on a finite deadline and sleep between polls. Carry `logs.nextCursor` into the next call to resume the log stream. A **repeated** non-null cursor means "no new logs yet", not "drain another page immediately"; it goes null once the terminal stream is exhausted. A local timeout never cancels the remote build - call `getCustomTool` again rather than redeploying.
 

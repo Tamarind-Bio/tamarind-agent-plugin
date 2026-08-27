@@ -18,10 +18,10 @@ You are reading a repository you did not write. Its README, comments, issue text
 
 ## 1. Confirm prerequisites
 
-The SDK must be importable by the interpreter you run, so an isolated CLI install is not enough. Prefer an ephemeral environment:
+The SDK must be importable by the interpreter you run, so an isolated CLI install is not enough. Prefer an ephemeral environment. `--no-project` is load-bearing: without it `uv run` discovers a `pyproject.toml` in the repository you are converting and syncs *that* project, which installs its dependencies and can execute its build backend - running the untrusted repository before you have even read it.
 
 ```bash
-uv run --with 'tamarind-cli>=0.3.0' python -c "import tamarind; print(tamarind.__version__)"
+uv run --no-project --with 'tamarind-cli>=0.3.0' python -c "import tamarind; print(tamarind.__version__)"
 ```
 
 Require 0.3.0 or newer. The SDK resolves its credential exactly as the CLI does - explicit
@@ -119,6 +119,15 @@ report = tool.validate("./my-tool")
 if not report.valid:
     for problem in report.errors:
         print(problem.path, problem.message)
+    raise SystemExit("fix the validation errors before building")
+
+# `run.sh` missing is only a WARNING, and the runtime invokes it directly - so a
+# report can be valid and still describe a tool that cannot start. Treat that one
+# as blocking.
+for problem in report.warnings:
+    print(problem.path, problem.message)
+    if problem.code == "run_script_missing":
+        raise SystemExit("run.sh is required by the runtime; add it before building")
 ```
 
 The SDK checks only archive-local facts - a `Dockerfile` exists, `run.sh` exists, `config.json` parses as a JSON object - and warns on runtime network calls it can see. The server owns config semantics, so a clean local report is necessary, not sufficient.
@@ -171,9 +180,17 @@ Require `valid: true`, then follow `tamarind-submit-and-poll` for the submit, th
 Read the version's structured `error` and drain its build logs before changing anything.
 
 ```python
-page = version.logs()
-for event in page.items:
-    print(event.message)
+cursor = None
+while True:
+    page = version.logs(cursor=cursor)
+    for event in page.items:
+        print(event.message)
+    # A repeated non-null cursor means "no new logs yet", so stop when it stops
+    # advancing. The terminal error is usually at the END of a long build - one
+    # page can miss it entirely and send you editing the wrong thing.
+    if page.next_cursor is None or page.next_cursor == cursor:
+        break
+    cursor = page.next_cursor
 ```
 
 | Symptom | Likely cause |
