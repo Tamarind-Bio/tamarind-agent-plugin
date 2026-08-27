@@ -55,6 +55,25 @@ rules. It owns no lifecycle:
 - run one job with `tamarind-mcp-submit-and-poll`, any fan-out with `tamarind-mcp-batch`;
 - recover, inspect and cancel with `tamarind-mcp-results-analysis`.
 
+**The lifecycle methods do not share one argument vocabulary, and guessing costs a
+round-trip each time.** `submitJob`, `validateJob` and `estimateTime` take the tool
+token as **`type`** and every tool setting **nested under `settings`** — a flat
+payload with the settings spread alongside `jobName` is rejected whole. `getJobSchema`
+is the one method that spells the same concept **`jobType`**. Take each method's
+argument names from its own schema before the first call rather than carrying a
+neighbour's spelling across, exactly as §3 requires for tool settings; the two
+questions have the same answer and the same failure.
+
+**If you reach these methods through a code bridge rather than as native tools** — a
+`host.mcp(...)`-style call, an SDK wrapper, your own client — nothing shows you an
+argument name until a call fails, so resolve every method you will use in **one deliberate
+pass before the first submission**: call each with an empty payload and read the schema out
+of the rejection. Measured on a bridged run: 21 argument-shape failures across five
+methods and the whole length of the campaign, every one of which returned the complete
+schema inline. The information was never missing; the order was. Record the shapes beside
+the output contracts from §3, because a bridged surface has no autocomplete for any later
+stage or parallel worker either.
+
 Route away when the request is smaller or different: one generate-and-filter round
 is `tamarind-mcp-binder-design`; antibody, nanobody or VHH engineering is
 `tamarind-mcp-antibody` and is **out of scope here** — outputs stay single-chain
@@ -176,11 +195,21 @@ and one backbone reached a usable sequence), **UNAVAILABLE** (proved it cannot r
 here, with the diversity objective the drop costs), **NOT_PROBED**, or
 **RAN_NO_YIELD**. **Only UNAVAILABLE releases a method from its floor.**
 
-**Read the files, not the file listing.** `getJobSchema(<type>).outputs.mainCSV`
+**Read the files, not the file listing.** `getJobSchema(jobType=<type>).outputs.mainCSV`
 names the actual result table; every other table is an intermediate. Then
 `listJobFiles` to resolve that name, `getJobFile` to read it, and `getJobLogs` with
 a bounded `maxLines` for a stage that died silently. Resolve status with `getJobs`
 first — only a *terminal* job supports a verdict.
+
+**The canary's real product is a written output contract, not a verdict word.** A PASS
+recording only "it ran" leaves every later stage and every parallel worker to re-derive,
+per method, which file is the result table, which column is the binder sequence, and which
+chain it is. That re-derivation was the single largest avoidable cost measured on a run of
+this campaign, and two workers who resolve it differently produce pools that cannot be
+merged. Write it once, per method, to a durable artifact — the fields are listed in
+[references/pool_schema.md](references/pool_schema.md) — and have every production stage read that
+artifact and re-verify it per job rather than rediscovering it. A method whose contract is
+unresolved is NOT_PROBED, whatever its job status says.
 
 **A generator's own "success" table being empty is not the campaign's verdict.**
 Measured: Genie 3 returned an **empty** `success_info.csv` while its actual result
@@ -234,6 +263,30 @@ Production scoring is blocked until the validation gate passes, on two condition
   CA-RMSD threshold;
 - **(b) positive-control separation** — a known literature binder at full native
   stoichiometry scores clearly above negative controls.
+
+**On a multi-domain target, a whole-construct CA-RMSD measures the hinge, not the fold, so
+failing (a) on it tells you almost nothing.** Rigid-body play between domains dominates the
+global number while every domain is reproduced accurately — a large miss on the one degree
+of freedom a local interface does not depend on. Measured on a two-domain ectodomain, on
+two independent runs of this protocol against the same target: whole-construct 2.5–3.7 Å
+against a 2.0 Å threshold, a clean fail on all three arms, while each domain individually
+reproduced at **0.6–1.1 Å** and the frozen epitope to **0.24–0.28 Å** once fitted on its
+own domain.
+
+So when (a) misses, **decompose before recording a verdict**: per-domain CA-RMSD, then the
+epitope's own CA-RMSD after fitting on the domain carrying it. Those two numbers separate a
+real failure — the instrument cannot fold the target, and the campaign stops — from a
+displaced distant domain, which is a **named reduction**: recorded as reduced rather than
+failed, the displacement measured, and the consequence carried as a per-design check that
+no ranked design contacts the displaced domain. Both runs above measured the same numbers;
+one decomposed and proceeded on a validated instrument, the other stopped at the global
+value and escalated the judgment to its user — who had to rule on it without the evidence
+that would have settled it. **Decomposing is how you answer that question instead of
+delegating it.**
+
+This is not licence to relax (a). A reduction is available only where the decomposition
+**shows** the epitope surface is reproduced; if the domain carrying the epitope is itself
+wrong, the gate has failed and no restatement changes that.
 
 Prefer a **non-antibody** positive control; co-folding models systematically
 underperform on antibody–antigen interfaces, so an antibody is a secondary control
@@ -302,6 +355,24 @@ round again. Every child keeps its parent's `root_backbone_id`; minting a fresh
 root escapes the per-root cap while looking like ordinary provenance. Promote to
 the full seed tier **before** selecting the next round's parents. Select what you
 ship across the original round and every optimization round.
+
+**Prove the optimization route on one parent before committing a round to it, and open the
+output structure rather than reading the job status.** A round is the most expensive thing
+to lose, and the partial-diffusion route in particular is not reliably wired here: two
+independent runs of this protocol each lost a full round to it, because the platform
+composed a contig that did not describe partial diffusion of an existing binder. One run's
+jobs **completed successfully while writing the target chain truncated**; the other's
+output had no binder at all. Neither was a contig-string error the caller could fix by
+renumbering — one run verified that explicitly.
+
+So run one parent, open the structure, and assert both chains are present at their
+expected lengths with the target byte-identical to the frozen construct. A completed status
+proves nothing here. If the route cannot produce an intact complex, say so with the
+measurement and switch — a binder-redesign task over selected windows, followed by a
+separate sequence-design step, reaches the same objective. Losing a round to an unusable
+route is a reportable result; **discarding its children is correct and shipping them is
+not**, since a child scored against a partial target surface was scored against an epitope
+you did not freeze.
 
 ## 8. Select the panel
 

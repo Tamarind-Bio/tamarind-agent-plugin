@@ -122,7 +122,7 @@ validateJob(jobName="probe", type="boltzgen", settings={})
      error: 'Missing required boltzgen field "targetFile"'
 ```
 
-**`missing_fields` is populated for some tools and empty for others, and it is empty on the two most complicated ones.** Measured on prod: genie3 and freebindcraft list their fields; rfdiffusion and boltzgen return `[]` and name only the FIRST missing field, in the `error` string. boltzgen has 25 task-gated required parameters and rfdiffusion's requirements shift across its 8 tasks, so an empty `missing_fields` means *this surface did not answer*, never *this tool needs one field*. The TYPED source for field names is the schema: `getJobSchema(<type>).parameters` carries a `required` flag on each one. It over-reports rather than under-reports — boltzgen marks 25 required, gated by task — so read it for the NAMES and let the probe tell you which of them your task actually enforces. Treat the probe as best-effort confirmation: fix the field the `error` names, call it again, and keep going until it validates. **The error string's wording is not a contract** — match the field name it quotes, never the sentence around it, and if the text stops naming a field, fall back to the schema and say the probe stopped answering rather than guessing a payload.
+**`missing_fields` is populated for some tools and empty for others, and it is empty on the two most complicated ones.** Measured on prod: genie3 and freebindcraft list their fields; rfdiffusion and boltzgen return `[]` and name only the FIRST missing field, in the `error` string. boltzgen has 25 task-gated required parameters and rfdiffusion's requirements shift across its 8 tasks, so an empty `missing_fields` means *this surface did not answer*, never *this tool needs one field*. The TYPED source for field names is the schema: `getJobSchema(jobType=<type>).parameters` carries a `required` flag on each one. It over-reports rather than under-reports — boltzgen marks 25 required, gated by task — so read it for the NAMES and let the probe tell you which of them your task actually enforces. Treat the probe as best-effort confirmation: fix the field the `error` names, call it again, and keep going until it validates. **The error string's wording is not a contract** — match the field name it quotes, never the sentence around it, and if the text stops naming a field, fall back to the schema and say the probe stopped answering rather than guessing a payload.
 
 That is how the `targetFile`/`pdbFile` difference above was found — a plausible-looking `pdbFile` came back under `unrecognized_settings`, which fails the whole job. Validate one payload per method before committing a round to it, and treat a `mutatedFields` warning as a failure: it means the validator silently altered your input.
 
@@ -159,7 +159,14 @@ Same epitope, same target, opposite outcomes — and boltzgen had its post-filte
 Getting this wrong costs designs in both directions.
 
 - **Sequence-carrying** — `boltzgen`, `rfdiffusion`, `rfdiffusion3`, `genie3`, `mosaic-hallucinate`, `freebindcraft`. Their per-design table already contains the binder sequence, so they feed a scoring pool directly. **Do not route them through a sequence-design job.** The unnecessary hop mints a second, job-local id space over the same backbones, which is how a shipped design ends up carrying another backbone's sequence. Run a redesign only when you deliberately want the co-design comparison, and then record it as a new design row that keeps the original `root_backbone_id`.
-- **Backbone-only** — `proteina-complexa`, `pxdesign`. Their per-design table drops every upstream sequence column, so there is nothing to score. Submit a sequence-design job on the generator's output structures, then build the pool from **that** job. `root_backbone_id` and `structure_method` still name the original generator; `seq_method` names the sequence designer. Skipping this is how a method contributes zero ranked backbones.
+- **Backbone-only** — a method whose per-design output carries no sequence you can score. Submit a sequence-design job on the generator's output structures, then build the pool from **that** job. `root_backbone_id` and `structure_method` still name the original generator; `seq_method` names the sequence designer. Skipping this is how a method contributes zero ranked backbones.
+
+  **Resolve this per method on the canary, and check the structures before assuming the hop is needed.** Two independent runs of this protocol found the same two corrections to an earlier version of this page, in opposite directions:
+
+  - `pxdesign` in `extended` mode **does** write a per-design sequence on its result table — its internal pipeline sequence-designs before evaluating — so it is sequence-carrying and needs no hop. (In the default `generation` mode there is no table at all, which is a different problem, not evidence of backbone-only.) A method listed here whose mandated mode you have not run is unresolved, not backbone-only.
+  - `proteina-complexa`'s result **table** genuinely has no sequence column, but its output **complexes** carry its own co-designed sequences. Reading them from the structures — verified chain by chain against the frozen construct — keeps `seq_method` as the generator's own and avoids the hop entirely. That is the better route wherever it is available, because the hop is what mints a second id space and what exposes the campaign to the target-corruption trap above.
+
+  So the question is not "does the table have a sequence column" but "does a sequence for this backbone exist anywhere in the method's own output". Only run the hop when the answer is genuinely no.
 **`proteina-complexa` publishes per-design `ss_alpha`/`ss_beta` fractions** — the only roster entry that does. `ss_alpha < 0.70` settles non-all-alpha on its own; a helix-rich row still needs residue-level `ss_codes`, since an aggregate fraction cannot show the run of three consecutive strand residues the other half of the definition asks for.
 
 - **Undetermined** — `boltzdesign`, `protein-hunter`. Read the method's own per-design table on its canary and check for a sequence column. Treat it as backbone-only only when the table genuinely has none, and record which way you resolved it.
@@ -167,6 +174,26 @@ Getting this wrong costs designs in both directions.
 The same two-step route applies to any method you deliberately run **without** its in-job sequence step.
 
 Use the base sequence-design model for backbone search; use the **soluble variant** when generating or selecting the designs that will be ordered. On this platform the soluble variant is a model option on the sequence-design tool's existing type, not a type of its own — read the schema's model enum rather than looking for a separate tool. For co-design models, score both the native sequence and a redesign.
+
+**Restrict the redesign to the binder explicitly, and verify it held.** A sequence-design
+tool's "which residues are designed" setting defaults to an empty selection, and an empty
+selection means *every* chain — so the hop that was supposed to give a backbone its
+sequence silently rewrites the target as well, and the job still reports success.
+Measured twice in one campaign, on both backbone-only methods: the redesigned target came
+back with 121 and 124 substitutions against the frozen construct, and the only surface
+that showed it was a sequence-recovery number that looked unremarkable on its own.
+**Naming the binder chain does nothing at all through the API** — on the MPNN-family
+tools the chain-level field is declared `exclude: ["api"]`, so it is stripped from the
+payload before the job ever sees it, silently and without landing in
+`unrecognized_settings`. The residue-level selection is therefore the *only* control that
+reaches the worker, and its default is empty. Enumerate the binder's
+residues explicitly, with the numbering read off the structure you submitted, then
+**assert the non-designed chains come back byte-identical to the frozen construct** before
+the rows enter any pool. A job that fails that assertion is discarded, not repaired.
+
+This is the campaign's worst silent failure, because every downstream gate reproduces
+perfectly on a corrupted row: the gates recompute against the row's own sequence, so a
+design scored against a rewritten target agrees with itself all the way onto the sheet.
 
 ## Length policy
 

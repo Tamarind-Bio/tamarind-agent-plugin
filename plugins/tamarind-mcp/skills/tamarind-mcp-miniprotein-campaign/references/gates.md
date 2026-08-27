@@ -104,6 +104,25 @@ UniRef90 arm only.
   exactly `1` is read as a **fraction**, the reading that rejects, because a novelty
   ban's failure direction is to let a copy through.
 
+  **UniRef90 itself may not be on the menu, and the substitution is a disclosure, not a
+  detail.** The platform's sequence-search tool exposes a fixed database enum with no
+  UniRef option and no way to stage a custom database, so the protocol's "MMseqs2 against
+  a staged UniRef90" cannot be run as written. Pick the substitute that errs toward
+  rejection — a larger, redundant database such as `nr` contains what UniRef90's
+  90%-identity representatives contain, so a copy found in UniRef90 is found there too and
+  the REJECT arms are not loosened. Record the database and every search setting on the
+  run, and say that hit counts and top-subject accessions are not comparable to a UniRef90
+  run. Check the enum yourself rather than trusting this paragraph; what matters is that
+  you name the substitution and argue its direction.
+
+  **Derive coverage carefully if the search emits no coverage column.** An alignment
+  length counts alignment *columns* including gaps, so `align_len / query_len` can exceed
+  100% on a gapped hit — measured on 224 of 1,561 hits, up to 124%. The kernel refuses a
+  coverage outside its accepted ranges and refuses the whole run rather than the row, so
+  this blocks the final novelty tier until it is fixed. Clamp to the query length, keep
+  the unclamped value beside it, and state the direction: over-stating coverage makes
+  rejection more likely, never less.
+
 **A malformed hits file refuses the run rather than degrading a row.** Measured
 while wiring this up: hits named `gapped_identity`/`query_coverage` raised *inside*
 the verdict, after the corpus arm had already rejected the design — and the per-row
