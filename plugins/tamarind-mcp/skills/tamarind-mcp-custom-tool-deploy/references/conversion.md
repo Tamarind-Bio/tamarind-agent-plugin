@@ -17,10 +17,12 @@ runtime contract forces it.
 
 ## Identify the one job
 
-A repository usually offers training, evaluation, and inference. A tool is **inference**: one entry
-point, one output shape, one job per submission. If two entry points are genuinely different
-products, that is two tools with two names - not one tool with a mode switch, unless the repository
-already presents it as one.
+A repository usually offers training, evaluation, and inference. **Ask the user which one is the
+product** - inference is the common answer, not the automatic one, and deploying the workflow they
+did not ask for wastes the whole exercise. Whichever they pick is one entry point, one output
+shape, one job per submission. If two entry points are genuinely different products, that is two
+tools with two names - not one tool with a mode switch, unless the repository already presents it
+as one.
 
 ## Infer inputs from the entry point, not the README
 

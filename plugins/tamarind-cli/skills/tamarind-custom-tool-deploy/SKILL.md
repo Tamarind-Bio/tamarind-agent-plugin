@@ -214,8 +214,14 @@ Build the `--set` arguments from the input names that schema actually returns - 
 validation for every tool that does not happen to declare a `sequence` input. Upload any file
 inputs first with `tamarind --json files upload` and pass the returned bare filename.
 
+Give the smoke job a name unique to the version under test. `tamarind-submit-and-poll` requires a
+unique durable name, and job names are not idempotency keys - reusing `TOOL_NAME-smoke` across
+updates collides with the previous run, or silently attaches your status check to it and reports the
+OLD version as healthy. Carry the same name through validate, submit, and poll:
+
 ```bash
-tamarind --json validate TOOL_NAME --name TOOL_NAME-smoke --set FIELD=VALUE
+SMOKE_NAME="TOOL_NAME-smoke-VERSION"        # e.g. my-tool-smoke-v3
+tamarind --json validate TOOL_NAME --name "$SMOKE_NAME" --set FIELD=VALUE
 ```
 
 Require `valid: true`, then follow `tamarind-submit-and-poll` for the submit, the bounded wait, and the terminal-status check.

@@ -209,6 +209,32 @@ def test_the_shared_conversion_reference_stays_identical():
         MCP / "references/conversion.md").read_text()
 
 
+# Presence checks cannot catch a CONTRADICTION: the rule can be stated in SKILL.md
+# while a reference two directories away still says the opposite, and both files
+# read correctly alone. That happened twice — the SDK-validator claim and the
+# "a tool is inference" claim, each fixed in the parent skill and left in the
+# shared reference. These are the negative half.
+
+FORBIDDEN = [
+    ('the shared guide must not assert inference is the entry point',
+     r"A tool is \*\*inference\*\*"),
+    # Targets the CALL, not the word: the comment explaining why "./my-tool" is
+    # wrong legitimately contains it, and exempting that line would be the start
+    # of an exemption list.
+    ('no lifecycle call takes a relative source path; the script runs outside the repo',
+     r'(?:validate|build)\("\./'),
+    ('the smoke job name must not be a fixed literal reused across versions',
+     r"--name TOOL_NAME-smoke\s"),
+]
+
+
+@pytest.mark.parametrize("rule,pattern", FORBIDDEN, ids=[f[0] for f in FORBIDDEN])
+def test_neither_skill_contains_a_contradicted_claim(rule, pattern):
+    for label, skill_dir in (("cli", CLI), ("mcp", MCP)):
+        found = re.search(pattern, _text(skill_dir))
+        assert not found, f"the {label} skill still contains a contradicted claim — {rule}"
+
+
 def test_the_mcp_skill_never_sends_users_to_the_sdk_validator():
     """The MCP plugin declares no SDK dependency, so its preflight is validateOnly.
 
