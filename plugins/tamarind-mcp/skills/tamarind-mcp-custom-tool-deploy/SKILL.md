@@ -101,7 +101,7 @@ Read the version's structured `error` and its logs before changing anything.
 
 | Symptom | Likely cause |
 |---|---|
-| Image builds, job fails immediately | `run.sh` missing, not executable, or reading a name that is not in `inputs[]` |
+| Image builds, job fails immediately | `run.sh` missing or unreadable, or reading a name that is not in `inputs[]` |
 | Job runs then produces nothing | Results written outside `/app/out/` |
 | Job hangs or fails fetching something | Runtime network access - bake it into the image |
 | CUDA or driver errors | `gpuType` and the base image disagree |

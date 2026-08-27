@@ -119,6 +119,10 @@ CLI_SNIPPET_GUARDS = [
      r'except CustomToolBuildFailedError[\s\S]{0,400}drain_logs\('),
     ('publishing is a second invocation that refetches the version',
      r'version = tool\.get_version\(VERSION_NAME\)'),
+    ('the publish process fails on a stale generation rather than resolving the name',
+     r'if tool\.generation != EXPECTED_GENERATION:'),
+    ('the build process hands over the generation, not just the version handle',
+     r'in generation \{tool\.generation\}'),
     ('a repeated log cursor sleeps and retries rather than ending the drain',
      r'if page\.next_cursor == cursor:[\s\S]{0,300}time\.sleep'),
     # Only the AGENT-side python invocations need -P; the container's own
@@ -229,6 +233,10 @@ FORBIDDEN = [
      r'(?:validate|build)\("\./'),
     ('the smoke job name must not be a fixed literal reused across versions',
      r"--name TOOL_NAME-smoke\s"),
+    # `bash run.sh` ignores the mode - verified at 0644 - and the orchestrator uses
+    # exactly that form, so this "cause" sends an agent to rebuild for a non-problem.
+    ('an unset execute bit is not a cause of startup failure',
+     r"not executable"),
 ]
 
 

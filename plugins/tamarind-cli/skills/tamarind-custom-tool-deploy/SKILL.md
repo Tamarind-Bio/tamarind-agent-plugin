@@ -213,7 +213,8 @@ if version.status != "Complete":
 
 # The build is good and NOT yet published. Print what the publish step needs; the
 # approval boundary is a process boundary, because a human decides in between.
-print(f"built {TOOL_NAME} {version.name} - awaiting approval to publish")
+print(f"built {TOOL_NAME} {version.name} in generation {tool.generation}")
+print("awaiting approval to publish")
 ```
 
 Run validation before every build; a build is minutes of CodeBuild you would otherwise spend to
@@ -245,8 +246,21 @@ from tamarind import Tamarind
 
 TOOL_NAME = "my-tool"
 VERSION_NAME = "v3"                    # exactly what deploy_tool.py reported
+EXPECTED_GENERATION = "..."            # likewise - deploy_tool.py prints it
 
 tool = Tamarind().custom_tools.get(TOOL_NAME)
+
+# A NAME is not an identity. Version numbers restart within each generation, so if
+# the tool were deleted and recreated while the user was deciding, this lookup
+# would return the replacement and get_version("v3") would publish ITS v3
+# organization-wide. Fail on the stale generation instead of resolving the name
+# afresh.
+if tool.generation != EXPECTED_GENERATION:
+    raise SystemExit(
+        f"{TOOL_NAME} is now generation {tool.generation}, not {EXPECTED_GENERATION} - "
+        "it was deleted and recreated. Nothing was published; rebuild against the new tool."
+    )
+
 version = tool.get_version(VERSION_NAME)
 if version.status != "Complete":
     raise SystemExit(f"{VERSION_NAME} is {version.status}; only a Complete version may be published")
