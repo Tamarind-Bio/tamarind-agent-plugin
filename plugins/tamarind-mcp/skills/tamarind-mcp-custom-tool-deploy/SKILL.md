@@ -112,7 +112,13 @@ Read the version's structured `error` and its logs before changing anything.
 
 A tool name can be deleted and recreated. `generation` identifies one immutable lifetime of that name; these tools resolve it for you and echo it in every result. Pass `generation` explicitly when you want an operation pinned to the exact tool you inspected earlier.
 
-Versions are numbered handles like `v3` within one generation. `sourceDigest` identifies archive bytes and is not a version handle.
+Versions carry two identifiers, and every call here accepts either. `name` is the numbered handle
+(`v3`) within one generation; `id` is opaque and encodes the generation itself. Pass back whichever
+one the previous result gave you, and prefer `id` when it is present — a numbered handle is not an
+identity, because version numbers restart in each generation. `id` is also the only form the
+`tamarind-cli` SDK accepts, so it is what hands work between the two transports.
+
+`sourceDigest` identifies archive bytes and is neither.
 
 Deleting a tool is not available here. Send the user to the Custom Tools page in the web app.
 

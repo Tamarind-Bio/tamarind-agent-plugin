@@ -75,6 +75,20 @@ INVARIANTS = [
         r"ask which one is the product",
     ),
     (
+        # tamarind-cli 0.3.2 addresses a version by its opaque id and rejects the
+        # numbered name; the MCP tools accept either. Both skills must therefore
+        # teach the SAME rule — carry the identifier the last call returned — or an
+        # agent that learned one transport gets it wrong on the other.
+        "a numbered version handle is not an identity",
+        r"A NAME is not an identity|version numbers restart",
+        r"not an identity|version numbers restart in each generation",
+    ),
+    (
+        "the rollback target is an older version whose status is Complete",
+        r"older `Complete` one is the rollback|older completed version is the rollback",
+        r"older `Complete` one is the rollback|newest whose `status` is `Complete`",
+    ),
+    (
         "a failed smoke test rolls back before diagnosis, and a first publish says so",
         r"roll back before you diagnose[\s\S]{0,900}no rollback target",
         r"roll back before you diagnose[\s\S]{0,900}no rollback target",
@@ -260,6 +274,21 @@ def test_neither_skill_contains_a_contradicted_claim(rule, pattern):
     for label, skill_dir in (("cli", CLI), ("mcp", MCP)):
         found = re.search(pattern, _text(skill_dir))
         assert not found, f"the {label} skill still contains a contradicted claim — {rule}"
+
+
+def test_the_two_skills_close_with_the_same_sections():
+    """The numbered lifecycle legitimately chunks differently — the CLI runs one
+    script where MCP makes several calls — but the trailing reference sections
+    describe the same domain, not the transport. When they drift apart, one skill
+    has grown a concept the other lacks, which is exactly the divergence the
+    invariants above cannot see (they check that a RULE is present, not that both
+    skills still cover the same ground)."""
+    def trailing(skill_dir):
+        heads = [h.strip() for h in re.findall(r"^## (.+)$", _text(skill_dir), re.M)]
+        return [h.split(":")[0] for h in heads if not re.match(r"^\d+\.", h)]
+
+    assert trailing(CLI) == trailing(MCP), (
+        f"trailing sections diverged — cli={trailing(CLI)} mcp={trailing(MCP)}")
 
 
 def _bound_parameters(args) -> set:

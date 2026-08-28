@@ -326,6 +326,18 @@ To re-read a failed build later, refetch it the way `publish_tool.py` does
 
 Cancel a non-terminal build with `version.cancel()`.
 
+## Identity: generation and version
+
+A tool name can be deleted and recreated. `generation` identifies one immutable lifetime of that name; the SDK carries it for you, so keep working from the `CustomTool` object you fetched rather than re-deriving names. `StaleCustomToolError` means the tool you hold is no longer current - fetch it again and re-decide, never blind-retry the mutation.
+
+Versions are numbered handles (`v1`, `v2`) within one generation, and `Version.id` is the opaque,
+generation-encoding identifier you should pass to any call that takes a version. Source digests
+identify archive bytes and are neither.
+
+`tool.delete()` exists and deletes that exact generation, releasing the name for reuse. It is
+destructive and organization-visible: never call it to "clean up" after a failed build, and only
+on the user's explicit instruction for the tool they named.
+
 ## Keeping a deployed tool current
 
 There are two update models, and only one of them is reachable from the SDK.
@@ -344,15 +356,3 @@ There are two update models, and only one of them is reachable from the SDK.
   explicit authorization — it is off by default, and enabling it means every later push
   publishes organization-wide with no further approval. That is precisely the confirmation
   step in section 6, permanently delegated.
-
-## Identity: generation and version
-
-A tool name can be deleted and recreated. `generation` identifies one immutable lifetime of that name; the SDK carries it for you, so keep working from the `CustomTool` object you fetched rather than re-deriving names. `StaleCustomToolError` means the tool you hold is no longer current - fetch it again and re-decide, never blind-retry the mutation.
-
-Versions are numbered handles (`v1`, `v2`) within one generation, and `Version.id` is the opaque,
-generation-encoding identifier you should pass to any call that takes a version. Source digests
-identify archive bytes and are neither.
-
-`tool.delete()` exists and deletes that exact generation, releasing the name for reuse. It is
-destructive and organization-visible: never call it to "clean up" after a failed build, and only
-on the user's explicit instruction for the tool they named.
