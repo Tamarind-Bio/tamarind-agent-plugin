@@ -84,6 +84,7 @@ plugins/tamarind-mcp/
     tamarind-mcp-batch/
     tamarind-mcp-pipeline/
     tamarind-mcp-miniprotein-campaign/
+    tamarind-mcp-custom-tool-deploy/
 ```
 
 ## Verification

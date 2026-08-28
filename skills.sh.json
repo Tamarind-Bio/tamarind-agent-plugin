@@ -9,6 +9,7 @@
     { "title": "MCP setup & core", "skills": ["tamarind-mcp-setup", "tamarind-mcp-tool-discovery", "tamarind-mcp-submit-and-poll", "tamarind-mcp-results-analysis"] },
     { "title": "MCP domain tools", "skills": ["tamarind-mcp-structure-prediction", "tamarind-mcp-antibody", "tamarind-mcp-binder-design", "tamarind-mcp-inverse-folding", "tamarind-mcp-docking", "tamarind-mcp-developability", "tamarind-mcp-finetune", "tamarind-mcp-more-tools"] },
     { "title": "MCP scale & orchestration", "skills": ["tamarind-mcp-batch", "tamarind-mcp-pipeline"] },
-    { "title": "MCP campaigns", "skills": ["tamarind-mcp-miniprotein-campaign"] }
+    { "title": "MCP campaigns", "skills": ["tamarind-mcp-miniprotein-campaign"] },
+    { "title": "MCP author your own tool", "skills": ["tamarind-mcp-custom-tool-deploy"] }
   ]
 }
