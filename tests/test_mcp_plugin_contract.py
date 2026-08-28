@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.5"
+    assert manifest["version"] == "0.1.6"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -78,7 +78,7 @@ def test_every_mcp_skill_has_metadata_and_server_dependency() -> None:
     skill_dirs = sorted(
         path for path in SKILLS.iterdir() if (path / "SKILL.md").is_file()
     )
-    assert len(skill_dirs) == 15
+    assert len(skill_dirs) == 16
 
     for skill_dir in skill_dirs:
         skill_path = skill_dir / "SKILL.md"

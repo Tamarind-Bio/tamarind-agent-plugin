@@ -184,6 +184,7 @@ The MCP plugin provides the parallel `tamarind-mcp-*` set:
 - Core: `tamarind-mcp-setup`, `tamarind-mcp-tool-discovery`, `tamarind-mcp-submit-and-poll`, and `tamarind-mcp-results-analysis`.
 - Domains: `tamarind-mcp-structure-prediction`, `tamarind-mcp-antibody`, `tamarind-mcp-binder-design`, `tamarind-mcp-inverse-folding`, `tamarind-mcp-docking`, `tamarind-mcp-developability`, `tamarind-mcp-finetune`, and `tamarind-mcp-more-tools`.
 - Scale: `tamarind-mcp-batch` and `tamarind-mcp-pipeline`.
+- Author your own tool: `tamarind-mcp-custom-tool-deploy`, converting a folder or git repository into the Tamarind custom-tool format (Dockerfile, run.sh, config.json) and deploying it with the MCP server's `deployCustomTool` and `getCustomTool`.
 - Campaigns: `tamarind-mcp-miniprotein-campaign`, a multi-method de novo miniprotein binder campaign against one target and epitope, scored on a three-arm instrument fixed before any design is seen and shipped as a ranked, diversity-capped panel.
 
 Both campaign skills bundle a vendored science kernel beside their SKILL.md — the
