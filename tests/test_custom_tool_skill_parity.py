@@ -296,6 +296,28 @@ def test_the_two_skills_close_with_the_same_sections():
         f"trailing sections diverged — cli={trailing(CLI)} mcp={trailing(MCP)}")
 
 
+def test_the_repo_docs_quote_the_same_sdk_pin_as_the_skill():
+    """AGENTS.md and README.md both restate the SDK requirement. Bumping the pin
+    to 0.3.2 in SKILL.md left them saying 0.3.0 — a version a reader could
+    install, where the publish step behaves differently. Derive the expected
+    value from the skill so the docs cannot drift from it again."""
+    pins = set(re.findall(r"tamarind-cli>=(\d+\.\d+\.\d+)", (CLI / "SKILL.md").read_text()))
+    assert len(pins) == 1, f"the skill quotes more than one SDK pin: {sorted(pins)}"
+    pin = pins.pop()
+    # Scoped to sentences about Custom Tools. Both docs also pin the CLI itself
+    # (>=0.2.0) for running jobs, which is a different requirement that must not
+    # be dragged along by this one — and scoping beats exempting it by version,
+    # which would silently stop checking if that pin ever moved.
+    for name in ("AGENTS.md", "README.md"):
+        lines = [ln for ln in (ROOT / name).read_text().splitlines()
+                 if "tamarind-cli>=" in ln and re.search(r"[Cc]ustom[- ][Tt]ool", ln)]
+        assert lines, f"{name} no longer states the Custom Tools SDK requirement"
+        for ln in lines:
+            quoted = set(re.findall(r"tamarind-cli>=(\d+\.\d+\.\d+)", ln))
+            assert quoted == {pin}, (
+                f"{name} quotes {sorted(quoted)} for the Custom Tools SDK, skill says {pin}")
+
+
 def _bound_parameters(args) -> set:
     """Every name an argument list binds, across all five parameter kinds."""
     if args is None:
