@@ -129,7 +129,11 @@ authenticated machine.
 import time
 
 from tamarind import Tamarind
-from tamarind.errors import CustomToolBuildFailedError, CustomToolNotFoundError
+from tamarind.errors import (
+    CustomToolBuildFailedError,
+    CustomToolNotFoundError,
+    ValidationError,
+)
 
 # ABSOLUTE, always. The script runs from outside the repository (step 1), so a
 # relative "./my-tool" resolves against /tmp and validates - or uploads - the
@@ -157,6 +161,22 @@ else:
         # authorization. Report the existing tool to the user; continue only if
         # they confirm it, or use a different name.
         raise SystemExit(f"{TOOL_NAME} already exists - confirm with the user before building")
+
+# PREFLIGHT: one cheap GET that proves this deployment speaks the 0.3.2 contract.
+# The SDK stopped sending X-Tamarind-Tool-Generation, because a Version.id now
+# carries the generation - so against an older deployment, where that header is
+# still required, every version call fails 422. Without this the first failure
+# lands mid-build, after the upload, reading as a broken tool rather than a
+# version mismatch. It works on a tool with no versions yet: the request is made
+# either way.
+try:
+    tool.versions(limit=1)
+except ValidationError as exc:
+    raise SystemExit(
+        f"This Tamarind deployment rejects a tamarind-cli 0.3.2 version call ({exc}). It predates "
+        "the opaque Version.id contract, so nothing below will work. Report this rather than "
+        "downgrading the SDK - an older client writes a DIFFERENT publish path."
+    )
 
 # tool.validate() runs entirely on this machine - no network, no upload, no cost.
 report = tool.validate(TOOL_DIR)

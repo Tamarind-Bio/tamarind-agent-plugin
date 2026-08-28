@@ -149,6 +149,11 @@ CLI_SNIPPET_GUARDS = [
     # blanket "every python line carries -P" check was tried and deleted: it
     # flagged the Dockerfile, the runtime entry point and every ```python fence,
     # and a guard that needs an exemption list is worse than two exact ones.
+    # Verified against both environments 2026-08-27: staging passes, prod raises
+    # 422 "X-Tamarind-Tool-Generation Field required" because 0.3.2 stopped
+    # sending it. Without the probe that lands mid-build, after the upload.
+    ('a preflight proves the deployment speaks the 0.3.2 contract before building',
+     r'tool\.versions\(limit=1\)[\s\S]{0,200}except ValidationError'),
     ('the SDK pin is at least 0.3.2, where get_version takes the opaque id',
      r"tamarind-cli>=0\.3\.2"),
     ('the runtime-network warning is surfaced, not just described in prose',
