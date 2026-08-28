@@ -120,7 +120,7 @@ identity, because version numbers restart in each generation. `id` is also the o
 
 `sourceDigest` identifies archive bytes and is neither.
 
-Deleting a tool is not available here. Send the user to the Custom Tools page in the web app.
+Deleting a tool, and changing its settings after creation - tags, description, auto-publish - are not available here. Both are deliberate: this surface deploys and publishes, and nothing else. Send the user to the Custom Tools page in the web app. Note that a tool's `gpuType`, `memory` and `cpu` are NOT settings you change that way - they are read from `config.json` on every build, so the way to change them is to edit `config.json` and deploy again.
 
 ## Keeping a deployed tool current
 
