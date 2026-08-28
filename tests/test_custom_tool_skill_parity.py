@@ -89,6 +89,23 @@ INVARIANTS = [
         r"older `Complete` one is the rollback|newest whose `status` is `Complete`",
     ),
     (
+        # Measured: the same malformed input gave exit 0 with no outputs through the
+        # entry point, and exit 1 once run.sh asserted its artifact. Research code
+        # that catches its own exceptions and returns 0 is common, and a tool
+        # wrapping it reports SUCCESS with no results - which reads as a platform
+        # bug, not a failed run. Both skills must put the exit code on run.sh.
+        "run.sh owns the exit code; a zero-exit failure must become a failed job",
+        r"`run\.sh` owns the exit code",
+        r"`run\.sh` owns the exit code",
+    ),
+    (
+        # The platform has no pre-publish execution path, so publishing is
+        # otherwise the first time the tool has ever run - organization-wide.
+        "a local container run stands in for the missing pre-publish test",
+        r"docker run --rm --network none",
+        r"docker run --rm --network none",
+    ),
+    (
         "a failed smoke test rolls back before diagnosis, and a first publish says so",
         r"roll back before you diagnose[\s\S]{0,900}no rollback target",
         r"roll back before you diagnose[\s\S]{0,900}no rollback target",

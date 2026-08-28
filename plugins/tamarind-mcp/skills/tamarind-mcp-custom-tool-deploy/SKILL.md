@@ -36,6 +36,12 @@ Ask the user only about what the repository does not determine - which entry poi
 | **The runtime container has no network** | Bake weights and packages into the image; the build does have network |
 
 That last row is the most common cause of a tool that builds cleanly and then fails on its first real job.
+**`run.sh` owns the exit code.** The orchestrator judges a job by that exit status, not by whether
+`/app/out/` has anything in it. Plenty of research code catches its own exceptions, prints them, and
+still returns 0 - and a tool wrapping that reports SUCCESS with no results, which reads as a platform
+bug rather than a failed run. So after invoking the entry point, assert the artifact you promised
+actually exists and is non-empty, and exit non-zero when it does not. `set -e` alone does not cover
+this: the command succeeded.
 
 ## 3. Choose the name
 
@@ -96,6 +102,32 @@ Every mutation carries `generation`, without exception. A name-only call resolve
 ## 7. Smoke-test the published tool
 
 There is no pre-publish test call. A run is an ordinary Tamarind job, so it happens after publish and it costs weighted hours - confirm it with the user like any other paid submission.
+**Run it locally FIRST, if Docker is available.** The platform has no pre-publish execution path,
+so publishing is otherwise the first time the tool has ever run - org-wide. A local run costs
+nothing and catches the mistakes that survive a green build, because it reproduces the three
+runtime facts that differ from your shell:
+
+```bash
+docker build -t TOOL_NAME-local /absolute/path/to/my-tool
+mkdir -p /tmp/ct-in /tmp/ct-out && cp <a real input> /tmp/ct-in/
+docker run --rm --network none \
+  -v /tmp/ct-in:/app/inputs:ro -v /tmp/ct-out:/app/out \
+  -e INPUT_NAME=/app/inputs/<filename> \
+  TOOL_NAME-local bash run.sh
+```
+
+`--network none` reproduces the runtime's missing network, `:ro` reproduces the read-only input
+mount, and passing the input through its env var reproduces how the orchestrator delivers it. Then
+check the exit status AND that `/tmp/ct-out` is non-empty. Feed it a deliberately malformed input
+too: that run must exit non-zero, or the tool will report success on failure.
+
+That last check is not hypothetical. Measured on a real conversion of this kind, the same
+malformed input gave **exit 0 with no outputs** through the entry point directly, and **exit 1**
+once `run.sh` asserted its artifact - so without the assertion the platform would have recorded a
+successful job containing nothing.
+
+This is not a substitute for the real smoke test - the base image can resolve different wheels on
+the platform's architecture than on yours - but it turns most first-publish failures into local ones.
 
 Then follow `tamarind-mcp-submit-and-poll`: `getJobSchema` for the new tool name, `validateJob` requiring `valid: true` with no `mutatedFields`, `estimateTime`, one `submitJob`, and a bounded `getJobs` poll.
 
@@ -110,6 +142,7 @@ Read the version's structured `error` and its logs before changing anything.
 | Symptom | Likely cause |
 |---|---|
 | Image builds, job fails immediately | `run.sh` missing or unreadable, or reading a name that is not in `inputs[]` |
+| Job runs then produces nothing, job REPORTED SUCCESS | The entry point failed but exited 0 - see "`run.sh` owns the exit code" |
 | Job runs then produces nothing | Results written outside `/app/out/` |
 | Job hangs or fails fetching something | Runtime network access - bake it into the image |
 | CUDA or driver errors | `gpuType` and the base image disagree |
