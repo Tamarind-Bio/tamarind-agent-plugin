@@ -49,6 +49,10 @@ That last row is the most common cause of a tool that builds cleanly and then fa
 
 `deployCustomTool` takes the whole source tree as `files`, a map of archive-relative path to content. `Dockerfile`, `run.sh`, and `config.json` go at the ROOT of that map; binary members go in `binaryFiles` as base64. The server zips it, hashes the exact bytes, uploads, and mints a version.
 
+**The archive is capped at 8 MiB on this path**, so a repository that bakes model weights into git does not fit. Send the code and fetch the weights in the `Dockerfile`, which has network at build time. The cap is the MCP transport's, not the platform's - the Custom Tools API itself accepts a far larger source - so "too large here" does not mean the tool cannot exist, and the web app or a connected GitHub repository can carry what this call will not.
+
+**Check for Git LFS before you read any file's size.** A working tree can hold a ~130-byte pointer (`version https://git-lfs.github.com/spec/v1`) in place of a multi-hundred-megabyte object. Uploading the pointer builds an image whose "weights" are a text stub, and nothing fails until the first real job. Either materialize the object and fetch it at build time, or exclude it - and say which you did.
+
 Run it with `validateOnly=True` first. It spends no build and mutates nothing, and it catches a missing `Dockerfile` or malformed `config.json` before a build is spent. It is **not** a local check: `validateOnly` still sends `files` and `binaryFiles` over the MCP transport to the Tamarind server, so the source leaves the machine either way. If the user must keep the source local until they approve the upload, ask before the first call rather than after. Fix every reported error, then call it again without the flag.
 
 **One warning is blocking.** A missing `run.sh` is reported as a *warning*, not an error, because the archive is still well-formed - but the orchestrator invokes `run.sh` directly, so the image cannot start without it. Treat `run_script_missing` as a hard stop and add the file before deploying for real.
@@ -73,7 +77,11 @@ Polling by name alone resolves `latest`, which is whatever version exists *now*.
 
 **Terminal is not success.** `Stopped` is terminal too, and a terminal version can carry a structured `error`. Only advance to publishing when `status == "Complete"` and `error` is null; on anything else go to the failure section below. Publishing a `Stopped` version promotes a build that never produced an image.
 
-Poll on a finite deadline and sleep between polls. Carry `logs.nextCursor` into the next call to resume the log stream. A **repeated** non-null cursor means "no new logs yet", not "drain another page immediately"; it goes null once the terminal stream is exhausted. A local timeout never cancels the remote build - call `getCustomTool` again rather than redeploying.
+Poll on a finite deadline and sleep between polls. A local timeout never cancels the remote build - call `getCustomTool` again rather than redeploying.
+
+Logs come back as `logs: {status, items[], nextCursor, error}`, each item `{message, timestamp}`, oldest first. Pass `logs.nextCursor` back as the **`logCursor`** argument - not `cursor`, which paginates the tool LISTING and is ignored here.
+
+**The only stop condition is `logs.nextCursor == null`.** An empty page is not the end: measured on a build that had already gone terminal, the first page carried 288 lines, the second carried ZERO under a *different* non-null cursor, and only the third returned null. So never stop on an empty page, and never treat a changed cursor as proof there was new output.
 
 `deployCustomTool(name, cancelVersion="v3", generation=GENERATION)` records a durable cancellation; keep polling until that version settles to `Stopped`.
 

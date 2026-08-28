@@ -1,9 +1,8 @@
 # The Tamarind custom-tool format
 
-`config.json` is `additionalProperties: false`, so an invented key is a hard failure. Validate with
-`deployCustomTool(validateOnly=True)`, which checks the archive against the server's own contract -
-this plugin has no HTTP client and must not fetch a schema itself. The summary below can lag the
-server; `validateOnly` cannot.
+The authoritative JSON Schema is published at `https://app.tamarind.bio/tamarind-tool.schema.json`.
+Fetch it and validate against it rather than trusting this summary, which can lag. `config.json`
+is `additionalProperties: false`, so an invented key is a hard failure.
 
 ## Archive layout
 
@@ -124,12 +123,11 @@ pipeline builder. You can add outputs later without rebuilding the image.
 
 ## What is validated where
 
-- **By `deployCustomTool(validateOnly=True)`**: `Dockerfile` present, `run.sh` present (warning
-  if absent), `config.json` parses as a JSON object, and archive paths are safe. This spends no
-  build and mutates nothing, but it is **not** a local check — `files` and `binaryFiles` travel
-  to the server either way.
+- **Offline, by `tool.validate()`** (runs on your machine; nothing is uploaded): `Dockerfile` present, `run.sh` present (warning if absent),
+  `config.json` parses as a JSON object, plus a warning when runtime source appears to make
+  network calls.
 - **By the server, at build admission**: everything else, including the full `config.json`
-  contract. A clean `validateOnly` report is necessary but not sufficient.
+  contract. A clean local report is necessary but not sufficient.
 
 Editing `config.json` and editing the Config tab in the web UI are equivalent for the RESOURCE and
 input contract - `gpuType`, `memory`, `cpu`, `homeDiskGi`, `inputs`, `producedOutputs`, `envVars`,

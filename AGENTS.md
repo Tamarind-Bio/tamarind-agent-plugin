@@ -18,6 +18,7 @@ This repository packages Tamarind Bio workflows as Codex and Claude Code skills.
 - When a validated scope is already authorized, issue one initial client-side submission attempt even if the CLI provides no idempotency key or pre-submission cost estimate. Idempotency governs retries; a missing estimate only blocks authorization conditioned on a quote or numeric cost cap.
 - Download with `tamarind --json results ... --download ...`; normal CLI 0.2 output suppresses presigned URLs. Never use `--show-url` in agent logs.
 - Keep local scripts only for deterministic scientific preprocessing or post-processing of downloaded artifacts.
+- One exception to the subprocess rule: the Custom Tool lifecycle (create, upload, build, monitor, publish) has no `tamarind` subcommands, so `tamarind-custom-tool-deploy` drives it through the package's public `tamarind.Tamarind` SDK, which requires `tamarind-cli>=0.3.2`. That is still the vendor client, not a reimplementation - do not hand-roll HTTP, presigned upload, or polling for it. Running the finished tool stays on the CLI. Retire this exception if the CLI ever ships custom-tool subcommands.
 
 ### MCP plugin
 
@@ -64,6 +65,7 @@ plugins/tamarind-cli/
     tamarind-batch/
     tamarind-pipeline/
     tamarind-miniprotein-campaign/
+    tamarind-custom-tool-deploy/
 plugins/tamarind-mcp/
   .codex-plugin/plugin.json
   .claude-plugin/plugin.json
