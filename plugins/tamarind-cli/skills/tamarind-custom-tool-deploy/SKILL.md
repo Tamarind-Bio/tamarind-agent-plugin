@@ -174,8 +174,10 @@ try:
 except ValidationError as exc:
     raise SystemExit(
         f"This Tamarind deployment rejects a tamarind-cli 0.3.2 version call ({exc}). It predates "
-        "the opaque Version.id contract, so nothing below will work. Report this rather than "
-        "downgrading the SDK - an older client writes a DIFFERENT publish path."
+        "the opaque Version.id contract, so nothing below will work. Do NOT downgrade the SDK - an "
+        "older client writes a DIFFERENT publish path. Ask the user whether another Tamarind "
+        "deployment is already running the newer backend and, if so, set TAMARIND_API_BASE to it; "
+        "otherwise stop and report that the backend needs updating."
     )
 
 # tool.validate() runs entirely on this machine - no network, no upload, no cost.
