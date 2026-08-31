@@ -77,27 +77,29 @@ Poll on a finite deadline and sleep between polls. Carry `logs.nextCursor` into 
 
 `deployCustomTool(name, cancelVersion="v3", generation=GENERATION)` records a durable cancellation; keep polling until that version settles to `Stopped`.
 
-## 6. Publish only with explicit authorization
+## 6. Publishing pins a version - the build already shipped it
 
-Publishing makes that version the organization-wide default - it changes what every member gets when they submit this tool. Confirm with the user before the first publish and before replacing a working default, unless they already authorized that exact promotion.
+**A successful build is already live.** A by-name submission runs the newest `Complete` version whether or not anyone published it: measured on staging, a version that was never published served every job while the tool still reported the older `defaultVersion`. Publishing does not release a version so much as **pin** one - it fixes execution to the version you name, which is why it is also the rollback.
+
+That inverts where the risk sits. The moment every member's jobs change is your **deploy**, not your publish, and `published`/`defaultVersion` will not warn you - they report the last explicit publish, not what is running. So confirm a deploy onto a tool other people already use the way you would confirm a release, and confirm a publish before the first one and before replacing a working pin.
 
 Two ways, same effect. `deployCustomTool(..., publish=True, waitSeconds=N, generation=GENERATION)` builds and publishes in one call once the build completes; it refuses `publish=True` without a wait, because a version can only be published from a terminal build. `deployCustomTool(name, publishVersion="v3", generation=GENERATION)` promotes a version that already built - which is also the rollback path. `getCustomTool(name, listVersions=True, generation=GENERATION)` returns the history newest-first; take the newest whose `status` is `Complete`, not simply the previous handle. A `Stopped` version never produced an image, so publishing one is not a rollback.
 
 Every mutation carries `generation`, without exception. A name-only call resolves the name again, so a delete-and-recreate between the user's approval and your call would publish or cancel inside a tool nobody authorized.
 
-## 7. Test before publishing, then smoke-test what you published
+## 7. Smoke-test the build, then publish to pin it
 
-**MCP cannot run an unpublished version.** An unpublished tool is invisible to the job surface - `getJobSchema` on it answers "not found" - so there is nothing here to submit against. The platform itself can: the tool's page in the web app has a **Test** tab with a per-version selector that runs a chosen unpublished build, and the REST API behind it takes a `toolRef` naming that build. Neither is reachable from this transport.
+**Smoke-test before you publish - you can.** `submitJob` on the tool's name runs the newest `Complete` version even when the tool has never been published, so the test does not have to wait for a promotion. Run it as soon as the build goes `Complete`, because that build is already what other members get.
 
-So when the user can open a browser, send them to the **Test** tab *before* you publish. It is the only way to find a broken image without first making it the organization-wide default. Publishing untested is the fallback, and the rollback paragraph below is its price.
+A run is an ordinary Tamarind job and costs weighted hours - confirm it with the user like any other paid submission. Follow `tamarind-mcp-submit-and-poll`: `validateJob` requiring `valid: true` with no `mutatedFields`, `estimateTime`, one `submitJob`, and a bounded `getJobs` poll.
 
-The post-publish smoke test is an ordinary Tamarind job, so it costs weighted hours - confirm it with the user like any other paid submission. Then follow `tamarind-mcp-submit-and-poll`: `getJobSchema` for the new tool name, `validateJob` requiring `valid: true` with no `mutatedFields`, `estimateTime`, one `submitJob`, and a bounded `getJobs` poll.
+**Neither `validateJob` nor `getJobSchema` tells you the tool works.** `validateJob` answers `valid: true` for a tool `getJobSchema` calls not found - it checks the settings you passed, not the tool. And `getJobSchema` answers "not found" until the tool has been published at least once, so read parameter names from it when it works, but never treat a "not found" as proof the tool cannot run. The job's own outcome is the only evidence.
 
-**Let `getJobSchema` be the gate, not `validateJob`.** `validateJob` answers `valid: true` for an unpublished tool that `getJobSchema` reports as not found: it checks the settings you passed, not whether the tool can be submitted at all. A schema coming back is what confirms the publish took effect.
+When the user wants to compare builds rather than run the newest, the web app's **Test** tab has a per-version selector, and the REST API behind it takes a `toolRef` pinning one version. Neither is reachable from this transport - `submitJob` here always takes the newest.
 
-**If the run fails, roll back before you diagnose.** The broken version is already the organization-wide default, and every member submitting this tool gets it for as long as you spend reading logs and rebuilding. Publish the previous known-good version immediately — `getCustomTool(name, listVersions=True)` lists them, and `deployCustomTool(name, publishVersion=OLDER, generation=GENERATION)` on an older `Complete` one is the rollback — *then* fix the source and deploy a new version. Do not republish the same bytes.
+**If the run fails, roll back before you diagnose.** The broken build is already what every member gets - it became so when it built, not when you published - and it stays that way for as long as you spend reading logs and rebuilding. Publish the previous known-good version immediately — `getCustomTool(name, listVersions=True)` lists them, and `deployCustomTool(name, publishVersion=OLDER, generation=GENERATION)` on an older `Complete` one is the rollback — *then* fix the source and deploy a new version. Do not republish the same bytes.
 
-On a first publication there is no rollback target. Say so plainly to the user: the tool's default is unusable until a fixed version is published, and they may want it deleted rather than left broken.
+When the tool has only ever built one version there is no older `Complete` version to pin, so there is no rollback target. Say so plainly: the tool is broken for the organization until a fixed version builds, and the user may want it deleted rather than left that way.
 
 ## 8. When a build fails
 
