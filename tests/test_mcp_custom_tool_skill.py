@@ -62,6 +62,16 @@ RULES = [
      r"older `Complete` one is the rollback|newest whose `status` is `Complete`"),
     ('a failed smoke test rolls back before diagnosis',
      r"roll back before you diagnose"),
+    # Measured: memory 2Gi/4Gi/16Gi each validated clean and were then refused by
+    # the deploy as "config.json is invalid", naming no field. 8Gi deployed.
+    ('validateOnly does not check the resource values in config.json',
+     r"checks the archive, not the values inside it"),
+    # The rejected deploy still created the tool record, so the corrected retry
+    # with expectNew=True 409s and the hint misattributes it to another member.
+    ('a rejected deploy still claims the name',
+     r"has already taken the name"),
+    ('a 409 after your own failed deploy is not evidence another member took the name',
+     r"unless you saw the tool exist before your first attempt"),
     # Measured on staging: a version that was NEVER published served every
     # by-name submission while the tool still reported the older defaultVersion.
     ('a built version is live before anyone publishes it',
