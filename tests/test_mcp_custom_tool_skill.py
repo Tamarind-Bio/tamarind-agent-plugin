@@ -68,6 +68,11 @@ RULES = [
      r"already live|newest `Complete` version whether or not anyone published"),
     ('publishing pins execution rather than releasing it',
      r"does not release a version so much as \*\*pin\*\*"),
+    # The live-before-publish claim was measured on code-only deploys only; a
+    # forced image rebuild wedged in Running for an hour and could not be
+    # measured. Keep the scope visible so nobody silently widens it.
+    ('the live-before-publish claim states the scope it was measured at',
+     r"Both measured cases were code-only \(`reuse_image`\) deploys"),
     # submitJob on a never-published tool ran and produced correct output, so the
     # smoke test does not have to wait for a promotion.
     ('an unpublished build can be smoke-tested from this transport',

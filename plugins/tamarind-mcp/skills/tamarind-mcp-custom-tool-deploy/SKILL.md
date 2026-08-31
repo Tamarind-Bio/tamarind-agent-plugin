@@ -79,7 +79,7 @@ Poll on a finite deadline and sleep between polls. Carry `logs.nextCursor` into 
 
 ## 6. Publishing pins a version - the build already shipped it
 
-**A successful build is already live.** A by-name submission runs the newest `Complete` version whether or not anyone published it: measured on staging, a version that was never published served every job while the tool still reported the older `defaultVersion`. Publishing does not release a version so much as **pin** one - it fixes execution to the version you name, which is why it is also the rollback.
+**A successful build is already live.** A by-name submission runs the newest `Complete` version whether or not anyone published it: measured on staging, a version that was never published served every job while the tool still reported the older `defaultVersion`. Both measured cases were code-only (`reuse_image`) deploys; treat a rebuilt image the same way, since the safe assumption and the measured one agree. Publishing does not release a version so much as **pin** one - it fixes execution to the version you name, which is why it is also the rollback.
 
 That inverts where the risk sits. The moment every member's jobs change is your **deploy**, not your publish, and `published`/`defaultVersion` will not warn you - they report the last explicit publish, not what is running. So confirm a deploy onto a tool other people already use the way you would confirm a release, and confirm a publish before the first one and before replacing a working pin.
 
