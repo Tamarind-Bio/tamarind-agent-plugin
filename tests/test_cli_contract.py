@@ -16,7 +16,7 @@ ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 # skips (a "re-verify the contract and bump" nudge) instead of hard-failing on a crossed
 # version literal. Behavioral help-token checks below still run and fail honestly if a
 # real flag/command actually changed.
-LAST_VERIFIED_CLI_MINOR = (0, 2)
+LAST_VERIFIED_CLI_MINOR = (0, 4)
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -36,9 +36,9 @@ def test_supported_cli_version_and_root_options() -> None:
     match = re.search(r"(\d+)\.(\d+)\.(\d+)", version.stdout)
     assert match
     version_tuple = tuple(map(int, match.groups()))
-    # Hard floor: the plugin's skills depend on the 0.2.0 agent contract.
-    assert version_tuple >= (0, 2, 0), (
-        f"plugin requires tamarind-cli >= 0.2.0, found {version.stdout.strip()}"
+    # Hard floor: the Custom Tool skill depends on the 0.4.0 lifecycle commands.
+    assert version_tuple >= (0, 4, 0), (
+        f"plugin requires tamarind-cli >= 0.4.0, found {version.stdout.strip()}"
     )
 
     help_result = _run("--help")
@@ -68,6 +68,9 @@ def test_supported_cli_version_and_root_options() -> None:
         (("results", "--help"), ("--download", "--file", "--show-url")),
         (("batch", "--help"), ("--input", "--name", "--prevalidate")),
         (("files", "upload", "--help"), ("--name",)),
+        (("custom-tools", "build", "--help"), ("--idempotency-key", "--wait", "--timeout", "--poll-interval")),
+        (("custom-tools", "version", "--help"), ("--wait", "--timeout", "--poll-interval")),
+        (("custom-tools", "delete", "--help"), ("--yes",)),
     ],
 )
 def test_documented_cli_flags_exist(args: tuple[str, ...], tokens: tuple[str, ...]) -> None:
