@@ -24,8 +24,8 @@ jobs:
       # Catch drift by testing the plugin contract against the latest release.
       - name: Install the latest published Tamarind CLI
         run: >-
-          python -m pip install
-          tamarind-cli
+          python -m pip install --no-cache-dir --upgrade
+          'tamarind-cli>=0.4.0'
           pytest PyYAML numpy
       - name: Run plugin and CLI contract tests
         run: python -m pytest --strict-markers
