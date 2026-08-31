@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.8"
+    assert manifest["version"] == "0.1.9"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -210,12 +210,23 @@ def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
     # Assert against whitespace-normalized prose: these phrases wrap across lines, and a test
     # that fails when a paragraph is re-wrapped pins the formatting rather than the claim.
     flat = " ".join(pipeline.split())
-    assert "only when you SAVE a template" in flat
+    assert "required only when SAVING a template" in flat
     assert "never replaces one you left in" in flat
     assert "in one of **two shapes**" in flat
     assert "Steps are under **`nodeRuns`**" in flat
     assert "`nodeId` is what `getPipelineRunResults(node=...)` wants" in flat
     assert "The order is not stable and is not topological" in flat
+
+    # The two ways to silently get WRONG SCIENCE out of a successful run, both measured:
+    # metadata[tool] is a history list (reading [0] returns another run's numbers), and
+    # results do not come back in binding order (zipping positionally mislabels every row).
+    assert "scores are keyed by tool name" in flat
+    assert "list of every run that ever scored that molecule" in flat
+    assert "Results do not come back in binding order" in flat
+
+    # The gap that actually costs GPU money: validation does NOT enforce requiresStructure,
+    # so a structure-less binding returns valid:true on a template whose first tool needs a PDB.
+    assert "does **not** enforce `requiresStructure`" in flat
 
 
 def test_cli_plugin_remains_cli_only() -> None:
