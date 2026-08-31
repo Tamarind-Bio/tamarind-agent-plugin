@@ -187,6 +187,13 @@ def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
     assert "do not appear in `getJobs()`" in pipeline
     assert "Do not use `cancelBatch`" in pipeline
 
+    # Measured against the live MCP surface: `validationUnavailable` is ALSO set on a permanent
+    # 403, whose own hint says to retry. Retrying it is wasted — the response is byte-identical.
+    # And the org listing (which this skill tells agents to prefer) includes templates that then
+    # fail validation with exactly that 403, so the two facts have to be taught together.
+    assert "pipeline_permission_denied" in pipeline
+    assert "Listed does not mean runnable" in pipeline
+
     assert "finite deadline" in pipeline
 
 

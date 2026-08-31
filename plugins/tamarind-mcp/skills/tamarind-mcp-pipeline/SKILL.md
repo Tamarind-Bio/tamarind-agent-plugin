@@ -29,6 +29,12 @@ There are nine pipeline tools. Do not rebuild orchestration out of `submitJob`/`
 before authoring: `listPipelineTemplates(search=...)`. Its `owner` defaults to `"org"`, so you see
 your whole organization's templates, including ones you did not create. Narrow with `owner="mine"`.
 
+**Listed does not mean runnable.** The org listing includes templates you cannot use: an unpublished
+one belonging to someone else lists fine and then fails validation with `403
+pipeline_permission_denied`. Treat that as terminal (see `validationUnavailable` below) — pick
+another template or ask the owner to publish it. `isPublished` on the listing row is the signal to
+read: prefer a published template, or one where `createdBy` is you.
+
 **Path B — author a graph inline.** Only when nothing suitable exists. Passing `pipeline` to
 `submitPipeline` saves a new template you own (unpublished) and runs it in one call.
 
@@ -87,11 +93,14 @@ Two optional keys inside a binding:
 
 ### The residue trap — read this before inventing a selection
 
-`getPipelineTemplate`'s own documentation says a non-empty `residueFields` means the run *requires*
-a `residuesByChain`. **That is measured to be false.** Production runs of the rfdiffusion,
-bindcraft and antibody-boltzgen templates whose manifests declare `residueFields` completed with no
-`residuesByChain` at all, and the entries carry no per-field `required` flag to tell the two cases
-apart.
+A non-empty `residueFields` means the run **may** take a `residuesByChain` — **not** that one is
+required. Measured: rfdiffusion, bindcraft and antibody-boltzgen templates whose manifests declare
+`residueFields` have completed with no `residuesByChain` at all, and the entries carry no per-field
+`required` flag to tell the two cases apart. A live entry is exactly this and nothing more:
+
+```jsonc
+{"node": "backbone", "field": "hotspots", "multichain": true, "targetsChains": []}
+```
 
 This matters because inventing a selection is **not** a harmless default. It reaches the tool as
 designed residues, binder hotspots, or a binding site — constraining the design to the wrong
@@ -115,8 +124,8 @@ It reads the arguments that *describe* the run — `pipeline` or `templateId`+`v
 tag the run, so passing them changes nothing.
 
 Both outcomes return HTTP 200 — **read `valid`, do not branch on the status code.** Each error
-carries a stable `code`, the `node` it belongs to, the `field` at fault where there is one, and a
-`message` saying how to fix it:
+carries a stable `code`, a `severity`, the `node` it belongs to, the `field` at fault where there is
+one, and a `message` saying how to fix it:
 
 | code | usual cause |
 |---|---|
@@ -129,9 +138,13 @@ carries a stable `code`, the `node` it belongs to, the `field` at fault where th
 
 Two failure modes to handle deliberately:
 
-- **`validationUnavailable`** means the validator could not be reached and your pipeline was **not
-  judged**. Retry a couple of times. Do **not** start editing the graph — there is no verdict to
-  respond to. If it fails identically every time, report it rather than looping.
+- **`validationUnavailable`** means your pipeline was **not judged** — there is no verdict, so do
+  **not** start editing the graph in response to one. **Read `status`/`code` before retrying:** the
+  flag is set on a permanent `403 pipeline_permission_denied` ("this pipeline hasn't been shared with
+  you") as well as on a genuinely unreachable validator, and the accompanying hint says to retry in
+  both cases. A 403 is terminal — measured byte-identical on retry. Report it and ask the owner to
+  publish or grant access. Retry only a non-403; if that fails identically every time, report it
+  rather than looping.
 - **`valid: true` is not a guarantee that `submitPipeline` will accept the run.** Measured gaps: it
   does not confirm the tools exist, and it does not check that a bound molecule group exists or has
   anything in it. So if `submitPipeline` rejects a graph validation approved, **believe
