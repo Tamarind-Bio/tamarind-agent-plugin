@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tamarind Custom Tool Deploy"
+  short_description: "Deploy your own repo through the Tamarind CLI"
+  default_prompt: "Use $tamarind-custom-tool-deploy to convert this repository into a Tamarind Custom Tool, build it, and publish it once I approve."

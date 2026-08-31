@@ -21,19 +21,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      # Catch drift by testing the minimum plugin contract against the latest release.
-      # `click` is installed explicitly, and is NOT a plugin dependency. tamarind-cli
-      # 0.3.2 imports `Abort` from `typer._click.exceptions`, which typer 0.27 no longer
-      # exports, and falls back to the external `click` package that typer 0.27 no longer
-      # pulls in — so a clean `pip install tamarind-cli` yields a CLI where every command
-      # exits 1. Installing click restores the supported fallback path so these tests can
-      # check what they exist to check: the plugin's documented CLI contract. Remove this
-      # once tamarind-cli imports `Abort` from `typer` (2026-08-31).
+      # Catch drift by testing the plugin contract against the latest release.
       - name: Install the latest published Tamarind CLI
         run: >-
           python -m pip install
           tamarind-cli
-          click
           pytest PyYAML numpy
       - name: Run plugin and CLI contract tests
         run: python -m pytest --strict-markers

@@ -1,6 +1,6 @@
 {
   "name": "tamarind-cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Run Tamarind Bio biology tools through the agent-friendly Tamarind CLI: discover, validate, submit, monitor, and analyze computational-biology jobs.",
   "author": {
     "name": "Tamarind Bio",
@@ -37,7 +37,8 @@
     "defaultPrompt": [
       "Fold this antibody-antigen complex with Boltz",
       "Dock this ligand to my receptor with AutoDock Vina",
-      "Design binders for my target and screen them"
+      "Design binders for my target and screen them",
+      "Deploy this repository as a Tamarind Custom Tool"
     ]
   }
 }

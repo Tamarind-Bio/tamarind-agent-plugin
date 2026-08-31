@@ -64,6 +64,7 @@ plugins/tamarind-cli/
     tamarind-batch/
     tamarind-pipeline/
     tamarind-miniprotein-campaign/
+    tamarind-custom-tool-deploy/
 plugins/tamarind-mcp/
   .codex-plugin/plugin.json
   .claude-plugin/plugin.json
