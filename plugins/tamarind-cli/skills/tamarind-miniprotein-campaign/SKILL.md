@@ -256,22 +256,15 @@ Production scoring is blocked until the validation gate passes, on two condition
 **On a multi-domain target, a whole-construct CA-RMSD measures the hinge, not the fold, so
 failing (a) on it tells you almost nothing.** Rigid-body play between domains dominates the
 global number while every domain is reproduced accurately — a large miss on the one degree
-of freedom a local interface does not depend on. Measured on a two-domain ectodomain, on
-two independent runs of this protocol against the same target: whole-construct 2.5–3.7 Å
-against a 2.0 Å threshold, a clean fail on all three arms, while each domain individually
-reproduced at **0.6–1.1 Å** and the frozen epitope to **0.24–0.28 Å** once fitted on its
-own domain.
+of freedom a local interface does not depend on.
 
 So when (a) misses, **decompose before recording a verdict**: per-domain CA-RMSD, then the
 epitope's own CA-RMSD after fitting on the domain carrying it. Those two numbers separate a
 real failure — the instrument cannot fold the target, and the campaign stops — from a
 displaced distant domain, which is a **named reduction**: recorded as reduced rather than
 failed, the displacement measured, and the consequence carried as a per-design check that
-no ranked design contacts the displaced domain. Both runs above measured the same numbers;
-one decomposed and proceeded on a validated instrument, the other stopped at the global
-value and escalated the judgment to its user — who had to rule on it without the evidence
-that would have settled it. **Decomposing is how you answer that question instead of
-delegating it.**
+no ranked design contacts the displaced domain. **Decomposing is how you settle that
+question on evidence instead of delegating it to your user.**
 
 This is not licence to relax (a). A reduction is available only where the decomposition
 **shows** the epitope surface is reproduced; if the domain carrying the epitope is itself
