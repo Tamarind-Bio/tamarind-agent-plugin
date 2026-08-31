@@ -62,6 +62,13 @@ RULES = [
      r"older `Complete` one is the rollback|newest whose `status` is `Complete`"),
     ('a failed smoke test rolls back before diagnosis',
      r"roll back before you diagnose"),
+    # Measured three times across two tools and both handle forms: cancelVersion
+    # returns HTTP 500 and the build runs on to Complete. Since a Complete build
+    # is live org-wide, a silently-failed cancel ships the thing you cancelled.
+    ('a cancel may fail and the build become live anyway',
+     r"do not count on it stopping the build"),
+    ('a completed cancel is recovered by pinning a known-good version',
+     r"publish a known-good version to pin execution off it"),
     # Measured: memory 2Gi/4Gi/16Gi each validated clean and were then refused by
     # the deploy as "config.json is invalid", naming no field. 8Gi deployed.
     ('validateOnly does not check the resource values in config.json',

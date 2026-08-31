@@ -79,7 +79,7 @@ Polling by name alone resolves `latest`, which is whatever version exists *now*.
 
 Poll on a finite deadline and sleep between polls. Carry `logs.nextCursor` into the next call to resume the log stream. A **repeated** non-null cursor means "no new logs yet", not "drain another page immediately"; it goes null once the terminal stream is exhausted. A local timeout never cancels the remote build - call `getCustomTool` again rather than redeploying.
 
-`deployCustomTool(name, cancelVersion="v3", generation=GENERATION)` records a durable cancellation; keep polling until that version settles to `Stopped`.
+`deployCustomTool(name, cancelVersion=VERSION, generation=GENERATION)` is meant to record a durable cancellation - but **do not count on it stopping the build.** Measured on staging it returned HTTP 500 for BOTH handle forms (the opaque `id` and the numbered name), across a wedged build and two healthy in-flight ones, and every build it "cancelled" ran on to `Complete`. Because a `Complete` build is live for the organization the moment it finishes, a failed cancel means the build you tried to stop becomes what every member runs. So keep polling after a cancel rather than assuming it took, and if the version completes anyway, publish a known-good version to pin execution off it.
 
 ## 6. Publishing pins a version - the build already shipped it
 
