@@ -43,8 +43,13 @@ RULES = [
      r"One warning is blocking|run_script_missing"),
     ('the blocking run.sh warning is called out as blocking',
      r"Treat `run_script_missing` as a hard stop"),
-    ('publishing is organization-wide and needs explicit authorization',
-     r"organization-wide default.*[Cc]onfirm with the user"),
+    # The authorization invariant survives the corrected model, but it now has
+    # TWO halves: the deploy is the moment execution changes, the publish moves
+    # the pin. Both need the user's say-so.
+    ('a publish needs explicit authorization',
+     r"confirm a publish before the first one"),
+    ('a deploy onto a tool others already use is confirmed like a release',
+     r"confirm a deploy onto a tool other people already use"),
     ('a name collision is never authorization to build over another member’s tool',
      r"confirm with the user before deploying over it"),
     ('a confirmed generation is carried into later mutations',
@@ -57,18 +62,25 @@ RULES = [
      r"older `Complete` one is the rollback|newest whose `status` is `Complete`"),
     ('a failed smoke test rolls back before diagnosis',
      r"roll back before you diagnose"),
-    # Measured on staging: getJobSchema on an unpublished custom tool answers
-    # "not found", so this transport has nothing to submit an untested build to.
-    ('an unpublished version is not runnable from this transport',
-     r"cannot run an unpublished version"),
-    # The web app runs a chosen unpublished build; the agent cannot, so its job
-    # is to hand that off rather than publish blind.
-    ('the pre-publish test in the web app is offered before publishing',
-     r"\*\*Test\*\* tab \*before\* you publish"),
-    # validateJob returned valid:true for a tool getJobSchema called not found,
-    # so it cannot be the check that a publish landed.
-    ('a publish is confirmed by getJobSchema, not by validateJob',
-     r"gate, not `validateJob`"),
+    # Measured on staging: a version that was NEVER published served every
+    # by-name submission while the tool still reported the older defaultVersion.
+    ('a built version is live before anyone publishes it',
+     r"already live|newest `Complete` version whether or not anyone published"),
+    ('publishing pins execution rather than releasing it',
+     r"does not release a version so much as \*\*pin\*\*"),
+    # The live-before-publish claim was measured on code-only deploys only; a
+    # forced image rebuild wedged in Running for an hour and could not be
+    # measured. Keep the scope visible so nobody silently widens it.
+    ('the live-before-publish claim states the scope it was measured at',
+     r"Both measured cases were code-only \(`reuse_image`\) deploys"),
+    # submitJob on a never-published tool ran and produced correct output, so the
+    # smoke test does not have to wait for a promotion.
+    ('an unpublished build can be smoke-tested from this transport',
+     r"Smoke-test before you publish"),
+    # validateJob said valid:true for a tool getJobSchema called not found, and
+    # getJobSchema 404s until a first publish -- neither is evidence the tool runs.
+    ('neither validateJob nor getJobSchema proves the tool works',
+     r"Neither `validateJob` nor `getJobSchema` tells you the tool works"),
 ]
 
 
@@ -98,6 +110,11 @@ FORBIDDEN = [
     # and the flat "There is no ..." is what must not come back.
     ('the skill must not claim the platform has no pre-publish test',
      r"There is no pre-publish test"),
+    # Disproved on staging: submitJob on a never-published tool ran to Complete
+    # with correct output, over THIS transport. The claim shipped in #32 and is
+    # guarded here so it cannot come back.
+    ('the skill must not claim an unpublished version cannot run here',
+     r"cannot run an unpublished version"),
 ]
 
 
