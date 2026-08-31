@@ -179,6 +179,10 @@ Campaigns:
 
 - `tamarind-miniprotein-campaign`: a multi-method de novo miniprotein binder campaign against one target and epitope, scored on a three-arm instrument fixed before any design is seen and shipped as a ranked, diversity-capped panel.
 
+Author your own tool:
+
+- `tamarind-custom-tool-deploy`: convert a folder or git repository into the Tamarind custom-tool format (Dockerfile, run.sh, config.json), validate it offline, build and monitor a numbered version, publish it, and smoke-test the published tool. Uses the `tamarind.Tamarind` Python SDK from `tamarind-cli>=0.3.2` for the tool lifecycle and the CLI for the test job.
+
 The MCP plugin provides the parallel `tamarind-mcp-*` set:
 
 - Core: `tamarind-mcp-setup`, `tamarind-mcp-tool-discovery`, `tamarind-mcp-submit-and-poll`, and `tamarind-mcp-results-analysis`.

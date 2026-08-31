@@ -36,6 +36,12 @@ Ask the user only about what the repository does not determine - which entry poi
 | **The runtime container has no network** | Bake weights and packages into the image; the build does have network |
 
 That last row is the most common cause of a tool that builds cleanly and then fails on its first real job.
+**`run.sh` owns the exit code.** The orchestrator judges a job by that exit status, not by whether
+`/app/out/` has anything in it. Plenty of research code catches its own exceptions, prints them, and
+still returns 0 - and a tool wrapping that reports SUCCESS with no results, which reads as a platform
+bug rather than a failed run. So after invoking the entry point, assert the artifact you promised
+actually exists and is non-empty, and exit non-zero when it does not. `set -e` alone does not cover
+this: the command succeeded.
 
 ## 3. Choose the name
 
@@ -48,6 +54,10 @@ That last row is the most common cause of a tool that builds cleanly and then fa
 ## 4. Validate, then deploy
 
 `deployCustomTool` takes the whole source tree as `files`, a map of archive-relative path to content. `Dockerfile`, `run.sh`, and `config.json` go at the ROOT of that map; binary members go in `binaryFiles` as base64. The server zips it, hashes the exact bytes, uploads, and mints a version.
+
+**The archive is capped at 8 MiB on this path**, so a repository that bakes model weights into git does not fit. Send the code and fetch the weights in the `Dockerfile`, which has network at build time. The cap is the MCP transport's, not the platform's - the Custom Tools API itself accepts a far larger source - so "too large here" does not mean the tool cannot exist, and the web app or a connected GitHub repository can carry what this call will not.
+
+**Check for Git LFS before you read any file's size.** A working tree can hold a ~130-byte pointer (`version https://git-lfs.github.com/spec/v1`) in place of a multi-hundred-megabyte object. Uploading the pointer builds an image whose "weights" are a text stub, and nothing fails until the first real job. Either materialize the object and fetch it at build time, or exclude it - and say which you did.
 
 Run it with `validateOnly=True` first. It spends no build and mutates nothing, and it catches a missing `Dockerfile` or malformed `config.json` before a build is spent. It is **not** a local check: `validateOnly` still sends `files` and `binaryFiles` over the MCP transport to the Tamarind server, so the source leaves the machine either way. If the user must keep the source local until they approve the upload, ask before the first call rather than after. Fix every reported error, then call it again without the flag.
 
@@ -73,7 +83,11 @@ Polling by name alone resolves `latest`, which is whatever version exists *now*.
 
 **Terminal is not success.** `Stopped` is terminal too, and a terminal version can carry a structured `error`. Only advance to publishing when `status == "Complete"` and `error` is null; on anything else go to the failure section below. Publishing a `Stopped` version promotes a build that never produced an image.
 
-Poll on a finite deadline and sleep between polls. Carry `logs.nextCursor` into the next call to resume the log stream. A **repeated** non-null cursor means "no new logs yet", not "drain another page immediately"; it goes null once the terminal stream is exhausted. A local timeout never cancels the remote build - call `getCustomTool` again rather than redeploying.
+Poll on a finite deadline and sleep between polls. A local timeout never cancels the remote build - call `getCustomTool` again rather than redeploying.
+
+Logs come back as `logs: {status, items[], nextCursor, error}`, each item `{message, timestamp}`, oldest first. Pass `logs.nextCursor` back as the **`logCursor`** argument - not `cursor`, which paginates the tool LISTING and is ignored here.
+
+**The only stop condition is `logs.nextCursor == null`.** An empty page is not the end: measured on a build that had already gone terminal, the first page carried 288 lines, the second carried ZERO under a *different* non-null cursor, and only the third returned null. So never stop on an empty page, and never treat a changed cursor as proof there was new output.
 
 `deployCustomTool(name, cancelVersion="v3", generation=GENERATION)` records a durable cancellation; keep polling until that version settles to `Stopped`.
 
@@ -88,6 +102,32 @@ Every mutation carries `generation`, without exception. A name-only call resolve
 ## 7. Smoke-test the published tool
 
 There is no pre-publish test call. A run is an ordinary Tamarind job, so it happens after publish and it costs weighted hours - confirm it with the user like any other paid submission.
+**Run it locally FIRST, if Docker is available.** The platform has no pre-publish execution path,
+so publishing is otherwise the first time the tool has ever run - org-wide. A local run costs
+nothing and catches the mistakes that survive a green build, because it reproduces the three
+runtime facts that differ from your shell:
+
+```bash
+docker build -t TOOL_NAME-local /absolute/path/to/my-tool
+mkdir -p /tmp/ct-in /tmp/ct-out && cp <a real input> /tmp/ct-in/
+docker run --rm --network none \
+  -v /tmp/ct-in:/app/inputs:ro -v /tmp/ct-out:/app/out \
+  -e INPUT_NAME=/app/inputs/<filename> \
+  TOOL_NAME-local bash run.sh
+```
+
+`--network none` reproduces the runtime's missing network, `:ro` reproduces the read-only input
+mount, and passing the input through its env var reproduces how the orchestrator delivers it. Then
+check the exit status AND that `/tmp/ct-out` is non-empty. Feed it a deliberately malformed input
+too: that run must exit non-zero, or the tool will report success on failure.
+
+That last check is not hypothetical. Measured on a real conversion of this kind, the same
+malformed input gave **exit 0 with no outputs** through the entry point directly, and **exit 1**
+once `run.sh` asserted its artifact - so without the assertion the platform would have recorded a
+successful job containing nothing.
+
+This is not a substitute for the real smoke test - the base image can resolve different wheels on
+the platform's architecture than on yours - but it turns most first-publish failures into local ones.
 
 Then follow `tamarind-mcp-submit-and-poll`: `getJobSchema` for the new tool name, `validateJob` requiring `valid: true` with no `mutatedFields`, `estimateTime`, one `submitJob`, and a bounded `getJobs` poll.
 
@@ -102,6 +142,7 @@ Read the version's structured `error` and its logs before changing anything.
 | Symptom | Likely cause |
 |---|---|
 | Image builds, job fails immediately | `run.sh` missing or unreadable, or reading a name that is not in `inputs[]` |
+| Job runs then produces nothing, job REPORTED SUCCESS | The entry point failed but exited 0 - see "`run.sh` owns the exit code" |
 | Job runs then produces nothing | Results written outside `/app/out/` |
 | Job hangs or fails fetching something | Runtime network access - bake it into the image |
 | CUDA or driver errors | `gpuType` and the base image disagree |
