@@ -57,6 +57,18 @@ RULES = [
      r"older `Complete` one is the rollback|newest whose `status` is `Complete`"),
     ('a failed smoke test rolls back before diagnosis',
      r"roll back before you diagnose"),
+    # Measured on staging: getJobSchema on an unpublished custom tool answers
+    # "not found", so this transport has nothing to submit an untested build to.
+    ('an unpublished version is not runnable from this transport',
+     r"cannot run an unpublished version"),
+    # The web app runs a chosen unpublished build; the agent cannot, so its job
+    # is to hand that off rather than publish blind.
+    ('the pre-publish test in the web app is offered before publishing',
+     r"\*\*Test\*\* tab \*before\* you publish"),
+    # validateJob returned valid:true for a tool getJobSchema called not found,
+    # so it cannot be the check that a publish landed.
+    ('a publish is confirmed by getJobSchema, not by validateJob',
+     r"gate, not `validateJob`"),
 ]
 
 
@@ -80,6 +92,12 @@ FORBIDDEN = [
     # tool.validate() is the SDK's offline check and does not exist over MCP.
     ('the MCP skill must not claim a local, upload-free validation',
      r"tool\.validate\(\)|runs entirely on this machine"),
+    # False as a universal claim: the web app's Test tab runs a chosen unpublished
+    # build and the REST API takes a toolRef naming it. Only THIS transport lacks
+    # one, so a transport-scoped sentence ("MCP has no pre-publish test") is fine
+    # and the flat "There is no ..." is what must not come back.
+    ('the skill must not claim the platform has no pre-publish test',
+     r"There is no pre-publish test"),
 ]
 
 
