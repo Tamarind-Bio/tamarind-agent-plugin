@@ -210,7 +210,7 @@ def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
     # Assert against whitespace-normalized prose: these phrases wrap across lines, and a test
     # that fails when a paragraph is re-wrapped pins the formatting rather than the claim.
     flat = " ".join(pipeline.split())
-    assert "only when you SAVE a template" in flat
+    assert "required only when SAVING a template" in flat
     assert "never replaces one you left in" in flat
     assert "in one of **two shapes**" in flat
     assert "Steps are under **`nodeRuns`**" in flat
