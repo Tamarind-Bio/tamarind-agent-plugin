@@ -85,11 +85,15 @@ Two ways, same effect. `deployCustomTool(..., publish=True, waitSeconds=N, gener
 
 Every mutation carries `generation`, without exception. A name-only call resolves the name again, so a delete-and-recreate between the user's approval and your call would publish or cancel inside a tool nobody authorized.
 
-## 7. Smoke-test the published tool
+## 7. Test before publishing, then smoke-test what you published
 
-There is no pre-publish test call. A run is an ordinary Tamarind job, so it happens after publish and it costs weighted hours - confirm it with the user like any other paid submission.
+**MCP cannot run an unpublished version.** An unpublished tool is invisible to the job surface - `getJobSchema` on it answers "not found" - so there is nothing here to submit against. The platform itself can: the tool's page in the web app has a **Test** tab with a per-version selector that runs a chosen unpublished build, and the REST API behind it takes a `toolRef` naming that build. Neither is reachable from this transport.
 
-Then follow `tamarind-mcp-submit-and-poll`: `getJobSchema` for the new tool name, `validateJob` requiring `valid: true` with no `mutatedFields`, `estimateTime`, one `submitJob`, and a bounded `getJobs` poll.
+So when the user can open a browser, send them to the **Test** tab *before* you publish. It is the only way to find a broken image without first making it the organization-wide default. Publishing untested is the fallback, and the rollback paragraph below is its price.
+
+The post-publish smoke test is an ordinary Tamarind job, so it costs weighted hours - confirm it with the user like any other paid submission. Then follow `tamarind-mcp-submit-and-poll`: `getJobSchema` for the new tool name, `validateJob` requiring `valid: true` with no `mutatedFields`, `estimateTime`, one `submitJob`, and a bounded `getJobs` poll.
+
+**Let `getJobSchema` be the gate, not `validateJob`.** `validateJob` answers `valid: true` for an unpublished tool that `getJobSchema` reports as not found: it checks the settings you passed, not whether the tool can be submitted at all. A schema coming back is what confirms the publish took effect.
 
 **If the run fails, roll back before you diagnose.** The broken version is already the organization-wide default, and every member submitting this tool gets it for as long as you spend reading logs and rebuilding. Publish the previous known-good version immediately — `getCustomTool(name, listVersions=True)` lists them, and `deployCustomTool(name, publishVersion=OLDER, generation=GENERATION)` on an older `Complete` one is the rollback — *then* fix the source and deploy a new version. Do not republish the same bytes.
 
