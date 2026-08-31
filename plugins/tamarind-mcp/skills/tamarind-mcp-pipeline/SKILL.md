@@ -61,7 +61,14 @@ Rules from that guide worth knowing before you read it, because they are not gue
 
 - There is **no edge list**. Topology lives inside each node's `inputs` — a node names the nodes it
   consumes. Do not look for a `edges` array; you will not find one.
-- Every molecule `user_input` node needs a reference group.
+- A molecule `user_input` needs a reference group (`metadata.defaultGroup`) **only when you SAVE a
+  template**. An inline `submitPipeline` graph must **omit** it — the binding supplies the group.
+  Do not go hunting for a group id and never borrow someone else's: submit fills a *missing*
+  `defaultGroup` from your binding, but it **never replaces one you left in**, so a borrowed or
+  placeholder id is stored verbatim and becomes a permanent reference to molecules the run never
+  used. An unresolvable id is not rejected. Delete the field; do not fill it in.
+- A `filter` with `intersect: true` needs **at least two sources** — intersecting one is meaningless
+  and invalid.
 - A `filter` node must either set `intersect: true` or carry at least one rule. An empty filter is
   invalid, not a pass-through.
 - Residue selections are supplied **per run, in the binding** (`residuesByChain`) — never as a node
@@ -87,7 +94,22 @@ fails, so a failed submit does not leave an orphan group.
 
 Two optional keys inside a binding:
 
-- `residuesByChain`: `{"A": "1-76"}` — a residue selection, where the tool needs one.
+- `residuesByChain` — a residue selection, in one of **two shapes**. Sending the wrong one to an
+  existing `templateId` is rejected `422`, so get this right:
+
+  ```jsonc
+  // ADVANCED — the DEFAULT for newly created templates. Per (tool node, field), so two
+  // settings targeting the same chain can differ.
+  {"residuesByChain": {"<toolNodeId>": {"designedResidues": {"A": "42-44,58-59"}}}}
+
+  // SIMPLE — one selection applied to every residue field this input feeds. Only when the
+  // template was authored with "Simplified residue selection" on.
+  {"residuesByChain": {"A": "1-76"}}
+  ```
+
+  The shape is auto-detected by the value: a chain mapping to a range **string** is simple, a node
+  mapping to an **object** is advanced. `getPipelineTemplate` reports the template's mode in
+  `simplifiedResidues`. Ranges are strings, never lists — `"1-76"`, `"42 43 44"`, `"10-20,45,60-64"`.
 - `chainMapping` — **only** when your chain IDs differ from the template's reference chains. Do not
   add it reflexively.
 
@@ -157,8 +179,21 @@ Two failure modes to handle deliberately:
 submit is safe, and `runName` for an explicit name for this run (omit it to derive a unique one from
 `name`). `project` stamps an organization project id on the jobs the run creates.
 
-Poll `getPipelineRun(runId)` on a **finite deadline** — never an unbounded loop. Each step reports
-its own `status`, `jobsTotal`/`jobsComplete`, `outputCount`, and `outputGroup`.
+Poll `getPipelineRun(runId)` on a **finite deadline** — never an unbounded loop. Steps are under
+**`nodeRuns`**, each reporting its own `status`, `jobsTotal`/`jobsComplete`, `outputCount`, and
+`outputGroup`.
+
+Two things about that array that will bite you:
+
+- **A step carries two ids, and they are not interchangeable.** `id` is that step's own run id;
+  `nodeId` is the stable pipeline node id, and `nodeId` is what `getPipelineRunResults(node=...)`
+  wants. (An older backend answers with `steps: [{..., node}]`; read `nodeRuns or steps` and
+  `nodeId or node` only if you must support both. `getPipelineRunResults` normalizes this itself —
+  this passthrough is the one place it varies.)
+- **The order is not stable and is not topological.** Measured: two consecutive polls of one run
+  returned `[mol, electronic, conformers]` then `[mol, conformers, electronic]` — a dependent step
+  listed ahead of the step it consumes. Index by `nodeId`; never by position, and never render
+  progress in array order.
 
 If a submit response is ambiguous, find the run with `listPipelineRuns` before retrying. Never call
 `submitPipeline` a second time to resolve uncertainty about the first.
@@ -168,6 +203,16 @@ If a submit response is ambiguous, find the run with `listPipelineRuns` before r
 `getPipelineRunResults(runId)` returns each step's molecules **with their scores** — which is what
 you rank and compare on. Results appear per step as it finishes, so this is useful before the whole
 run completes; a step that has produced nothing yet reports an empty `molecules` list.
+
+**The two tools name the same thing differently — do not carry keys across.** Measured on one run:
+
+| | array key | node id key |
+|---|---|---|
+| `getPipelineRun` | `nodeRuns` | `nodeId` |
+| `getPipelineRunResults` | `steps` | `node` |
+
+So the id you read as `nodeRuns[].nodeId` while polling comes back as `steps[].node` here — and it
+is the same value you pass as `node=` to page a step.
 
 **Scores live in different places depending on which shape you get. Read whichever you receive:**
 

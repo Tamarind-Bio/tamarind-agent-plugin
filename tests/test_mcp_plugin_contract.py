@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.7"
+    assert manifest["version"] == "0.1.8"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -195,6 +195,27 @@ def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
     assert "Listed does not mean runnable" in pipeline
 
     assert "finite deadline" in pipeline
+
+    # Found by running the skill end-to-end against production. Each of these is a shape an
+    # agent gets wrong by reasonable inference, and each was measured on a real run.
+    #   - the reference group is a SAVE-time rule; stating it flatly sends an inline author
+    #     hunting for a group id, which corrupts the saved template (submit never REPLACES a
+    #     defaultGroup that is already there).
+    #   - residuesByChain has two shapes and ADVANCED is the default for new templates; the
+    #     wrong shape against a templateId is a hard 422.
+    #   - getPipelineRun says nodeRuns/nodeId, getPipelineRunResults says steps/node, for the
+    #     same concept in the same run.
+    #   - nodeRuns order is unstable: two consecutive polls returned it in different orders,
+    #     with a dependent step ahead of its dependency.
+    # Assert against whitespace-normalized prose: these phrases wrap across lines, and a test
+    # that fails when a paragraph is re-wrapped pins the formatting rather than the claim.
+    flat = " ".join(pipeline.split())
+    assert "only when you SAVE a template" in flat
+    assert "never replaces one you left in" in flat
+    assert "in one of **two shapes**" in flat
+    assert "Steps are under **`nodeRuns`**" in flat
+    assert "`nodeId` is what `getPipelineRunResults(node=...)` wants" in flat
+    assert "The order is not stable and is not topological" in flat
 
 
 def test_cli_plugin_remains_cli_only() -> None:
