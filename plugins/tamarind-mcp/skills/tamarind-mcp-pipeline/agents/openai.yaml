@@ -1,7 +1,7 @@
 interface:
   display_name: "Tamarind MCP Pipeline"
-  short_description: "Chain dependent Tamarind jobs through MCP"
-  default_prompt: "Use $tamarind-mcp-pipeline to plan and run this resumable multi-stage Tamarind campaign."
+  short_description: "Run declarative Tamarind pipelines through MCP"
+  default_prompt: "Use $tamarind-mcp-pipeline to author, validate, run and read this Tamarind pipeline."
 dependencies:
   tools:
     - type: "mcp"

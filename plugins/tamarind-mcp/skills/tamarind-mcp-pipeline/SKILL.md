@@ -1,54 +1,200 @@
 ---
 name: tamarind-mcp-pipeline
-description: Orchestrate multiple dependent Tamarind Bio tools as a resumable MCP campaign where successful stages feed later stages, such as design to fold to score. Use when stages depend on earlier artifacts or metrics. Not for one job, one independent batch, a nonexistent submitPipeline call, or CLI orchestration.
+description: Author, validate, run, monitor, and read results from declarative multi-step Tamarind Bio pipelines through MCP with submitPipeline, validatePipeline, getPipelineSchema, getPipelineTemplate, listPipelineTemplates, getPipelineRun, getPipelineRunResults, listPipelineRuns, and stopPipelineRun. Use when stages depend on earlier stages (design to fold to score), or to run or re-run a saved pipeline template. Not for a single job, one independent batch, or CLI orchestration.
 ---
 
-# Chain Tamarind jobs through MCP
+# Run Tamarind pipelines through MCP
 
-The current MCP surface has no declarative pipeline submission tool. Build an explicit resumable campaign from `validateJob`, `estimateTime`, `submitJob` or `submitBatch`, bounded `getJobs` polling, and server-side artifact paths.
+A pipeline is a declarative graph the server runs for you: it dispatches each step's jobs, waits
+for their molecules to land, and feeds them to the next step. You do not chain jobs by hand.
 
-## Plan the data flow
+**If you have previously been told the MCP surface has no pipeline submission tool, that is stale.**
+There are nine pipeline tools. Do not rebuild orchestration out of `submitJob`/`submitBatch` polling.
 
-For every stage record:
+| tool | use it for |
+|---|---|
+| `getPipelineSchema` | the IR schema + authoring guide — **read before writing a graph** |
+| `listPipelineTemplates` | find a saved pipeline instead of authoring one |
+| `getPipelineTemplate` | one template's graph + the manifest of inputs you must bind |
+| `validatePipeline` | judge a run **before** it spends compute |
+| `submitPipeline` | run it (spends compute) |
+| `getPipelineRun` | poll status and per-step progress |
+| `getPipelineRunResults` | read the molecules and scores each step produced |
+| `listPipelineRuns` | find runs — they do **not** appear in `getJobs()` |
+| `stopPipelineRun` | stop a run — **not** `cancelBatch` |
 
-- deterministic stage and durable job/batch names;
-- live tool and validated settings;
-- required artifact and producing stage;
-- success criterion and metric direction;
-- fan-out and `topN` boundary;
-- chosen output file and exact `s3Path`;
-- current remote status and authorization state.
+## Choose a path first
 
-Keep this as a reviewable state object in the task or a local JSON file when the client has a workspace. Re-read authoritative remote state before resuming.
+**Path A — run an existing template.** Cheaper, safer, and usually what the user wants. Always look
+before authoring: `listPipelineTemplates(search=...)`. Its `owner` defaults to `"org"`, so you see
+your whole organization's templates, including ones you did not create. Narrow with `owner="mine"`.
 
-## Execute one stage at a time
+**Path B — author a graph inline.** Only when nothing suitable exists. Passing `pipeline` to
+`submitPipeline` saves a new template you own (unpublished) and runs it in one call.
 
-For each stage:
+## Path A — run a saved template
 
-1. Call `getJobSchema`.
-2. Build the stage settings from confirmed inputs.
-3. Call `validateJob`; require `valid: true` and no mutation warning.
-4. Call `estimateTime` and confirm any material new scope.
-5. Call `submitJob` once, or one `submitBatch` for a bounded fan-out.
-6. Poll with `getJobs` at 15-30 second intervals and a finite deadline.
-7. On explicit success, call `listJobFiles`; select the output using stage-specific evidence.
-8. Pass the exact returned `s3Path` into the next schema when supported. Otherwise retrieve with `getJobFile` and re-upload with `uploadFile`.
+1. `listPipelineTemplates(search=...)` → pick an `id`. Rows are summaries; they carry no graph.
+2. `getPipelineTemplate(templateId)` → read **`inputs`**. This is the manifest of what you must
+   bind: the input node id to key each binding by, whether it takes molecules or a file, the
+   molecule type expected, its reference chain labels, and any `residueFields`.
+3. `validatePipeline(name, templateId, version, bindings, settings)` until `valid: true`.
+4. `submitPipeline(name, templateId, ..., bindings)`.
 
-Never guess filenames or paths. Never advance a failed, stopped, or still-running stage.
+`settings` and `version` are **reference-mode only**. `settings` is `{nodeId: {settingKey: value}}`
+and is limited to the template's editable settings. Omit `version` to get the published version,
+else the latest.
 
-## Fan-out and selection
+## Path B — author a graph inline
 
-Use `submitBatch(fromJob=...)` or `submitBatch(fromFile=...)` only when one generated sequence maps directly into the downstream `sequenceField`. For target-candidate complexes or any row that combines shared context with one candidate, build explicit `settings` plus `jobNames` so every final input is reviewable. Bound the expansion with `topN`, validate shared or explicit settings, estimate total cost, and obtain authorization before the fan-out.
+Call `getPipelineSchema()` first, every time. It returns the live JSON Schema plus a prose guide
+fetched from the app host, so it always matches the deployed validator. Authoring blind reliably
+produces graphs the API rejects.
 
-Inspect and rank successful subjobs only. Advance a diverse, evidence-backed shortlist rather than every candidate or one scalar winner.
+Rules from that guide worth knowing before you read it, because they are not guessable:
 
-## Recovery and safety
+- There is **no edge list**. Topology lives inside each node's `inputs` — a node names the nodes it
+  consumes. Do not look for a `edges` array; you will not find one.
+- Every molecule `user_input` node needs a reference group.
+- A `filter` node must either set `intersect: true` or carry at least one rule. An empty filter is
+  invalid, not a pass-through.
+- Residue selections are supplied **per run, in the binding** (`residuesByChain`) — never as a node
+  setting.
 
-- If a submit response is ambiguous, query its durable name; do not invoke the submit tool again.
-- If a polling deadline expires, checkpoint the active status and reattach later; do not restart the stage.
-- On failure, call `getJobLogs` with a bounded line count, checkpoint the failure, and stop.
-- Confirm total campaign scope before the first paid stage and again before a material fan-out or changed payload.
-- Use `cancelJob` or `cancelBatch` only after resolving and confirming the exact active target.
-- Preserve intermediate outputs, settings, metrics, and selection rationale for reproducibility.
+## Bindings — where most mistakes happen
 
-Return the campaign state, completed and pending stages, durable names, selected artifacts, spend information, and the exact next safe action.
+One entry per input node, keyed by that input node's id.
+
+Supply molecules **exactly one way**:
+
+```jsonc
+{"inputProtein": {"group": "<groupId>"}}          // an existing molecule group
+{"inputProtein": {"sequences": ["MKT..."]}}       // or raw values — server creates the group
+{"inputLigand":  {"smiles": ["CCO"]}}
+{"inputTarget":  {"pdbs": ["..."]}}
+{"inputLigand":  {"sdfs": ["..."]}}
+{"inputCsv":     {"file": "<path>"}}              // a file input
+```
+
+When you pass raw values the server creates the group for you — and rolls it back if the submit
+fails, so a failed submit does not leave an orphan group.
+
+Two optional keys inside a binding:
+
+- `residuesByChain`: `{"A": "1-76"}` — a residue selection, where the tool needs one.
+- `chainMapping` — **only** when your chain IDs differ from the template's reference chains. Do not
+  add it reflexively.
+
+### The residue trap — read this before inventing a selection
+
+`getPipelineTemplate`'s own documentation says a non-empty `residueFields` means the run *requires*
+a `residuesByChain`. **That is measured to be false.** Production runs of the rfdiffusion,
+bindcraft and antibody-boltzgen templates whose manifests declare `residueFields` completed with no
+`residuesByChain` at all, and the entries carry no per-field `required` flag to tell the two cases
+apart.
+
+This matters because inventing a selection is **not** a harmless default. It reaches the tool as
+designed residues, binder hotspots, or a binding site — constraining the design to the wrong
+residues and spending GPU on scientifically wrong output **that still looks successful**.
+
+So: do not guess, and do not refuse a runnable template either. Call `validatePipeline` with the
+bindings you actually have. If a selection is genuinely required it comes back as
+`required-field-unset` naming the field. Ask the user for the real selection then.
+
+Related trap: `targetsChains` is empty on some entries, and on others names a chain **outside** the
+input's own `chains` (a de-novo chain the graph creates). It is not reliably a key for
+`residuesByChain`.
+
+## Validate before every submit
+
+`submitPipeline` spends real compute. `validatePipeline` executes and saves nothing, and catches
+most authoring mistakes. Call it on the same graph and bindings, and only submit on `valid: true`.
+
+It reads the arguments that *describe* the run — `pipeline` or `templateId`+`version`, `bindings`,
+`settings`, `name`. It does not read `runName`, `project` or `idempotencyKey`, which only name and
+tag the run, so passing them changes nothing.
+
+Both outcomes return HTTP 200 — **read `valid`, do not branch on the status code.** Each error
+carries a stable `code`, the `node` it belongs to, the `field` at fault where there is one, and a
+`message` saying how to fix it:
+
+| code | usual cause |
+|---|---|
+| `required-field-unset` | often a residue selection — it belongs in the **binding**, not in settings |
+| `input-unbound` | an input node with no entry in `bindings` |
+| `tool-unknown` | the node names a tool that does not exist |
+| `setting-invalid` / `param-out-of-range` | a bad node setting |
+| `chain-incompatible` | chain labels do not line up |
+| `molecule-class-incompatible` | the upstream tool does not produce what the downstream tool consumes |
+
+Two failure modes to handle deliberately:
+
+- **`validationUnavailable`** means the validator could not be reached and your pipeline was **not
+  judged**. Retry a couple of times. Do **not** start editing the graph — there is no verdict to
+  respond to. If it fails identically every time, report it rather than looping.
+- **`valid: true` is not a guarantee that `submitPipeline` will accept the run.** Measured gaps: it
+  does not confirm the tools exist, and it does not check that a bound molecule group exists or has
+  anything in it. So if `submitPipeline` rejects a graph validation approved, **believe
+  `submitPipeline`** — re-validating will not reproduce the error. Fix what the submit names, which
+  is usually a tool name or a group id, not the graph's shape.
+
+## Submit, then poll
+
+`submitPipeline` returns a `PublicRun`; its `id` is the `runId`. Pass `idempotencyKey` so a retried
+submit is safe, and `runName` for an explicit name for this run (omit it to derive a unique one from
+`name`). `project` stamps an organization project id on the jobs the run creates.
+
+Poll `getPipelineRun(runId)` on a **finite deadline** — never an unbounded loop. Each step reports
+its own `status`, `jobsTotal`/`jobsComplete`, `outputCount`, and `outputGroup`.
+
+If a submit response is ambiguous, find the run with `listPipelineRuns` before retrying. Never call
+`submitPipeline` a second time to resolve uncertainty about the first.
+
+## Read results
+
+`getPipelineRunResults(runId)` returns each step's molecules **with their scores** — which is what
+you rank and compare on. Results appear per step as it finishes, so this is useful before the whole
+run completes; a step that has produced nothing yet reports an empty `molecules` list.
+
+**Scores live in different places depending on which shape you get. Read whichever you receive:**
+
+- group molecules — id in `id`, scores under `metadata`
+- the step's own outputs — id in `complexId`, scores at top level in `scores`
+
+These are passed through as the API returns them rather than reshaped, so the fields match each
+resource's own docs. A step with an `outputGroup` is normally read from the group but **falls back**
+to its own outputs when the group returns nothing — so do not infer the shape from whether
+`outputGroup` is set.
+
+**`outputGroup: null` does not mean "nothing here."** It is the group a step *minted*. A step that
+enriches its inputs in place — scoring, structure prediction — leaves its molecules in the group
+they arrived in. A filter step's survivors exist only as step outputs. Both report a null group and
+are read from the step itself.
+
+Paging: `limit` is 1-100 (default 25). Keep it small — molecules carry their sequences, files and
+full score history. To page one step, call again with `node` set to that step and `cursor` set to
+its `nextCursor`; a cursor belongs to one step's group, so `cursor` requires `node`.
+
+## Stopping, and finding runs later
+
+- Stop with `stopPipelineRun(runId)`. Steps that already finished keep their outputs; work still in
+  flight is cancelled. **Do not use `cancelBatch`** — it only understands the older pipeline job
+  layout and will not stop one of these runs.
+- Find runs with `listPipelineRuns` (filter by `status`, `templateId`, `owner`; `owner` defaults to
+  `"mine"` here, unlike templates). **Pipeline runs do not appear in `getJobs()`**, which covers
+  single jobs and batches only.
+
+## Cost and authorization
+
+A pipeline run fans out into many jobs and can be far more expensive than a single submit. Confirm
+material scope with the user before the first `submitPipeline`, and again before re-running with a
+materially larger binding. Authorization for one run is not authorization for the next.
+
+## Reading a failure
+
+A step that fails reports its status in `getPipelineRun`. To see why, look at the step's jobs with
+the job tools (`getJobs`, `getJobLogs` with a bounded line count) — the pipeline tools report run
+and step state, not tool logs. Checkpoint the failure and stop rather than resubmitting the run.
+
+If a run sits at `running` with every job complete and no progress, that is a delivery-side stall,
+not something a resubmit fixes. Report it with the `runId` and the step's `node`.

@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.6"
+    assert manifest["version"] == "0.1.7"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -156,12 +156,37 @@ def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
     assert "weightedHoursBudget" in batch
     assert "finite deadline" in batch
     assert "`TARGET:BINDER`" in batch
-    assert "build explicit `settings` plus `jobNames`" in pipeline
+    # The pipeline skill used to teach hand-rolled chaining because the MCP surface had no
+    # declarative pipeline tool. It now has nine, so these pin the DECLARATIVE contract — and
+    # the old assertion (`"no declarative pipeline submission tool" in pipeline`) was removed
+    # rather than updated, because it pinned a claim that had become false.
+    for tool in (
+        "getPipelineSchema",
+        "listPipelineTemplates",
+        "getPipelineTemplate",
+        "validatePipeline",
+        "submitPipeline",
+        "getPipelineRun",
+        "getPipelineRunResults",
+        "listPipelineRuns",
+        "stopPipelineRun",
+    ):
+        assert tool in pipeline, tool
 
-    assert "no declarative pipeline submission tool" in pipeline
-    assert "listJobFiles" in pipeline
-    assert "`s3Path`" in pipeline
-    assert "do not invoke the submit tool again" in pipeline
+    # Validation is the gate in front of spend, and its two measured failure modes.
+    assert "only submit on `valid: true`" in pipeline
+    assert "`validationUnavailable`" in pipeline
+    assert "not a guarantee" in pipeline
+
+    # The residue trap: a non-empty `residueFields` does NOT mean a selection is required, and
+    # inventing one silently produces scientifically wrong output.
+    assert "residuesByChain" in pipeline
+    assert "do not guess" in pipeline
+
+    # Pipeline runs are their own resource — the job-shaped tools do not see or stop them.
+    assert "do not appear in `getJobs()`" in pipeline
+    assert "Do not use `cancelBatch`" in pipeline
+
     assert "finite deadline" in pipeline
 
 
