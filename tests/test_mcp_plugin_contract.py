@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.9"
+    assert manifest["version"] == "0.1.10"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -227,6 +227,17 @@ def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
     # The gap that actually costs GPU money: validation does NOT enforce requiresStructure,
     # so a structure-less binding returns valid:true on a template whose first tool needs a PDB.
     assert "does **not** enforce `requiresStructure`" in flat
+
+    # Filters are a first-order use case ("keep the best N") and the skill once described them
+    # only as a validation constraint to satisfy — an agent could not author one from it.
+    for token in ("top_k", "jsonlogic", "rank_by", "producerNodeId", "columnName"):
+        assert token in pipeline, token
+    assert "Barriers" in pipeline
+    # A saved template carries its own reference group; binding over it is silent either way.
+    assert "inputs.<nodeId>.group" in flat
+    # Reads lag completion by minutes; combined with the finite-deadline rule this manufactures
+    # confident false "stalled"/"empty" reports on runs that actually succeeded.
+    assert "eventually consistent" in flat
 
 
 def test_cli_plugin_remains_cli_only() -> None:
