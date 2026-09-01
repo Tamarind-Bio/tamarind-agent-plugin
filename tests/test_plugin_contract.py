@@ -28,7 +28,7 @@ def test_manifest_is_cli_first_and_valid_shape() -> None:
         (ROOT / ".claude-plugin" / "marketplace.json").read_text()
     )
     assert manifest["name"] == "tamarind-cli"
-    assert manifest["version"] == "0.4.0"
+    assert manifest["version"] == "0.4.1"
     assert claude_manifest["version"] == manifest["version"]
     assert claude_marketplace["metadata"]["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -274,11 +274,12 @@ def test_release_docs_install_latest_cli_and_enforce_minimum_contract() -> None:
     assert "uv tool install tamarind-cli" in readme
     assert "pipx install tamarind-cli" in readme
     assert "latest published CLI" in readme
+    assert "requires version 0.4.0 or newer" in readme
     assert "latest published Tamarind CLI" in workflow
-    assert "tamarind-cli>=0.2.0" in setup
-    assert "CLI 0.2.0 or newer" in submit
-    assert "tamarind-cli>=0.2.0" in contract
-    assert "tamarind-cli>=0.2.0" in agents
+    assert "tamarind-cli>=0.4.0" in setup
+    assert "CLI 0.4.0 or newer" in submit
+    assert "tamarind-cli>=0.4.0" in contract
+    assert "tamarind-cli>=0.4.0" in agents
     assert "tamarind-cli>=0.2,<0.3" not in policy_docs
     assert "git+https://github.com/Tamarind-Bio/tamarind-cli" not in readme
     assert "git+https://github.com/Tamarind-Bio/tamarind-cli" not in workflow

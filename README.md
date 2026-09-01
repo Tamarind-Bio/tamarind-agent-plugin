@@ -33,7 +33,7 @@ Keeping the transports in different plugin folders prevents one surface from sil
 
 ### CLI plugin
 
-Install the latest published CLI. The `tamarind-cli` plugin requires version 0.2.0 or newer:
+Install the latest published CLI. The `tamarind-cli` plugin requires version 0.4.0 or newer:
 
 ```bash
 uv tool install tamarind-cli
@@ -50,7 +50,7 @@ pipx upgrade tamarind-cli
 tamarind --version
 ```
 
-Verify that the reported version is 0.2.0 or newer. Plugin CI tests every change against the latest published CLI.
+Verify that the reported version is 0.4.0 or newer. Plugin CI tests every change against the latest published CLI.
 
 Then install the CLI plugin.
 
