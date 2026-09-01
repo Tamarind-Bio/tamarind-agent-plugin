@@ -35,30 +35,7 @@ The working directory is `/app`. Scalar inputs arrive as environment variables n
 
 Runtime network access is blocked. Bake dependencies and weights into the image during `docker build`, which does have network access. A build that downloads at runtime is not deployable as written.
 
-## Select the tool safely
-
-List the organization's tools before choosing a name:
-
-```bash
-tamarind --json custom-tools list
-```
-
-If the name is absent, create it. A concurrent create fails rather than overwriting another member's tool:
-
-```bash
-tamarind --json custom-tools create TOOL --display-name "DISPLAY NAME"
-```
-
-If the name exists, inspect it and confirm with the user before building over it:
-
-```bash
-tamarind --json custom-tools get TOOL
-tamarind --json custom-tools versions TOOL
-```
-
-Record its `generation` and current `defaultVersion`. Each CLI mutation fetches and validates the current Tool or Version before writing, so a delete-and-recreate race fails with a stale-resource error.
-
-## Validate locally before uploading
+## Validate locally before selecting a tool
 
 ```bash
 tamarind --json custom-tools validate /absolute/path/to/source
@@ -67,6 +44,30 @@ tamarind --json custom-tools validate /absolute/path/to/source
 This command is local and does not upload source. Fix every `errors[]` item. Also treat `run_script_missing` as blocking even though it is a warning: the runtime invokes `run.sh` directly. Review `runtime_network_access` rather than suppressing it.
 
 Local validation checks archive safety and obvious adapter mistakes; the server remains authoritative for the complete `config.json` contract at build admission.
+
+## Select the exact tool safely
+
+Resolve the intended name with an exact lookup, not the first page of `custom-tools list`:
+
+```bash
+tamarind --json custom-tools get TOOL
+```
+
+Branch on its typed exit code:
+
+| Exit | Meaning | Required action |
+|---|---|---|
+| `0` | The Tool exists and is visible | Inspect it and confirm with the user before building over it; do not call `create` |
+| `4` | The Tool was not found or is not visible | Confirm the name is unclaimed, then call `create` once |
+| Any other nonzero value | Authentication, transport, or another failure | Stop and handle the error |
+
+```bash
+tamarind --json custom-tools create TOOL --display-name "DISPLAY NAME"
+```
+
+A concurrent create fails rather than overwriting another member's tool. For an existing tool, record its `generation` and current `defaultVersion`; use `custom-tools versions TOOL` when version history is needed. Each CLI mutation fetches and validates the current Tool or Version before writing, so a delete-and-recreate race fails with a stale-resource error.
+
+`custom-tools list` and `versions` each return one page. Follow `nextCursor` with `--cursor` until it is `null` whenever the complete collection matters. Use `get TOOL` and `version TOOL VERSION_ID` for exact identity checks.
 
 ## Build once and preserve the durable handle
 
@@ -79,19 +80,25 @@ tamarind --json custom-tools build TOOL /absolute/path/to/source \
 
 The result contains `action` (`build`, `reuse_image`, or `unchanged`) and `version`. Record `version.id`; `version.name` such as `v3` is display-only. All exact version commands require the opaque ID.
 
-Never automatically repeat an ambiguous build command. If the wait times out or fails locally, structured error detail includes `toolName`, `versionId`, `versionName`, and `action`. Reattach instead:
+The `build --wait --timeout` clock starts only after local validation, packaging, upload, and build admission return a durable Version. Until build admission returns a Version, a failure cannot carry a reattachment handle. If delivery of the admission response is ambiguous, never issue a build with a new key: retry only the same intended source release with the same idempotency key, or stop if the source or key is unavailable.
+
+Once build admission returns a Version, a monitoring timeout or failure carries `toolName`, `versionId`, `versionName`, and `action`. Reattach instead of starting another build:
 
 ```bash
 tamarind --json custom-tools version TOOL VERSION_ID \
   --wait --timeout 1800 --poll-interval 10
 ```
 
-Exit 7 means only that the local deadline elapsed; the remote build may still run. Read resumable logs when needed:
+For `version --wait`, the timeout starts after the initial Tool and Version reads. Reattachment monitoring errors carry `toolName`, `versionId`, and `versionName`, but no `action`. Thus both commands' `--timeout` values bound monitoring only, not the full process; add a process-level or CI deadline when the whole invocation must be bounded.
+
+Exit 7 means only that monitoring timed out; the remote build may still run. Read resumable logs when needed:
 
 ```bash
 tamarind --json custom-tools logs TOOL VERSION_ID
 tamarind --json custom-tools logs TOOL VERSION_ID --cursor NEXT_CURSOR
 ```
+
+Each logs call reads one page. Do not turn `logs` into the build monitor; `version --wait` owns bounded polling. To drain an available backlog, request the next page immediately only when `nextCursor` advances. A repeated non-null cursor means no new logs are available yet: do not call `logs` again immediately, but sleep before reattaching and remain within the process-level or CI deadline. A null cursor on a terminal Version means the log stream is exhausted.
 
 Only `status == "Complete"` with `error: null` is success. `Stopped` is terminal but unsuccessful. Cancel only when the user explicitly asks; agents and non-TTY calls must include `--yes`:
 
