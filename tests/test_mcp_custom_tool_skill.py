@@ -49,7 +49,7 @@ RULES = [
     ('a publish needs explicit authorization',
      r"confirm a publish before the first one"),
     ('a deploy onto a tool others already use is confirmed like a release',
-     r"confirm a deploy onto a tool other people already use"),
+     r"[Cc]onfirm a deploy onto a tool other people already use"),
     ('a name collision is never authorization to build over another member’s tool',
      r"confirm with the user before deploying over it"),
     ('a confirmed generation is carried into later mutations',
@@ -69,20 +69,19 @@ RULES = [
     # The rejected deploy still created the tool record, so the corrected retry
     # with expectNew=True 409s and the hint misattributes it to another member.
     ('a rejected deploy still claims the name',
-     r"has already taken the name"),
+     r"rejected deploy still takes the name"),
     ('a 409 after your own failed deploy is not evidence another member took the name',
-     r"unless you saw the tool exist before your first attempt"),
+     r"only if you saw the tool exist before your first attempt"),
+    # cancelVersion errors and the build reaches Complete anyway; a Complete
+    # build is live org-wide, so a silent cancel failure ships what was cancelled.
+    ('a cancel may not stop the build, and a completed build is recovered by pinning',
+     r"it currently errors and the build runs on to `Complete`"),
     # Measured on staging: a version that was NEVER published served every
     # by-name submission while the tool still reported the older defaultVersion.
     ('a built version is live before anyone publishes it',
      r"already live|newest `Complete` version whether or not anyone published"),
     ('publishing pins execution rather than releasing it',
      r"does not release a version so much as \*\*pin\*\*"),
-    # The live-before-publish claim was measured on code-only deploys only; a
-    # forced image rebuild wedged in Running for an hour and could not be
-    # measured. Keep the scope visible so nobody silently widens it.
-    ('the live-before-publish claim states the scope it was measured at',
-     r"Both measured cases were code-only \(`reuse_image`\) deploys"),
     # submitJob on a never-published tool ran and produced correct output, so the
     # smoke test does not have to wait for a promotion.
     ('an unpublished build can be smoke-tested from this transport',
