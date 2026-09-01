@@ -46,13 +46,29 @@ def test_tool_identity_uses_exact_lookup_and_typed_branching() -> None:
     assert section.index("custom-tools get TOOL") < section.index("custom-tools create TOOL")
 
 
-def test_paginated_families_and_exact_reads_are_distinguished() -> None:
+def test_finite_collections_and_exact_reads_are_distinguished() -> None:
     text = (SKILL / "SKILL.md").read_text()
-    for command in ("`custom-tools list`", "`versions`", "`logs`"):
+    for command in ("`custom-tools list`", "`versions`"):
         assert command in text
-    assert "each return one page" in text
+    assert "`custom-tools list` and `versions` each return one page" in text
     assert "Follow `nextCursor` with `--cursor` until it is `null`" in text
     assert "Use `get TOOL` and `version TOOL VERSION_ID` for exact identity checks" in text
+
+
+def test_log_tail_defers_monitoring_and_handles_a_stalled_cursor() -> None:
+    text = (SKILL / "SKILL.md").read_text()
+    log_guidance = text.split("Each logs call reads one page", 1)[1].split(
+        "Only `status", 1
+    )[0]
+
+    assert "Do not turn `logs` into the build monitor" in log_guidance
+    assert "`version --wait` owns bounded polling" in log_guidance
+    assert "only when `nextCursor` advances" in log_guidance
+    assert "repeated non-null cursor means no new logs" in log_guidance
+    assert "do not call `logs` again immediately" in log_guidance
+    assert "sleep before reattaching" in log_guidance
+    assert "process-level or CI deadline" in log_guidance
+    assert "null cursor on a terminal Version" in log_guidance
 
 
 def test_build_is_idempotent_bounded_and_reattachable() -> None:

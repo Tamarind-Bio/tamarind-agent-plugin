@@ -67,7 +67,7 @@ tamarind --json custom-tools create TOOL --display-name "DISPLAY NAME"
 
 A concurrent create fails rather than overwriting another member's tool. For an existing tool, record its `generation` and current `defaultVersion`; use `custom-tools versions TOOL` when version history is needed. Each CLI mutation fetches and validates the current Tool or Version before writing, so a delete-and-recreate race fails with a stale-resource error.
 
-`custom-tools list`, `versions`, and `logs` each return one page. Follow `nextCursor` with `--cursor` until it is `null` whenever the complete collection or log stream matters. Use `get TOOL` and `version TOOL VERSION_ID` for exact identity checks.
+`custom-tools list` and `versions` each return one page. Follow `nextCursor` with `--cursor` until it is `null` whenever the complete collection matters. Use `get TOOL` and `version TOOL VERSION_ID` for exact identity checks.
 
 ## Build once and preserve the durable handle
 
@@ -98,7 +98,7 @@ tamarind --json custom-tools logs TOOL VERSION_ID
 tamarind --json custom-tools logs TOOL VERSION_ID --cursor NEXT_CURSOR
 ```
 
-Each logs call reads one page. Continue with each returned `nextCursor` until it is `null` when the complete log stream matters.
+Each logs call reads one page. Do not turn `logs` into the build monitor; `version --wait` owns bounded polling. To drain an available backlog, request the next page immediately only when `nextCursor` advances. A repeated non-null cursor means no new logs are available yet: do not call `logs` again immediately, but sleep before reattaching and remain within the process-level or CI deadline. A null cursor on a terminal Version means the log stream is exhausted.
 
 Only `status == "Complete"` with `error: null` is success. `Stopped` is terminal but unsuccessful. Cancel only when the user explicitly asks; agents and non-TTY calls must include `--yes`:
 
