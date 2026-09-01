@@ -62,6 +62,16 @@ RULES = [
      r"older `Complete` one is the rollback|newest whose `status` is `Complete`"),
     ('a failed smoke test rolls back before diagnosis',
      r"roll back before you diagnose"),
+    # A Dockerfile bake under /app passes its build-time checksum and is absent
+    # when the job runs, because the uploaded archive owns /app at runtime.
+    ('weights are baked outside /app',
+     r"Bake weights and models OUTSIDE `/app`"),
+    # The MCP client aborts a tool call ~60s; a build takes minutes, so
+    # publish=True with a covering waitSeconds always times out first.
+    ('publishing is a separate call, not a waitSeconds on the deploy',
+     r"Deploy without `publish`, poll, then"),
+    ('a job is not submitted until the build is terminal',
+     r"[Ww]ait for the build to be terminal first"),
     # Measured: memory 2Gi/4Gi/16Gi each validated clean and were then refused by
     # the deploy as "config.json is invalid", naming no field. 8Gi deployed.
     ('validateOnly does not check the resource values in config.json',

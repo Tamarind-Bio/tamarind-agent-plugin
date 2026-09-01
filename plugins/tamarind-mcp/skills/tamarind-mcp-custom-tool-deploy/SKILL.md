@@ -34,6 +34,7 @@ Ask the user only about what the repository does not determine - which entry poi
 | File inputs arrive as absolute paths in their env vars, read-only under `/app/inputs/` | Copy before writing beside an input |
 | Durable results go to `/app/out/` | Anything written elsewhere is discarded |
 | **The runtime container has no network** | Bake weights and packages into the image; the build does have network |
+| **At runtime `/app` holds your uploaded archive, not what the Dockerfile left there** | Bake weights and models OUTSIDE `/app` - use `/opt/<tool>/` - and point at them with an `ENV`. A bake into `/app` passes its build-time checksum and is gone when the job runs |
 
 That last row is the most common cause of a tool that builds cleanly and then fails on its first real job.
 
@@ -87,13 +88,13 @@ Poll on a finite deadline and sleep between polls. Carry `logs.nextCursor` into 
 
 So the moment every member's jobs change is your **deploy**, not your publish. Confirm a deploy onto a tool other people already use the way you would confirm a release, and confirm a publish before the first one and before replacing a working pin.
 
-Two ways, same effect. `deployCustomTool(..., publish=True, waitSeconds=N, generation=GENERATION)` builds and publishes in one call once the build completes; it refuses `publish=True` without a wait, because a version can only be published from a terminal build. `deployCustomTool(name, publishVersion="v3", generation=GENERATION)` promotes a version that already built - which is also the rollback path. `getCustomTool(name, listVersions=True, generation=GENERATION)` returns the history newest-first; take the newest whose `status` is `Complete`, not simply the previous handle. A `Stopped` version never produced an image, so publishing one is not a rollback.
+Publish as its own call. `deployCustomTool(..., publish=True, waitSeconds=N, generation=GENERATION)` builds and publishes in one call, but the MCP client aborts a tool call around 60s and a real build takes minutes, so a wait long enough to reach the publish always times out first. Deploy without `publish`, poll, then `deployCustomTool(name, publishVersion=VERSION, generation=GENERATION)`. `deployCustomTool(name, publishVersion="v3", generation=GENERATION)` promotes a version that already built - which is also the rollback path. `getCustomTool(name, listVersions=True, generation=GENERATION)` returns the history newest-first; take the newest whose `status` is `Complete`, not simply the previous handle. A `Stopped` version never produced an image, so publishing one is not a rollback.
 
 Every mutation carries `generation`, without exception. A name-only call resolves the name again, so a delete-and-recreate between the user's approval and your call would publish or cancel inside a tool nobody authorized.
 
 ## 7. Smoke-test the build, then publish to pin it
 
-**Smoke-test before you publish - you can.** `submitJob` on the tool's name runs the newest `Complete` version even when the tool has never been published, so the test does not have to wait for a promotion. Run it as soon as the build goes `Complete`, because that build is already what other members get.
+**Smoke-test before you publish - you can.** `submitJob` on the tool's name runs the newest `Complete` version even when the tool has never been published, so the test does not have to wait for a promotion. Wait for the build to be terminal first: a job submitted while a version is still building can sit `In Queue` indefinitely instead of waiting for it, and has to be cancelled. Run it as soon as the build goes `Complete`, because that build is already what other members get.
 
 A run is an ordinary Tamarind job and costs weighted hours - confirm it with the user like any other paid submission. Follow `tamarind-mcp-submit-and-poll`: `validateJob` requiring `valid: true` with no `mutatedFields`, `estimateTime`, one `submitJob`, and a bounded `getJobs` poll.
 
