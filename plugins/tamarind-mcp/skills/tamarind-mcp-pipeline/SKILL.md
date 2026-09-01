@@ -25,14 +25,19 @@ their molecules to land, and feeds them to the next step. Do not chain jobs by h
 
 Cheaper and safer than authoring. Always look before you author.
 
-1. `listPipelineTemplates(search=...)` → pick an `id`. Rows are summaries and carry no graph, and a
+1. `listPipelineTemplates(search=...)` → pick an `id`. Always search or use a small limit; an
+   unfiltered listing can exceed the response cap. Rows are summaries and carry no graph, and a
    name may not describe what the graph does — confirm against the IR in step 2, never the name.
+   When several match, compare their fan-out (tool nodes, and any stage that multiplies molecules)
+   before choosing: they can differ several-fold in cost while all validating clean.
    `owner` defaults to `"org"`, so you see templates you did not create; narrow with `owner="mine"`.
 2. `getPipelineTemplate(templateId)` → read **`inputs`**: the manifest of what you must bind — the
    node id to key each binding by, molecule-vs-file, the molecule type, reference chain labels, and
    any `residueFields`.
-3. `validatePipeline(...)` until `valid: true`.
-4. `submitPipeline(...)`.
+3. Confirm the tools the saved graph names still exist with `getJobSchema(<tool>)` — validation
+   does not check that — and read your output column names from it while you are there.
+4. `validatePipeline(...)` until `valid: true`.
+5. `submitPipeline(...)`.
 
 **Listed does not mean runnable.** Someone else's unpublished template lists fine, then fails
 validation with `403 pipeline_permission_denied`. That is terminal — pick another or ask the owner to
@@ -57,6 +62,26 @@ validator. Authoring blind reliably produces graphs the API rejects. Rules from 
   run never used.
 - **A `filter` must do something:** `intersect: true` (which needs ≥2 sources) or ≥1 rule. An empty
   filter is invalid, not a pass-through.
+
+### Filter rules
+
+Rules narrow a filter's sources, in order. Two kinds — a predicate, and a ranked cut:
+
+```jsonc
+{"kind": "jsonlogic", "rule": {">": [{"var": {"producerNodeId": "score", "columnName": "QED"}}, 0.5]}}
+{"kind": "top_k", "k": 2,
+ "rank_by": [{"field": {"producerNodeId": "score", "columnName": "QED"}, "order": "desc"}]}
+```
+
+`producerNodeId` is the upstream **node id**, not a tool name. `columnName` must be that tool's
+exact output header — read it from `getJobSchema(<tool>)`, never guess: headers carry spaces,
+parens and units (`"SA Score"`, `"LogP (Crippen)"`), and a wrong one still validates clean, so a
+guessed name ranks on nothing. A declared column is not guaranteed to arrive either — confirm the
+column is present in a scored molecule before ranking a whole run on it.
+
+**Barriers.** `intersect: true`, any `top_k`, and a two-input tool with `combination_mode` all wait
+for **every** upstream molecule before anything downstream dispatches. Size your poll deadline for
+the slowest molecule, not the median.
 - **Residue selections go in the binding**, never in a node's `settings`.
 
 ## Bindings
@@ -154,6 +179,12 @@ Two failure modes to handle deliberately:
 `submitPipeline` returns a run whose `id` is the `runId`. Pass `idempotencyKey` so a retried submit
 is safe, `runName` to name this run explicitly, `project` to stamp an org project on its jobs.
 
+**Check which molecules the run actually used.** A saved template carries its own reference group on
+each input; your binding overrides it, but nothing in the results says which one won, and scoring
+someone else's molecules produces a complete, plausible, entirely wrong answer. The submit response
+echoes the group used at `inputs.<nodeId>.group` — confirm it is the group you bound, or a freshly
+minted one if you passed raw values, before trusting anything downstream.
+
 Poll `getPipelineRun(runId)` on a **finite deadline** — never an unbounded loop. Steps are under
 **`nodeRuns`**, each reporting `status`, `jobsTotal`/`jobsComplete`, `outputCount`, `outputGroup`.
 
@@ -168,14 +199,17 @@ what narrows it. Never submit a second time to resolve uncertainty about the fir
 
 ## Read results
 
-`getPipelineRunResults(runId)` returns each step's molecules **with their scores** — what you rank on.
-Results appear per step as it finishes, so this is useful before the run completes; a step with
+`getPipelineRunResults(runId)` returns each step's molecules **with their scores** — what you rank
+on. Results appear per step as it finishes, so this works before the run completes; a step with
 nothing yet reports an empty `molecules` list.
 
 **Results do not come back in binding order, and molecule names are opaque.** Never zip results to
 your inputs positionally — you will mislabel every one. Identify a molecule by its own returned
 fields; note that an input SMILES is canonicalized on the way in, so comparing against the exact
 string you submitted also fails.
+
+The envelope's top-level `status` is the **run's**, not the step's — a finished step can sit inside
+a response whose `status` still reads `running`.
 
 **The two tools name the same thing differently — do not carry keys across:**
 
@@ -186,30 +220,30 @@ string you submitted also fails.
 
 **Scores sit in different places depending on the shape you get. Read whichever you receive:**
 
-- step outputs — id in `complexId`, scores under `scores`
+- step outputs — id in `complexId`, scores under `scores`, and the molecule's own value in
+  `sequence` (the canonical SMILES for a small molecule) — this is what you identify a result by
 - group molecules — id in `id`, scores under `metadata`
 
-In both, **scores are keyed by tool name**: `scores["<tool>"]["MW"]`, never `scores["MW"]`.
+In both, **scores are keyed by tool name**: `scores["<tool>"]["MW"]`, never `scores["MW"]`. This
+holds for a filter step too — a filter runs no tool of its own, so its survivors carry the keys of
+whichever tools scored them upstream.
 
 In the group shape, **`metadata["<tool>"]` is a list of every run that ever scored that molecule**,
 not just yours. Take the entry whose `runId` equals `"nr-"` + that step's **`id`** from
 `getPipelineRun` (its `id`, not its `nodeId`). Reading `[0]` silently gives you another run's
 numbers. Those entries also carry the `jobId`, which is the only place a step's job id is exposed.
 
-Do not infer the shape from `outputGroup`. Whether a step mints a group is a property of the **run**,
-not of the step: the same node of the same template version returns a group on one run and `null` on
-another.
+**`outputGroup: null` does not mean "nothing here."** It is only the group that step *minted*, and
+whether a step mints one is a property of the **run**, not the step — the same node of the same
+template version returns a group on one run and `null` on another. Never infer the shape from it: a
+step enriching its inputs in place, and a filter whose survivors are step outputs, both report null
+while holding plenty. Read the step itself.
 
-**`outputGroup: null` does not mean "nothing here."** It is only the group that step *minted*. A step
-that enriches its inputs in place, and a filter whose survivors exist only as step outputs, both
-report null while holding plenty. Read the step itself.
-
-Paging: `limit` is 1-100 (default 25). **Always pass `node` and start small.** `limit` bounds
-molecules, not payload, and a group-shape molecule carries its full cross-tool history — enough that
-even `node` plus `limit=1` can exceed the response size cap on a single-molecule run. If a call
-overflows, you are in the group shape: narrow to one step, then read the fields you need rather than
-the whole record. To page, pass `cursor` from `nextCursor`; a cursor belongs to one step, so
-`cursor` requires `node`.
+Paging: `limit` is 1-100 (default 25) and bounds molecules, **not payload**. A molecule accumulates
+every tool's scores that touched it, so a later step's payload is a superset of the earlier ones' and
+even `node` plus `limit=1` can exceed the response cap on a one-molecule run. Always pass `node`,
+read the last finished step rather than polling each, and pull the fields you need. `cursor` (from
+`nextCursor`) requires `node`.
 
 ## Stopping, and finding runs later
 
@@ -220,10 +254,11 @@ the whole record. To page, pass `cursor` from `nextCursor`; a cursor belongs to 
 
 ## Cost and authorization
 
-A run fans out into many jobs and can cost far more than a single submit. To know the scope you must
-read the per-tool defaults with `getJobSchema(<tool>)`: a template exposes `editableSettings` names
-without values, and its IR omits any setting left at default, so the real fan-out (designs x
-sequences x folds) is invisible from the pipeline tools alone. Confirm material scope with the user
+A run fans out into many jobs and can cost far more than a single submit. Scope is not reported
+anywhere before you submit: a template exposes `editableSettings` names without values and its IR
+omits any setting left at default, so you must compose it yourself — `getJobSchema(<tool>)` for each
+multiplying setting's default, times your molecule count. The true figure only appears as `jobsTotal`
+after the run starts. Confirm material scope with the user
 before the first `submitPipeline`, and again before re-running with a materially larger binding.
 Authorization for one run is not authorization for the next.
 
@@ -233,5 +268,11 @@ A failed step reports its status in `getPipelineRun`, which does **not** expose 
 the logs you need one from the group-shape `metadata` entries above; with it, `getJobs`/`getJobLogs`
 (bounded line count) give the tool's own output. Checkpoint the failure rather than resubmitting.
 
-If a run sits at `running` with every job complete and no progress, that is a delivery-side stall,
-not something a resubmit fixes. Report it with the `runId` and the step's `node`.
+**These reads are eventually consistent, and lag completion by minutes.** A step can report
+`running` with `jobsComplete: 0`, and its results can come back `molecules: []`, well after it has
+actually finished — the timestamps you get later prove it. So before reporting a stall, a partial,
+or an empty step, poll again: the most likely explanation for "nothing happened" is that you read
+too early. A step at `jobsComplete: 0` while a sibling on the same input has finished is usually
+just queueing. Keep polling to your deadline, then report partial state; never resubmit. Only a run
+where **every** job is complete with no progress is a real delivery-side stall — report that one
+with the `runId` and the step's `node`.
