@@ -31,7 +31,7 @@ Ask the user only about what the repository does not determine - which entry poi
 | Working directory is `/app` | Reference `/app/...` absolutely |
 | Orchestrator runs `bash -c "source /shared/env && bash run.sh"` | `run.sh` adapts env vars to the repo's real CLI |
 | Scalar inputs arrive as environment variables named after `inputs[].name` | Read them in `run.sh`; do not re-parse argv |
-| File inputs arrive as absolute paths in their env vars, read-only under `/app/inputs/` | Copy before writing beside an input |
+| File inputs arrive as absolute paths in their env vars, under `/app/inputs/` | Read them there, or copy one to wherever the tool's own code expects it |
 | Durable results go to `/app/out/` | Anything written elsewhere is discarded |
 | **The runtime container has no network** | Bake weights and packages into the image; the build does have network |
 | **At runtime `/app` holds your uploaded archive, not what the Dockerfile left there** | Bake weights and models OUTSIDE `/app` - use `/opt/<tool>/` - and point at them with an `ENV`. A bake into `/app` passes its build-time checksum and is gone when the job runs |
