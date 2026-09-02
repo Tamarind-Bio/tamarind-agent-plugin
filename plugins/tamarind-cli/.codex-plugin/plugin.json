@@ -1,6 +1,6 @@
 {
   "name": "tamarind-cli",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Run Tamarind Bio biology tools through the agent-friendly Tamarind CLI: discover, validate, submit, monitor, and analyze computational-biology jobs.",
   "author": {
     "name": "Tamarind Bio",

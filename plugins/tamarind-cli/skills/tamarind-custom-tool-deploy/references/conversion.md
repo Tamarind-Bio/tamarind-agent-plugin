@@ -49,7 +49,7 @@ python /app/predict.py \
 
 Quote every expansion. Use `${VAR:-default}` only when the input declares that default. For store-true flags, append the flag only when the boolean is true; do not pass the string `false` after a flag that takes no value.
 
-File inputs are read-only. Copy a file into `/app` before invoking code that writes beside it. If an application insists on another output directory, move the finished artifacts into `/app/out/` before exiting.
+If the code expects its input at a fixed path, put it there - `/app` and `/app/inputs/` are both writable. If an application insists on another output directory, move the finished artifacts into `/app/out/` before exiting.
 
 ## Bake dependencies and weights
 

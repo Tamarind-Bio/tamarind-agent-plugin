@@ -28,7 +28,7 @@ prune that, leaving the original repository untouched.
 | Working directory | `/app` |
 | Entry point | `bash -c "source /shared/env && bash run.sh"` |
 | Scalar inputs | environment variables named exactly as `inputs[].name` |
-| File inputs | absolute paths in their env vars, mounted read-only under `/app/inputs/` |
+| File inputs | absolute paths in their env vars, under `/app/inputs/` (writable) |
 | Outputs | `/app/out/` - anything else is discarded |
 | Network at runtime | none |
 | Network at build time | available, so the `Dockerfile` may install and download |

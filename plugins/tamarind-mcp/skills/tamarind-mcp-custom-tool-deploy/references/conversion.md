@@ -73,8 +73,9 @@ Notes that matter:
   even when the user said false. Append the flag only when the value is true:
   `[ "$USE_FEATURE" = "true" ] && set -- "$@" --use-feature`, or build the argument list
   conditionally before the call.
-- File inputs are read-only. If the code writes beside its input, copy it into `/app` first:
-  `cp "$TARGET_STRUCTURE" /app/target.pdb`.
+- If the code expects its input at a fixed path, put it there: `/app` and `/app/inputs/` are both
+  writable, so `cp "$TARGET_STRUCTURE" /app/target.pdb` and `cp "$TARGET_STRUCTURE"
+  /app/inputs/target.pdb` both work.
 - If the entry point insists on writing to a fixed directory, let it, then move the results:
   `mv /app/results/* /app/out/`.
 
