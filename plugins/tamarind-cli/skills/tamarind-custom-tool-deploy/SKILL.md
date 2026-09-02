@@ -31,7 +31,7 @@ Read [references/conversion.md](references/conversion.md) while adapting a repos
 
 ## Hold the runtime contract
 
-The working directory is `/app`. Scalar inputs arrive as environment variables named exactly after `inputs[].name`; file inputs arrive as read-only absolute paths under `/app/inputs/`. The orchestrator runs `bash -c "source /shared/env && bash run.sh"`. Write durable results only beneath `/app/out/`.
+The working directory is `/app`. Scalar inputs arrive as environment variables named exactly after `inputs[].name`; file inputs arrive as absolute paths under `/app/inputs/`. The orchestrator runs `bash -c "source /shared/env && bash run.sh"`. Write durable results only beneath `/app/out/`.
 
 Runtime network access is blocked. Bake dependencies and weights into the image during `docker build`, which does have network access. A build that downloads at runtime is not deployable as written.
 

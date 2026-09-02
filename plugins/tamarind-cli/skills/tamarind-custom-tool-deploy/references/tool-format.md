@@ -18,7 +18,7 @@ Never include `.git/`, virtual environments, `__pycache__`, local caches, `.env`
 | Working directory | `/app` |
 | Entry point | `bash -c "source /shared/env && bash run.sh"` |
 | Scalar inputs | Environment variables named exactly as `inputs[].name` |
-| File inputs | Read-only absolute paths beneath `/app/inputs/` |
+| File inputs | Absolute paths beneath `/app/inputs/` (writable) |
 | Durable outputs | `/app/out/` |
 | Runtime network | Blocked |
 | Image-build network | Available |
