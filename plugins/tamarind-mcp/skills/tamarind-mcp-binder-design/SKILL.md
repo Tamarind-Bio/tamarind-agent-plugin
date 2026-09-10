@@ -7,6 +7,13 @@ description: Design new protein, peptide, macrocycle, or small-molecule binders 
 
 Treat binder design as a generate-and-filter campaign, not a deterministic answer.
 
+## Safety boundary
+
+Use this workflow only for benign research on non-hazardous targets. Confirm the
+target and intended use before generation. Refuse requests to create or improve
+harmful biological function, and stop for clarification when the target's risk or
+the user's intent is unclear.
+
 ## Define and select
 
 Clarify the target structure or sequence, target chains/site/hotspots, binder class, length or chemistry constraints, candidate count, and downstream filters. Use `tamarind-mcp-antibody` for antibody or VHH CDR workflows. Use `tamarind-mcp-miniprotein-campaign` when the request is a ranked miniprotein panel compared across several generation methods on a scoring method fixed in advance, rather than one generate-and-filter round.

@@ -5,6 +5,13 @@ description: Run Anthropic's published de novo miniprotein binder campaign proto
 
 # Run Anthropic's miniprotein binder campaign through MCP
 
+## Safety boundary
+
+Use this workflow only for benign research on non-hazardous targets. Confirm the
+target and intended use before generation. Refuse requests to create or improve
+harmful biological function, and stop for clarification when the target's risk or
+the user's intent is unclear.
+
 This skill reproduces the campaign protocol Anthropic published with
 [*Claude accelerates protein design*](https://www.anthropic.com/research/Claude-accelerates-protein-design)
 — the `single_target` prompt in
