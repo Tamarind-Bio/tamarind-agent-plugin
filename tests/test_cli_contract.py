@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -59,12 +60,33 @@ def test_supported_cli_version_and_root_options() -> None:
         )
 
 
+# Commands the skills teach that are newer than the CLI floor. Their help rows skip
+# when the installed CLI lacks the command — the skills tell agents to fall back for
+# such a CLI — and run like every other row once it has it.
+COMMANDS_NEWER_THAN_FLOOR = {
+    "finetune": "added after tamarind-cli 0.4.3; the finetune skills fall back to `submit` without it",
+}
+
+
+def _lacks_command(result: subprocess.CompletedProcess[str]) -> bool:
+    """The CLI's typed answer for a command it does not have: exit 2 with a
+    structured `NoSuchCommand` error. Any other failure is a real contract break."""
+    if result.returncode != 2:
+        return False
+    try:
+        error = json.loads(result.stderr)["error"]
+    except (ValueError, KeyError, TypeError):
+        return False
+    return isinstance(error, dict) and error.get("type") == "NoSuchCommand"
+
+
 @pytest.mark.skipif(not CLI, reason="tamarind CLI is not installed")
 @pytest.mark.parametrize(
     ("args", "tokens"),
     [
         (("wait", "--help"), ("--timeout", "--poll-interval")),
         (("submit", "--help"), ("--input", "--name")),
+        (("finetune", "--help"), ("--input", "--name")),
         (("results", "--help"), ("--download", "--file", "--show-url")),
         (("batch", "--help"), ("--input", "--name", "--prevalidate")),
         (("files", "upload", "--help"), ("--name",)),
@@ -75,6 +97,8 @@ def test_supported_cli_version_and_root_options() -> None:
 )
 def test_documented_cli_flags_exist(args: tuple[str, ...], tokens: tuple[str, ...]) -> None:
     result = _run(*args)
+    if args[0] in COMMANDS_NEWER_THAN_FLOOR and _lacks_command(result):
+        pytest.skip(f"installed tamarind-cli has no `{args[0]}` command ({COMMANDS_NEWER_THAN_FLOOR[args[0]]})")
     assert result.returncode == 0, result.stderr
     help_text = _plain(result.stdout)
     for token in tokens:
@@ -93,3 +117,19 @@ def test_cli_02_batch_has_final_row_prevalidation() -> None:
     result = _run("batch", "--help")
     assert result.returncode == 0
     assert "--prevalidate" in _plain(result.stdout)
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stderr", "lacks"),
+    [
+        (2, '{"error": {"type": "NoSuchCommand", "message": "No such command \'finetune\'.", "exitCode": 2}}', True),
+        # a present command that breaks is a contract failure, never a skip
+        (2, '{"error": {"type": "NoSuchOption", "message": "No such option: --input", "exitCode": 2}}', False),
+        (1, '{"error": {"type": "NoSuchCommand", "message": "No such command \'finetune\'.", "exitCode": 1}}', False),
+        (2, "Traceback (most recent call last): ...", False),
+        (0, "", False),
+    ],
+)
+def test_only_a_typed_missing_command_skips_a_help_row(returncode: int, stderr: str, lacks: bool) -> None:
+    result = subprocess.CompletedProcess(["tamarind"], returncode, stdout="", stderr=stderr)
+    assert _lacks_command(result) is lacks

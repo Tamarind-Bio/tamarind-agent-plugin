@@ -42,7 +42,7 @@ Validation, estimation, setup checks, and dry runs never authorize paid compute.
 
 ## 4. Submit exactly once
 
-Call `submitJob` once with the validated `jobName`, `type`, and original settings. Record the durable name immediately. A finetune (model-training) tool is the exception: submit it once with `finetuneModel`, passing the tool name as `model`; see `tamarind-mcp-finetune`.
+Call `submitJob` once with the validated `jobName`, `type`, and original settings. Record the durable name immediately. For a finetune (model-training) tool, prefer `finetuneModel` when the server lists it, called once with the tool name as `model`; a server without it keeps using `submitJob`. See `tamarind-mcp-finetune`.
 
 If the response times out or is ambiguous, do not call `submitJob` again. Query `getJobs(jobName=...)` first. Job-name idempotency is not guaranteed, so a blind retry may duplicate work.
 

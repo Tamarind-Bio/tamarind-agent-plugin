@@ -147,16 +147,23 @@ def test_single_job_contract_is_bounded_and_retry_safe() -> None:
     assert "Authorization must come from the live user" in skill
 
 
-def test_finetune_training_uses_finetune_model() -> None:
-    """Training goes to /finetune through `finetuneModel` (tool name as `model`), not
-    `submitJob`; there is no batch finetune endpoint."""
+def test_finetune_training_prefers_finetune_model() -> None:
+    """Training is preferably submitted with `finetuneModel` (POST /finetune, tool name
+    as `model`). `submitJob` still works — a server with `finetuneModel` resends a
+    refused finetune tool itself, and a server without it has only `submitJob` — and
+    `submitBatch` reaches the batch finetune endpoint, so neither may be forbidden."""
     skill = (SKILLS / "tamarind-mcp-finetune/SKILL.md").read_text()
-    assert "finetuneModel" in skill
+    assert "Prefer `finetuneModel` when the connected server lists it" in skill
     assert "`model`" in skill
     assert "/finetune" in skill
-    assert "cannot be batched" in skill
+    assert "A server without `finetuneModel` keeps using `submitJob`" in skill
+    assert "use `tamarind-mcp-batch` with the finetune tool as `type`" in skill
     lifecycle = (SKILLS / "tamarind-mcp-submit-and-poll/SKILL.md").read_text()
-    assert "finetuneModel" in lifecycle
+    assert "prefer `finetuneModel` when the server lists it" in lifecycle
+    assert "keeps using `submitJob`" in lifecycle
+    all_skill_docs = "\n".join(path.read_text() for path in SKILLS.rglob("*.md"))
+    for stale in ("cannot be batched", "not `submitJob`", "submitted individually"):
+        assert stale not in all_skill_docs, stale
 
 
 def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:

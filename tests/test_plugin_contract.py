@@ -135,18 +135,30 @@ def test_global_cli_flags_precede_subcommands() -> None:
     assert not offenders, offenders
 
 
-def test_finetune_training_uses_the_finetune_command() -> None:
-    """Finetune tools submit through the platform's /finetune endpoint, which the CLI
-    exposes as `finetune`; `submit` is refused for them with `use_finetune_endpoint`."""
+def test_finetune_training_prefers_the_finetune_command() -> None:
+    """Training is preferably submitted with `finetune` (POST /finetune). `submit` is
+    refused for a finetune tool only once the platform's switch is on, a CLI with
+    `finetune` resends it itself, and a CLI without the command (0.4.3 and earlier)
+    has only `submit` — so the skills must not forbid it, and there is a batch
+    finetune endpoint, so they must not say training cannot be batched."""
+    finetune_skill = (SKILLS / "tamarind-finetune" / "SKILL.md").read_text()
     finetune_docs = "\n".join(
         path.read_text() for path in (SKILLS / "tamarind-finetune").rglob("*.md")
     )
+    assert "Prefer the `finetune` command" in finetune_skill
     assert "tamarind --json finetune FINETUNE_TOOL" in finetune_docs
-    assert "use_finetune_endpoint" in finetune_docs
-    all_skill_docs = "\n".join(path.read_text() for path in SKILLS.rglob("*.md"))
-    assert not re.search(r"tamarind --json submit (?:FINETUNE_TOOL|[a-z0-9-]+-finetune)\b", all_skill_docs)
+    # the older-CLI path: an unknown `finetune` command falls back to `submit`
+    assert "tamarind --json submit FINETUNE_TOOL" in finetune_skill
+    assert "0.4.3 and earlier" in finetune_skill
+    assert "use_finetune_endpoint" in finetune_skill
+    assert "use `tamarind-batch` with the finetune tool" in finetune_skill
     lifecycle = (SKILLS / "tamarind-submit-and-poll" / "SKILL.md").read_text()
-    assert "tamarind --json finetune TOOL" in lifecycle
+    assert "prefer submitting it once with `tamarind --json finetune TOOL`" in lifecycle
+    assert "keeps using `submit`" in lifecycle
+    all_skill_docs = "\n".join(path.read_text() for path in SKILLS.rglob("*.md"))
+    for stale in ("cannot be batched", "not `submit`", "rather than switching to `submit`",
+                  "submitted individually"):
+        assert stale not in all_skill_docs, stale
 
 
 def test_cli_02_batch_guidance_uses_bounded_parent_wait() -> None:

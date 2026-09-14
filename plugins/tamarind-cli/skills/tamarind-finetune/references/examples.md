@@ -21,7 +21,7 @@ tamarind --json wait model-train-v1 --timeout 28800 --poll-interval 30
 tamarind --json status model-train-v1
 ```
 
-`finetune` posts to `/finetune`; ordinary tools, including the inference stage below, still use `submit`. Require a successful terminal status.
+`finetune` posts to `/finetune`; a CLI without that command (0.4.3 and earlier) submits training with `submit`. Ordinary tools, including the inference stage below, use `submit`. Require a successful terminal status.
 
 ## Validate the matching inference stage
 

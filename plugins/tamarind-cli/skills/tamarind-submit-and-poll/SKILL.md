@@ -64,7 +64,7 @@ Treat permission and price information separately:
 tamarind --json submit TOOL --input settings.yaml --name JOB_NAME
 ```
 
-A finetune (model-training) tool is the exception: submit it once with `tamarind --json finetune TOOL` instead, which posts to the finetune endpoint; see `tamarind-finetune`.
+For a finetune (model-training) tool, prefer submitting it once with `tamarind --json finetune TOOL`, which posts to the finetune endpoint; a CLI without that command keeps using `submit`. See `tamarind-finetune`.
 
 An initial submission and a retry are different. After validation and authorization, issue one initial client-side submission attempt even though the CLI exposes no idempotency key and job names are not documented as idempotency keys. Their absence does not block that first attempt.
 
