@@ -30,11 +30,15 @@ Surface base model, epochs/steps, dataset size, and expected weighted-hour spend
 
 ## Train, recover, then validate inference
 
+Training goes to the platform's finetune endpoint (`/finetune`) through the `finetune` command, not `submit`:
+
 ```bash
-tamarind --json submit FINETUNE_TOOL --input train-settings.yaml --name TRAIN_NAME
+tamarind --json finetune FINETUNE_TOOL --input train-settings.yaml --name TRAIN_NAME
 # Probe status first; wait when an active JobStatus or batchStatus is present.
 tamarind --json wait TRAIN_NAME --timeout 28800 --poll-interval 30
 ```
+
+Submit training once. The submission output's `endpoint` names the endpoint that accepted it. If `finetune` exits 2 as an unknown command, the installed CLI predates the command: upgrade `tamarind-cli` rather than switching to `submit`, which the platform refuses for finetune tools with error code `use_finetune_endpoint`. Finetune tools cannot be batched; train one model per `finetune` call.
 
 Require a successful terminal status. Build the inference payload using the exact trained-model reference required by the live inference schema, often the training job name, then validate it:
 

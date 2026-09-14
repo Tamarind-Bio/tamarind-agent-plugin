@@ -19,7 +19,7 @@ Call `validateJob` for the training payload, require no mutation warning, and ca
 
 ## Train and infer
 
-Run training with `tamarind-mcp-submit-and-poll`. Require an explicit success state. Inspect `listJobFiles` and the training row for the exact trained-model reference required by the inference schema.
+Submit training with `finetuneModel`, not `submitJob`: it posts to the platform's finetune endpoint (`/finetune`) and takes the finetune tool name as `model` with the same `jobName`, `settings`, and optional `projectTag`. Call it exactly once per model; finetune tools cannot be batched. Otherwise follow `tamarind-mcp-submit-and-poll` for validation, authorization, polling, and ambiguous-submission recovery. Require an explicit success state. Inspect `listJobFiles` and the training row for the exact trained-model reference required by the inference schema.
 
 Build and validate the inference payload with that exact reference. Estimate and separately authorize inference when it materially expands scope, then run it through `tamarind-mcp-submit-and-poll` or `tamarind-mcp-batch` for many independent inputs.
 

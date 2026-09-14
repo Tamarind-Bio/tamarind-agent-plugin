@@ -126,13 +126,27 @@ def test_helper_invocations_are_not_cwd_relative() -> None:
 
 def test_global_cli_flags_precede_subcommands() -> None:
     bad = re.compile(r"\btamarind\s+(?!--)(?:auth|files|tools|modalities|functions|schema|"
-                     r"validate|submit|batch|jobs|status|wait|results|logs)\b[^\n`]*\s--json\b")
+                     r"validate|submit|finetune|batch|jobs|status|wait|results|logs)\b[^\n`]*\s--json\b")
     offenders = []
     for path in ROOT.rglob("*.md"):
         for line_no, line in enumerate(path.read_text().splitlines(), 1):
             if bad.search(line) and "not " not in line:
                 offenders.append(f"{path.relative_to(ROOT)}:{line_no}")
     assert not offenders, offenders
+
+
+def test_finetune_training_uses_the_finetune_command() -> None:
+    """Finetune tools submit through the platform's /finetune endpoint, which the CLI
+    exposes as `finetune`; `submit` is refused for them with `use_finetune_endpoint`."""
+    finetune_docs = "\n".join(
+        path.read_text() for path in (SKILLS / "tamarind-finetune").rglob("*.md")
+    )
+    assert "tamarind --json finetune FINETUNE_TOOL" in finetune_docs
+    assert "use_finetune_endpoint" in finetune_docs
+    all_skill_docs = "\n".join(path.read_text() for path in SKILLS.rglob("*.md"))
+    assert not re.search(r"tamarind --json submit (?:FINETUNE_TOOL|[a-z0-9-]+-finetune)\b", all_skill_docs)
+    lifecycle = (SKILLS / "tamarind-submit-and-poll" / "SKILL.md").read_text()
+    assert "tamarind --json finetune TOOL" in lifecycle
 
 
 def test_cli_02_batch_guidance_uses_bounded_parent_wait() -> None:

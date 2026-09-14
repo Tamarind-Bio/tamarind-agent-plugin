@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.12"
+    assert manifest["version"] == "0.1.13"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -145,6 +145,18 @@ def test_single_job_contract_is_bounded_and_retry_safe() -> None:
     assert "do not call `submitJob` again" in skill
     assert "no `mutatedFields`" in skill
     assert "Authorization must come from the live user" in skill
+
+
+def test_finetune_training_uses_finetune_model() -> None:
+    """Training goes to /finetune through `finetuneModel` (tool name as `model`), not
+    `submitJob`; there is no batch finetune endpoint."""
+    skill = (SKILLS / "tamarind-mcp-finetune/SKILL.md").read_text()
+    assert "finetuneModel" in skill
+    assert "`model`" in skill
+    assert "/finetune" in skill
+    assert "cannot be batched" in skill
+    lifecycle = (SKILLS / "tamarind-mcp-submit-and-poll/SKILL.md").read_text()
+    assert "finetuneModel" in lifecycle
 
 
 def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
