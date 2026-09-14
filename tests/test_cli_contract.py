@@ -69,15 +69,21 @@ COMMANDS_NEWER_THAN_FLOOR = {
 
 
 def _lacks_command(result: subprocess.CompletedProcess[str]) -> bool:
-    """The CLI's typed answer for a command it does not have: exit 2 with a
-    structured `NoSuchCommand` error. Any other failure is a real contract break."""
+    """The CLI's answer for a command it does not have: exit 2 with a structured
+    error saying "No such command". Released 0.4.3 types it `UsageError`; later
+    builds type it `NoSuchCommand`. Any other failure — including a `UsageError`
+    about something else, like an unknown option — is a real contract break."""
     if result.returncode != 2:
         return False
     try:
         error = json.loads(result.stderr)["error"]
     except (ValueError, KeyError, TypeError):
         return False
-    return isinstance(error, dict) and error.get("type") == "NoSuchCommand"
+    return (
+        isinstance(error, dict)
+        and error.get("type") in ("NoSuchCommand", "UsageError")
+        and str(error.get("message", "")).startswith("No such command")
+    )
 
 
 @pytest.mark.skipif(not CLI, reason="tamarind CLI is not installed")
@@ -123,6 +129,9 @@ def test_cli_02_batch_has_final_row_prevalidation() -> None:
     ("returncode", "stderr", "lacks"),
     [
         (2, '{"error": {"type": "NoSuchCommand", "message": "No such command \'finetune\'.", "exitCode": 2}}', True),
+        # released tamarind-cli 0.4.3 (PyPI) types the same answer UsageError
+        (2, '{"error": {"type": "UsageError", "message": "No such command \'finetune\'.", "exitCode": 2}}', True),
+        (2, '{"error": {"type": "UsageError", "message": "No such option: --input", "exitCode": 2}}', False),
         # a present command that breaks is a contract failure, never a skip
         (2, '{"error": {"type": "NoSuchOption", "message": "No such option: --input", "exitCode": 2}}', False),
         (1, '{"error": {"type": "NoSuchCommand", "message": "No such command \'finetune\'.", "exitCode": 1}}', False),
