@@ -17,7 +17,7 @@ Confirm the live tool schema:
 tamarind --json schema TOOL
 ```
 
-CLI 0.2 can prevalidate every final row before it submits the batch. During preparation, validate every distinct conditional shape, and validate every row for small/medium batches:
+`tamarind batch --prevalidate` checks every final row before it submits the batch. Use it at every batch size, and do not loop a per-row validate of your own. During preparation, probe a single settings shape with:
 
 ```bash
 tamarind --json validate TOOL --input one-settings.yaml --name BATCH-probe-001
