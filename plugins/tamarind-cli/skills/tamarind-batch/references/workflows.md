@@ -1,16 +1,16 @@
 # Batch workflow recipes
 
-CLI 0.2 accepts a list of settings or an object containing `settings`. Its `--prevalidate` checks every final row and aborts before submission when any row is invalid.
+The CLI accepts a list of settings or an object containing `settings`. Its `--prevalidate` checks every final row and aborts before submission when any row is invalid.
 
-## Validate representative rows
+## Probe a settings shape
 
-Write each distinct conditional settings shape to its own file and run:
+Write a settings shape to its own file and run:
 
 ```bash
 tamarind --json validate TOOL --input probe.yaml --name BATCH-probe
 ```
 
-For a small batch, validate every row. For a large homogeneous batch, validate all conditionally distinct shapes and audit the generated document for missing/duplicate values.
+Validate every row at any batch size with `--prevalidate`, and audit the generated document for missing/duplicate values.
 
 ## Submit and monitor
 

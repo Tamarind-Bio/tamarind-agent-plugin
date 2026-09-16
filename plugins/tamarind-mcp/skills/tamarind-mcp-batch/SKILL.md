@@ -21,7 +21,7 @@ Use `topN` to bound generated-sequence fan-out and `sharedSettings` only for fie
 
 ## Validate and estimate
 
-For explicit mode, call `validateJob` for every final row when feasible and at least every distinct conditional shape for very large inputs. Require `valid: true` without `mutatedFields`. Check duplicate names, file availability, input count, sampling settings, and schema compatibility.
+For explicit mode, pass the whole row set to `validateJob` in one call: `settings` takes an array of any length. Every row is checked, so do not sample and do not call the tool once per row. Read the per-row verdicts in `results` and require `valid: true` without `mutatedFields` for every row. Check duplicate names, file availability, input count, sampling settings, and schema compatibility.
 
 For `fromJob` or `fromFile`, inspect the source and validate a representative final settings object containing the intended sequence field and shared settings. Treat server-side expansion as consequential even when not all generated rows can be prevalidated client-side.
 

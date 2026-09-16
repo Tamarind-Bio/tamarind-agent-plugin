@@ -13,7 +13,7 @@ Call `listTags` to obtain current function values, then use filtered `getAvailab
 
 Match the input type and modality. Sequence-only, structure-based, paired-antibody, and nanobody-specific tools are not interchangeable.
 
-Upload structures with `uploadFile` or use an accepted prior-job `s3Path`. Call `validateJob` and `estimateTime` for each planned tool. For a candidate list, use `tamarind-mcp-batch` so one settings policy is applied consistently; validate every distinct conditional payload shape before multiplying the run.
+Upload structures with `uploadFile` or use an accepted prior-job `s3Path`. Call `validateJob` and `estimateTime` for each planned tool. For a candidate list, use `tamarind-mcp-batch` so one settings policy is applied consistently; validate the whole row set in one `validateJob` call before multiplying the run.
 
 ## Execute and interpret
 
