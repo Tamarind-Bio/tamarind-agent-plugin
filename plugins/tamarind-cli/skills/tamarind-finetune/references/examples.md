@@ -16,12 +16,12 @@ Check data columns, units, splits, leakage, base model, epochs/steps, and datase
 ## Train and recover
 
 ```bash
-tamarind --json submit FINETUNE_TOOL --input train.yaml --name model-train-v1
+tamarind --json finetune FINETUNE_TOOL --input train.yaml --name model-train-v1
 tamarind --json wait model-train-v1 --timeout 28800 --poll-interval 30
 tamarind --json status model-train-v1
 ```
 
-Require a successful terminal status.
+`finetune` posts to `/finetune`; a CLI without that command (0.4.3 and earlier) submits training with `submit`. Ordinary tools, including the inference stage below, use `submit`. Require a successful terminal status.
 
 ## Validate the matching inference stage
 

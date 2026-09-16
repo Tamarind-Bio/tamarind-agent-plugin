@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.12"
+    assert manifest["version"] == "0.1.13"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -145,6 +145,25 @@ def test_single_job_contract_is_bounded_and_retry_safe() -> None:
     assert "do not call `submitJob` again" in skill
     assert "no `mutatedFields`" in skill
     assert "Authorization must come from the live user" in skill
+
+
+def test_finetune_training_prefers_finetune_model() -> None:
+    """Training is preferably submitted with `finetuneModel` (POST /finetune, tool name
+    as `model`). `submitJob` still works — a server with `finetuneModel` resends a
+    refused finetune tool itself, and a server without it has only `submitJob` — and
+    `submitBatch` reaches the batch finetune endpoint, so neither may be forbidden."""
+    skill = (SKILLS / "tamarind-mcp-finetune/SKILL.md").read_text()
+    assert "Prefer `finetuneModel` when the connected server lists it" in skill
+    assert "`model`" in skill
+    assert "/finetune" in skill
+    assert "A server without `finetuneModel` keeps using `submitJob`" in skill
+    assert "use `tamarind-mcp-batch` with the finetune tool as `type`" in skill
+    lifecycle = (SKILLS / "tamarind-mcp-submit-and-poll/SKILL.md").read_text()
+    assert "prefer `finetuneModel` when the server lists it" in lifecycle
+    assert "keeps using `submitJob`" in lifecycle
+    all_skill_docs = "\n".join(path.read_text() for path in SKILLS.rglob("*.md"))
+    for stale in ("cannot be batched", "not `submitJob`", "submitted individually"):
+        assert stale not in all_skill_docs, stale
 
 
 def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
