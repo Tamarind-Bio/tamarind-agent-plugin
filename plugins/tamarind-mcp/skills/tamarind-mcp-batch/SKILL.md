@@ -39,6 +39,8 @@ If the result is ambiguous, do not call `submitBatch` again. Query `getJobs(batc
 
 Poll `getJobs(batch=..., includeSubjobs=true)` at a moderate interval through the client's bounded wait/session mechanism. Track completed, active, failed, and stopped counts. Do not hide partial failures behind an aggregate status.
 
+A batch read returns ONE PAGE. Keep calling with the returned `startKey` until none comes back, and only then report counts; a large batch reports low if the first page is treated as the whole of it.
+
 Stop after a finite deadline and report the batch as still active; never resubmit because a local wait ended. For failed subjobs, inspect a bounded number of representative logs with `getJobLogs` rather than flooding context.
 
 Use `cancelBatch` to stop the whole active batch after confirming its exact name. Do not fan out `cancelJob` calls.

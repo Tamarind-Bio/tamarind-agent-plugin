@@ -52,6 +52,8 @@ Call `getJobs(jobName=...)` and inspect the returned status. For an active state
 
 Do not implement an infinite loop. When the deadline elapses, report that the remote job is still active and retain the durable name for reattachment; do not resubmit.
 
+For more than a few jobs, poll with one `searchJobs(jobNames=[...])` call per cycle rather than `getJobs` per name. A per-job loop over a campaign is a request volume that gets rate-limited and then blocked at the network edge.
+
 Only an explicit platform success status permits result retrieval. For `Failed`, `Stopped`, cancelled, or another unsuccessful terminal state, call `getJobLogs` with a bounded `maxLines`, report the failure, and do not resubmit automatically.
 
 ## 6. Retrieve safely
