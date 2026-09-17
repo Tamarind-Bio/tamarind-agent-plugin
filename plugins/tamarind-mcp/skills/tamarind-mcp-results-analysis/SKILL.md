@@ -10,7 +10,8 @@ Treat the durable job or batch name as the recovery key. Never create a replacem
 ## Recover state
 
 - Single job: call `getJobs(jobName=...)`.
-- Batch or pipeline: call `getJobs(batch=..., includeSubjobs=true)` and, when present, inspect its parent row separately by name.
+- Batch or pipeline: call `getJobs(batch=..., includeSubjobs=true)`, following `startKey` until it is absent, and, when present, inspect its parent row separately by name.
+- Many named jobs: call `searchJobs(jobNames=[...])` once, not `getJobs` per name. Unmatched names return in `notFound`.
 - Active work: poll `getJobs` at 15-30 second intervals through a bounded client wait/session. Stop at a finite deadline and report the current state.
 - Failed work: call `getJobLogs(jobName=..., maxLines=200)` and explain the actionable failure without automatically resubmitting.
 
