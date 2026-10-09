@@ -1,6 +1,6 @@
 ---
 name: tamarind-mcp-developability
-description: Assess existing protein or antibody candidates for stability, aggregation, solubility, viscosity, polyreactivity, glycosylation, immunogenicity, and related developability risks with Tamarind Bio through MCP. Use as a post-design filter for clearly benign research and development. Not for molecule generation or redesign, clinical decisions, or harmful biological work.
+description: Assess existing protein or antibody candidates for stability, aggregation, solubility, viscosity, polyreactivity, glycosylation, immunogenicity, and related developability risks with Tamarind Bio through MCP. Use as a post-design filter for clearly benign research and development. Not for molecule generation or redesign, folding structures, measuring binding alone, clinical decisions, or harmful biological work.
 ---
 
 # Filter candidates for developability
