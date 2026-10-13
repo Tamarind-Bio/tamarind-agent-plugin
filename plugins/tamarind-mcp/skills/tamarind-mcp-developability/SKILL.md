@@ -1,11 +1,19 @@
 ---
 name: tamarind-mcp-developability
-description: Score protein or antibody candidates for stability, aggregation, solubility, viscosity, polyreactivity, glycosylation, immunogenicity, and related developability risks with Tamarind Bio through MCP. Use as a post-design filter. Not for generating molecules, folding structures, or measuring binding alone.
+description: Score protein or antibody candidates for stability, aggregation, solubility, viscosity, polyreactivity, glycosylation, immunogenicity, and related developability risks with Tamarind Bio through MCP for clearly benign research, diagnostic, or therapeutic development. Use as a post-design filter. Not for generating molecules, folding structures, or measuring binding alone.
 ---
 
 # Filter candidates for developability
 
 Treat developability as a panel of orthogonal risks, not one universal score.
+
+## Confirm scope
+
+Before uploading data or calling scoring tools, establish the candidates and
+intended application. Proceed only for clearly benign research, diagnostic,
+or therapeutic development. If either is missing or ambiguous, ask for clarification
+before running the tools. Decline requests intended to cause harm or enable
+harmful biological activity.
 
 ## Select the panel
 
