@@ -34,4 +34,4 @@ Model size, task, sequence length, and generation/sample count are consequential
 
 Parse the output, select a diverse subset, and fold each sequence through a structure tool. Put sequences in the downstream `sequence` field, not a template or structure-file field. Use `tamarind-batch` for the independent folds.
 
-CLI 0.2 does not expose `fromJob` or a general remote file-list command; download, inspect, and explicitly marshal artifacts between stages.
+CLI 0.2 has no batch mode that reads a prior job's output and no general remote file-list command; download, inspect, choose the sequences, and explicitly marshal artifacts between stages.

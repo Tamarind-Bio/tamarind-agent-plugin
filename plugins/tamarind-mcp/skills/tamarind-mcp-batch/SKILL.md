@@ -11,19 +11,20 @@ A batch multiplies throughput and possible weighted-hour spend. Keep one tool an
 
 Inspect the tool with `getJobSchema`, then use exactly one `submitBatch` mode:
 
-1. `fromJob`: use a completed sequence-design job as the source when every downstream row consists of that generated sequence in one `sequenceField`.
-2. `fromFile`: use a workspace FASTA/CSV filename or an exact prior-job `s3Path`.
-3. `settings` plus matching `jobNames`: use explicit per-job settings when rows need full individual control.
+1. `settings` plus matching `jobNames`: use explicit per-job settings when rows need full individual control.
+2. `fromFile`: use a workspace FASTA/CSV filename or an exact prior-job `s3Path`; each record becomes one row with its sequence in `sequenceField`.
 
-Use `topN` to bound generated-sequence fan-out and `sharedSettings` only for fields valid for every generated row. Do not call `submitJob` in a loop.
+Use `topN` to bound `fromFile` fan-out and `sharedSettings` only for fields valid for every row. Do not call `submitJob` in a loop.
 
-`fromJob` and `fromFile` do not construct target-candidate complexes. If the downstream schema requires a combined target and candidate value such as `TARGET:BINDER`, build explicit per-row `settings` plus `jobNames`; otherwise the batch may fold or score the candidate alone.
+There is no mode that reads a prior job's output for you. To refold generated sequences, read the completed job's results with `listJobFiles` and targeted `getJobFile`, choose the sequences yourself (which file holds the designs, which record is the native input, which metric and direction to rank by), then pass them as explicit `settings` or point `fromFile` at the exact sequence-file `s3Path` or an uploaded FASTA/CSV of your selection. Nothing about the downstream configuration comes from the source job.
+
+`fromFile` does not construct target-candidate complexes. If the downstream schema requires a combined target and candidate value such as `TARGET:BINDER`, build explicit per-row `settings` plus `jobNames`; otherwise the batch may fold or score the candidate alone.
 
 ## Validate and estimate
 
 For explicit mode, pass the whole row set to `validateJob` in one call: `settings` takes an array of any length. Every row is checked, so do not sample and do not call the tool once per row. Read the per-row verdicts in `results` and require `valid: true` without `mutatedFields` for every row. Check duplicate names, file availability, input count, sampling settings, and schema compatibility.
 
-For `fromJob` or `fromFile`, inspect the source and validate a representative final settings object containing the intended sequence field and shared settings. Treat server-side expansion as consequential even when not all generated rows can be prevalidated client-side.
+For `fromFile`, inspect the source and validate a representative final settings object containing the intended sequence field and shared settings. Treat server-side expansion as consequential even when not all generated rows can be prevalidated client-side.
 
 Call `estimateTime` for each distinct settings shape. Multiply by the intended row count or use the returned expansion count. Surface the total count, wall-clock interpretation, and weighted hours when available.
 

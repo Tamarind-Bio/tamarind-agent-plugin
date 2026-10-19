@@ -39,6 +39,6 @@ python3 "$SKILL_DIR/scripts/summarize_binder_metrics.py" /absolute/path/to/extra
 
 ## Design-to-fold handoff
 
-For generated sequences, create a fold batch whose per-job settings use the downstream tool's `sequence` field. For generated structures, download and inspect exact artifact paths, upload selected files, and use the returned filenames. CLI 0.2 does not provide a general result-file list or `fromJob` batch shortcut, so do not guess remote paths.
+For generated sequences, create a fold batch whose per-job settings use the downstream tool's `sequence` field. For generated structures, download and inspect exact artifact paths, upload selected files, and use the returned filenames. CLI 0.2 does not provide a general result-file list, and no batch mode reads a prior job's output for you, so download the results, choose the sequences or files yourself, and do not guess remote paths.
 
 Submit original validated settings, not normalized validation output.
