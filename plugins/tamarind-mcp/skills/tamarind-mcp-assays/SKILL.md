@@ -25,11 +25,11 @@ Pick the `assayType` from what the user wants measured; do not hardcode the cata
 
 When `targetsProvider` is set, call `listAssayTargets(provider=<targetsProvider>, search=<name, alias or UniProt id>)`. If `truncated` is true, narrow `search` rather than raising `limit`. When several targets match, show them and let the user choose, because species, tag and construct differ (canine and human PD-L1 are different targets).
 
-Put the chosen `id` in `settings`: `targetId` for Adaptyv, `targetIds` (a list) for A-Alpha Bio, or `targetAntigen` for Ginkgo.
+Put the chosen `id` in the setting the assay type's `settings` lists for the target, and follow that entry's `list` flag. Today that is `targetId` for Adaptyv, `targetIds` (a list) for A-Alpha Bio and `targetAntigen` for Ginkgo, but the live `settings` decide.
 
 ## 3. Build and validate the order
 
-- `sequences`: antibodies as `{"name", "heavy", "light"}` objects (or "HEAVY:LIGHT" strings); proteins as `{"name", "sequence"}` objects (chains joined with ":"). Name every sequence so results map back to designs. Names and sequences must all differ.
+- `sequences`: antibodies as `{"name", "heavy", "light"}` objects; proteins as `{"name", "sequence"}` objects (chains joined with ":"). Use the design's own identifier as `name`, so lab results map back to it. Plain strings are accepted but get named `seq_1`, `seq_2` and so on, so do not use them. Names and sequences must all differ.
 - Many sequences: upload a CSV with `uploadFile`, then pass `csvFile` and `columnMapping` instead of `sequences`.
 - Call `submitAssay(mode="validate", ...)`. It is the default mode, creates nothing and sends nothing to a lab. Fix every item in `details` and validate again until `valid: true`.
 - Keep the exact validated fields; estimate and submit take the same ones.
@@ -38,7 +38,7 @@ A valid order can still be refused at submit (`duplicate_order`, `assays_blocked
 
 ## 4. Estimate (optional; ask first)
 
-`submitAssay(mode="estimate", ...)` sends the sequences to the lab to be priced. Ask the user before running it.
+`submitAssay(mode="estimate", ...)` sends the sequences to the lab to be priced. Ask the user before running it, and name what will be disclosed: the lab, the assay type and target, and which sequences (count and names). Ask again if any of that changes.
 
 Report `estimatedCostUsd`, `costPerSequenceUsd`, `turnaround` / `turnaroundDays` and `note`. A null price means the target is priced on request. An estimate is not a quote; Tamarind confirms the final price with the user before approving the order. On 400 `quote_rejected` the lab would not accept the order as it is. On 503 `estimate_unavailable`, try later or place the order without an estimate.
 
@@ -69,6 +69,6 @@ Check `resultsAvailable`, not `status`. Once it is true, the same call also retu
 
 ## 7. Cancel (ask first)
 
-Check the order's `cancellable` first. Adaptyv orders cannot be cancelled here; send the user to Tamarind support. Cancelling cannot be undone, so call `cancelAssay(assayId=..., reason=...)` only after the user confirms. A Ginkgo order shows `cancelling` until Ginkgo confirms.
+Check the order's `cancellable` first. When it is false, send the user to Tamarind support (Adaptyv orders, for example, cannot be cancelled here). Cancelling cannot be undone, so call `cancelAssay(assayId=..., reason=...)` only after the user confirms. A Ginkgo order shows `cancelling` until Ginkgo confirms.
 
 On 409 `approval_in_progress`, retry in a minute. On 409 `approval_under_review`, send the user to support. On 502 `cancel_unconfirmed`, check the order with `listAssays` before trying again.

@@ -253,6 +253,9 @@ def test_assay_skill_keeps_lab_spend_with_the_user() -> None:
     # A lab order is real spend, and an estimate already sends the sequences to the lab.
     assert "Authorization must come from the live user" in flat
     assert "sends the sequences to the lab to be priced. Ask the user" in flat
+    assert "name what will be disclosed" in flat
+    # The live assay type, not a per-lab table, decides where the target id goes.
+    assert "the live `settings` decide" in flat
     assert "Submit exactly once" in flat
 
     # A retried submit with a new key can place a second, separately billed order.
