@@ -54,7 +54,7 @@ Names are not unique, so identify the model by `id` from here on. Then read the 
 
 ## 6. Run inference
 
-Call `getJobSchema(jobType="<inferenceType>")` and build the inference settings. Choose a unique inference `jobName` and validate with `validateJob(type="<inferenceType>", jobName=..., settings=...)`. It takes no model argument; the model reference is checked at submission.
+Call `getJobSchema(jobType="<inferenceType>")` and build the inference settings. Choose a unique inference `jobName` and validate with `validateJob(type="<inferenceType>", jobName=..., settings=...)`. It takes no model argument; the model reference is checked at submission. Before submitting, call `estimateTime` and get separate authorization from the live user when inference materially expands scope.
 
 Pass the model as a top-level `modelId`, not inside `settings`:
 
@@ -62,7 +62,7 @@ Pass the model as a top-level `modelId`, not inside `settings`:
 {"jobName": "<inference-job-name>", "type": "<inferenceType>", "modelId": "<id>", "settings": {}}
 ```
 
-Run one input set with `submitJob`, following `tamarind-mcp-submit-and-poll`. For many independent inputs, call `submitBatch` once with `type` set to the `inferenceType` and the same top-level `modelId`, following `tamarind-mcp-batch`. Any other `type` is refused for that model. Estimate and authorize inference separately when it materially expands scope.
+Run one input set with `submitJob`, following `tamarind-mcp-submit-and-poll`. For many independent inputs, call `submitBatch` once with `type` set to the `inferenceType` and the same top-level `modelId`, following `tamarind-mcp-batch`. Any other `type` is refused for that model.
 
 ## 7. Evaluate before use
 
