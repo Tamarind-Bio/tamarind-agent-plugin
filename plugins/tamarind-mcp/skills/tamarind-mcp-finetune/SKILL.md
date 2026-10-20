@@ -21,7 +21,7 @@ Check required columns, target units, identifiers, split strategy, class balance
 
 ## 3. Validate, estimate, authorize
 
-Choose a unique `jobName` (letters, digits, `_` or `-`; the trained model takes this name). Call `validateJob(type="<trainer>", jobName=..., settings=...)` and require `valid: true` with no `mutatedFields`.
+Choose a unique `jobName` (letters, digits, `_` or `-`; the trained model takes this name). Call `validateJob(type="<trainer>", jobName=..., settings=...)` and require `valid: true` with no `mutatedFields`. To train a new version of an existing model, put its `id` (a model trained with the same trainer) in `settings.parentModelId` first, so validation checks the parent and the settings you submit are the ones that passed.
 
 Call `estimateTime` with the same type and settings. Treat a finetune estimate as a placeholder, neither a forecast nor a cap: for `chemprop-finetune` it returned a flat 3600 s and 1 weighted hour whatever the epoch count. A 5-epoch run on 66 rows finished in about 32 s, while a large dataset trained for many epochs can run for hours. Say so when asking for authorization.
 
@@ -32,7 +32,6 @@ Surface the trainer, base model, epochs or steps, dataset size, split, and the e
 Follow `tamarind-mcp-submit-and-poll` for the lifecycle, with `submitFinetuningRun` in place of `submitJob`:
 
 - Call `submitFinetuningRun(model="<trainer>", jobName=..., settings=...)` once. `model` is the trainer name, the field `submitJob` calls `type`.
-- Add `parentModelId` (a model `id` from `listFinetunedModels`, trained with the same trainer) only to train a new version of that model.
 - Add `projectTag` when the organization requires one. The 400's `availableProjects` is capped and can be absent; if it does not hold the intended project, call `listProjects` (only an `org`-scope project satisfies the policy), and ask the user when more than one could fit.
 - Poll with the returned `jobName`; it is the stored name. If `endpoint` is not `/finetune`, the run was accepted as an ordinary job and may register no model, so say so.
 - If the response is ambiguous, query `getJobs(jobName=...)` before any retry. Poll `getJobs` with a finite deadline; a local timeout never authorizes resubmission.
@@ -43,7 +42,11 @@ For a sweep (several training runs with one trainer), do not loop `submitFinetun
 
 After the training job reaches an explicit success state, call `listFinetunedModels(type="<trainer>")` with the default `limit`. A small `limit` currently files the caller's own models under `organizationModels`, so search both `personalModels` and `organizationModels`.
 
-Find the row whose `name` is the training job name, that has no `owner` (a teammate's row carries one), and that was `created` after you submitted. If more than one row still matches, stop and ask rather than picking one. Names are not unique, so identify the model by `id` from here on. Then read the row:
+Find the row whose `name` is the training job name, that has no `owner` (a teammate's row carries one), and that was `created` after you submitted. If more than one row still matches, stop and ask rather than picking one.
+
+For a model that already exists, use the `id` the user gives. Otherwise call `listFinetunedModels` (with `type` when the trainer is known) and let the user choose from the candidate rows, showing `name`, `owner`, `type`, `created`, and `status`.
+
+Names are not unique, so identify the model by `id` from here on. Then read the row:
 
 - Only `status: "Available"` can run. If it is not Available yet, check again within the same finite deadline instead of retraining.
 - `inferenceType` is the tool that runs the model; do not guess it from the trainer's name. A null `inferenceType` means the model has no inference tool.
