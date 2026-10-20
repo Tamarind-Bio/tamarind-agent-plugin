@@ -23,7 +23,7 @@ Check required columns, target units, identifiers, split strategy, class balance
 
 Choose a unique `jobName` (letters, digits, `_` or `-`; the trained model takes this name). Call `validateJob(type="<trainer>", jobName=..., settings=...)` and require `valid: true` with no `mutatedFields`.
 
-Call `estimateTime` with the same type and settings. Treat a finetune estimate as an upper bound, not a forecast: for `chemprop-finetune` it returned a flat 3600 s and 1 weighted hour whatever the epoch count, while a 5-epoch run on 66 rows finished in about 32 s.
+Call `estimateTime` with the same type and settings. Treat a finetune estimate as a placeholder, neither a forecast nor a cap: for `chemprop-finetune` it returned a flat 3600 s and 1 weighted hour whatever the epoch count. A 5-epoch run on 66 rows finished in about 32 s, while a large dataset trained for many epochs can run for hours. Say so when asking for authorization.
 
 Surface the trainer, base model, epochs or steps, dataset size, split, and the estimate. Training spends compute; get explicit authorization from the live user before submitting.
 
@@ -33,17 +33,17 @@ Follow `tamarind-mcp-submit-and-poll` for the lifecycle, with `submitFinetuningR
 
 - Call `submitFinetuningRun(model="<trainer>", jobName=..., settings=...)` once. `model` is the trainer name, the field `submitJob` calls `type`.
 - Add `parentModelId` (a model `id` from `listFinetunedModels`, trained with the same trainer) only to train a new version of that model.
-- Add `projectTag` when the organization requires one; the 400 lists `availableProjects` to choose from.
+- Add `projectTag` when the organization requires one. The 400's `availableProjects` is capped and can be absent; if it does not hold the intended project, call `listProjects` (only an `org`-scope project satisfies the policy), and ask the user when more than one could fit.
 - Poll with the returned `jobName`; it is the stored name. If `endpoint` is not `/finetune`, the run was accepted as an ordinary job and may register no model, so say so.
 - If the response is ambiguous, query `getJobs(jobName=...)` before any retry. Poll `getJobs` with a finite deadline; a local timeout never authorizes resubmission.
 
-For a sweep (several training runs with one trainer), do not loop `submitFinetuningRun`. Call `submitBatch` once with the trainer as `type` and one settings row and job name per run, following `tamarind-mcp-batch`.
+For a sweep (several training runs with one trainer), do not loop `submitFinetuningRun`. Call `submitBatch` once with the trainer as `type` and one settings row and job name per run, following `tamarind-mcp-batch`. It sends a finetune batch to the finetuning batch route itself; `endpoint` in the result names the route that accepted it.
 
 ## 5. Find the trained model
 
 After the training job reaches an explicit success state, call `listFinetunedModels(type="<trainer>")` with the default `limit`. A small `limit` currently files the caller's own models under `organizationModels`, so search both `personalModels` and `organizationModels`.
 
-Find the row whose `name` is the training job name and carry its `id` forward. Names are not unique, so identify the model by `id` from here on. Then read the row:
+Find the row whose `name` is the training job name, that has no `owner` (a teammate's row carries one), and that was `created` after you submitted. If more than one row still matches, stop and ask rather than picking one. Names are not unique, so identify the model by `id` from here on. Then read the row:
 
 - Only `status: "Available"` can run. If it is not Available yet, check again within the same finite deadline instead of retraining.
 - `inferenceType` is the tool that runs the model; do not guess it from the trainer's name. A null `inferenceType` means the model has no inference tool.
@@ -51,12 +51,12 @@ Find the row whose `name` is the training job name and carry its `id` forward. N
 
 ## 6. Run inference
 
-Call `getJobSchema(jobType="<inferenceType>")` and build the inference settings. Validate them with `validateJob(type="<inferenceType>", settings=...)`. It takes no model argument; the model reference is checked at submission.
+Call `getJobSchema(jobType="<inferenceType>")` and build the inference settings. Choose a unique inference `jobName` and validate with `validateJob(type="<inferenceType>", jobName=..., settings=...)`. It takes no model argument; the model reference is checked at submission.
 
 Pass the model as a top-level `modelId`, not inside `settings`:
 
 ```json
-{"jobName": "my-predictions", "type": "<inferenceType>", "modelId": "<id>", "settings": {}}
+{"jobName": "<inference-job-name>", "type": "<inferenceType>", "modelId": "<id>", "settings": {}}
 ```
 
 Run one input set with `submitJob`, following `tamarind-mcp-submit-and-poll`. For many independent inputs, call `submitBatch` once with `type` set to the `inferenceType` and the same top-level `modelId`, following `tamarind-mcp-batch`. Any other `type` is refused for that model. Estimate and authorize inference separately when it materially expands scope.

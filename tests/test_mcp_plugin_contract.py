@@ -265,11 +265,16 @@ def test_finetune_uses_the_dedicated_finetuning_tools() -> None:
 
     # Measured in a prod end-to-end run (2026-10-20).
     #   - a small `limit` files the caller's own models under organizationModels
-    #   - estimateTime is flat for chemprop-finetune regardless of epochs
+    #   - estimateTime is flat for chemprop-finetune regardless of epochs, so it
+    #     is neither a forecast nor a cap (the website's own benchmark measured
+    #     3224 s for 50,000 rows x 10 epochs; epochs scale it from there)
     #   - validateJob never opens the CSV, so a wrong column name validates
     assert "default `limit`" in flat
     assert "identify the model by `id`" in flat
-    assert "upper bound, not a forecast" in flat
+    # The caller's own row never carries `owner`, even when misfiled.
+    assert "that has no `owner`" in flat
+    assert "neither a forecast nor a cap" in flat
+    assert "upper bound" not in flat
     assert "does not compare column-name settings with the file's header" in flat
 
     assert "tamarind-mcp-submit-and-poll" in finetune
