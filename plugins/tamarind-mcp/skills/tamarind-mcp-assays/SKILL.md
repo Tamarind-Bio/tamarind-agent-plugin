@@ -1,6 +1,6 @@
 ---
 name: tamarind-mcp-assays
-description: Order wet-lab assays of designed sequences from Tamarind's partner labs (Adaptyv, Ginkgo, A-Alpha Bio) through MCP, then track the order and download the lab's results. Use when the user wants real lab measurements (binding, expression, stability, developability), a price for them, or the status of an existing order. Not for computational prediction or compute jobs.
+description: Order wet-lab assays of designed sequences from Tamarind's partner labs (Adaptyv, Ginkgo, A-Alpha Bio) through MCP, then track the order and download the lab's results. Use when the user wants real lab measurements (binding, expression, stability, developability), a price for them, or to check or cancel an existing order. Not for computational prediction or compute jobs.
 ---
 
 # Order and track wet-lab assays through MCP
@@ -21,9 +21,9 @@ Call `submitAssay(mode="validate", ...)` until `valid: true`. It creates nothing
 
 ## Submit
 
-Summarize the lab, assay, target, sequence count and any estimate, and submit only after the user confirms. Call `mode="submit"` with a new UUID as `idempotencyKey`. Submit exactly once. If the outcome is unclear, retry with the SAME key and the SAME fields, which returns the original order. Never make a new key to retry.
+Summarize the lab, assay, target, settings and the sequences by name, plus any estimate, and submit only after the user confirms; confirm again if any of it changes. Call `mode="submit"` with a new UUID as `idempotencyKey`. Submit exactly once. If the outcome is unclear, retry with the SAME key and the SAME fields, which returns the original order. Never make a new key to retry.
 
-Follow a refusal's `code`. On `duplicate_order`, ask the user before resending with `confirmDuplicate=true` and a NEW key. With `teamNotified: true`, do not resubmit.
+Follow a refusal's `code`. `duplicate_order` means a recent order (`duplicateOfOrderId`) matches: resend with `confirmDuplicate=true` and a NEW key only if the user wants a second, separately billed order. With `teamNotified: true`, do not resubmit.
 
 ## Follow up and cancel
 
