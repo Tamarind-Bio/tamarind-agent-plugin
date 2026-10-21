@@ -11,6 +11,7 @@
     { "title": "MCP domain tools", "skills": ["tamarind-mcp-structure-prediction", "tamarind-mcp-antibody", "tamarind-mcp-binder-design", "tamarind-mcp-inverse-folding", "tamarind-mcp-docking", "tamarind-mcp-developability", "tamarind-mcp-finetune", "tamarind-mcp-more-tools"] },
     { "title": "MCP scale & orchestration", "skills": ["tamarind-mcp-batch", "tamarind-mcp-pipeline"] },
     { "title": "MCP campaigns", "skills": ["tamarind-mcp-miniprotein-campaign"] },
-    { "title": "MCP author your own tool", "skills": ["tamarind-mcp-custom-tool-deploy"] }
+    { "title": "MCP author your own tool", "skills": ["tamarind-mcp-custom-tool-deploy"] },
+    { "title": "MCP wet-lab assays", "skills": ["tamarind-mcp-assays"] }
   ]
 }
