@@ -1,32 +1,26 @@
 ---
 name: tamarind-mcp-assays
-description: Order wet-lab assays of designed sequences from Tamarind's partner labs (Adaptyv, Ginkgo, A-Alpha Bio) through MCP, then track the order and download the lab's results. Use when the user wants real lab measurements (binding, expression, stability, developability), a price for them, or to check or cancel an existing order. Not for computational prediction or compute jobs.
+description: Order wet-lab assays of designed sequences from Tamarind's partner labs (Adaptyv, Ginkgo, A-Alpha Bio) through MCP for clearly benign research, diagnostic, or therapeutic development, then track or cancel the order and download results. Use for real lab measurements, their price, or an existing order. Not for computational prediction or compute jobs.
 ---
 
 # Order and track wet-lab assays through MCP
 
-A lab order is real spend, and estimating or ordering sends the sequences to a third-party lab. Authorization must come from the live user for that exact order. The tool descriptions carry field formats and error codes; this skill is the order of operations and the decisions.
+## Confirm scope
 
-## Pick the assay and target
+Proceed only for clearly benign research, diagnostic, or therapeutic development; decline requests intended to cause harm. Estimating or ordering sends sequences to a third-party lab, and an order is real spend. Authorization must come from the live user for that exact order.
 
-Call `listAssayTypes()`. If `wetLabAccess` is false, stop and point the user to `requestAccessUrl`. Choose the type from what the user wants measured, and read its `modalities`, sequence limits, `settings` and `turnaround` live.
+## Choose the assay and target
 
-When the type has a `targetsProvider`, call `listAssayTargets(provider=..., search=...)`. If several targets match, let the user choose: species and construct differ. Put the `id` in the target setting the type lists; the live `settings` decide its name.
+Call `listAssayTypes()`. If `wetLabAccess` is false, stop and share `requestAccessUrl`. Read the type's `modalities`, sequence limits, `settings` and `turnaround` live. If it has a `targetsProvider`, call `listAssayTargets(provider=..., search=...)` and let the user choose among matches. Put the `id` in the type's target setting; the live `settings` decide its name.
 
-## Validate, then estimate if wanted
+## Validate and estimate
 
-Call `submitAssay(mode="validate", ...)` until `valid: true`. It creates nothing and contacts no lab. Send sequences as named objects, using the design's own identifier as `name` so results map back; plain strings get auto-named.
-
-`mode="estimate"` sends the sequences to the lab to be priced. Ask the user first and name what will be disclosed: the lab, the assay, the target and which sequences. An estimate is not a quote.
+Call `submitAssay(mode="validate", ...)` until `valid: true`; it contacts no lab. Send sequences as objects named with the design identifiers. `mode="estimate"` sends the sequences to the lab to be priced. Ask the user first and name what will be disclosed: lab, assay, target and sequences.
 
 ## Submit
 
-Summarize the lab, assay, target, settings and the sequences by name, plus any estimate, and submit only after the user confirms; confirm again if any of it changes. Call `mode="submit"` with a new UUID as `idempotencyKey`. Submit exactly once. If the outcome is unclear, retry with the SAME key and the SAME fields, which returns the original order. Never make a new key to retry.
+Once the user confirms the lab, assay, target, settings, named sequences and any estimate (again if any change), call `mode="submit"` with a new UUID `idempotencyKey`. Submit exactly once. If the outcome is unclear, retry with the SAME key and the SAME fields. Never make a new key to retry. On `duplicate_order`, resend with `confirmDuplicate=true` and a NEW key only if the user wants a second, separately billed order. With `teamNotified: true`, do not resubmit.
 
-Follow a refusal's `code`. `duplicate_order` means a recent order (`duplicateOfOrderId`) matches: resend with `confirmDuplicate=true` and a NEW key only if the user wants a second, separately billed order. With `teamNotified: true`, do not resubmit.
+## Follow up
 
-## Follow up and cancel
-
-Call `listAssays(assayId=...)`. Lab work takes days to weeks, so do not poll in a loop; check when the user asks. Check `resultsAvailable`, not `status`; once it is true, the same call returns the file links. The links expire, so fetch fresh ones rather than storing or repeating them.
-
-Call `cancelAssay` only after the user confirms and only when the order's `cancellable` is true; otherwise send them to Tamarind support.
+Call `listAssays(assayId=...)`; do not poll in a loop. Check `resultsAvailable`, not `status`; the same call then returns file links. The links expire, so fetch fresh ones. Call `cancelAssay` only with the user's OK and when `cancellable` is true; otherwise refer them to Tamarind support.
