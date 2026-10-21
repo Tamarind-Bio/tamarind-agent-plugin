@@ -19,7 +19,7 @@ Call `submitAssay(mode="validate", ...)` until `valid: true`; it contacts no lab
 
 ## Submit
 
-Once the user confirms the lab, assay, target, settings, named sequences and any estimate (again if any change), call `mode="submit"` with a new UUID `idempotencyKey`. Submit exactly once. If the outcome is unclear, retry with the SAME key and the SAME fields. Never make a new key to retry. On `duplicate_order`, resend with `confirmDuplicate=true` and a NEW key only if the user wants a second, separately billed order. With `teamNotified: true`, do not resubmit.
+Once the user confirms the lab, assay, target, settings, named sequences and any estimate (again if any change), call `mode="submit"` with a new UUID `idempotencyKey`. Submit exactly once. If the outcome is unclear, retry with the SAME key and the SAME fields. Never make a new key to retry. On `duplicate_order`, show the user `duplicateOfOrderId` and resend with `confirmDuplicate=true` and a NEW key only if the user wants a second, separately billed order. With `teamNotified: true`, do not resubmit.
 
 ## Follow up
 
