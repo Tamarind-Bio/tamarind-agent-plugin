@@ -23,4 +23,4 @@ Once the user confirms the lab, assay, target, settings, named sequences and any
 
 ## Follow up
 
-Call `listAssays(assayId=...)`; do not poll in a loop. Check `resultsAvailable`, not `status`; the same call then returns file links. The links expire, so fetch fresh ones. Call `cancelAssay` only with the user's OK and when `cancellable` is true; otherwise refer them to Tamarind support.
+Call `listAssays(assayId=...)`; do not poll in a loop. Check `resultsAvailable`, not `status`; the same call then returns file links. The links expire and are sensitive: fetch fresh ones, and never store or repeat them. Call `cancelAssay` only with the user's OK and when `cancellable` is true; otherwise refer them to Tamarind support.

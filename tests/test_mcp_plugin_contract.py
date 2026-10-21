@@ -267,6 +267,7 @@ def test_assay_skill_keeps_lab_spend_with_the_user() -> None:
     # Results: readiness is a flag, not a status, and the links expire.
     assert "Check `resultsAvailable`, not `status`" in flat
     assert "The links expire" in flat
+    assert "never store or repeat them" in flat
     assert "do not poll in a loop" in flat
 
 
