@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.14"
+    assert manifest["version"] == "0.1.15"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -238,6 +238,49 @@ def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
     # Reads lag completion by minutes; combined with the finite-deadline rule this manufactures
     # confident false "stalled"/"empty" reports on runs that actually succeeded.
     assert "eventually consistent" in flat
+
+
+def test_finetune_uses_the_dedicated_finetuning_tools() -> None:
+    finetune = (SKILLS / "tamarind-mcp-finetune/SKILL.md").read_text()
+    flat = " ".join(finetune.split())
+
+    # The skill predated the server's finetuning tools and taught discovery via
+    # getAvailableTools(function="finetuning") and training via submitJob.
+    for tool in (
+        "getAvailableModels",
+        "submitFinetuningRun",
+        "listFinetunedModels",
+        "submitBatch",
+        "parentModelId",
+        "inferenceType",
+    ):
+        assert tool in finetune, tool
+    assert 'function="finetuning"' not in finetune
+
+    # A finetuned model runs as its inferenceType with modelId as a TOP-LEVEL
+    # submitJob/submitBatch field, never a setting.
+    assert "top-level `modelId`, not inside `settings`" in flat
+    assert '"modelId": "<id>", "settings"' in finetune
+    assert '`status: "Available"`' in finetune
+
+    # Measured in a prod end-to-end run (2026-10-20).
+    #   - a small `limit` files the caller's own models under organizationModels
+    #   - estimateTime is flat for chemprop-finetune regardless of epochs, so it
+    #     is neither a forecast nor a cap (the website's own benchmark measured
+    #     3224 s for 50,000 rows x 10 epochs; epochs scale it from there)
+    #   - validateJob never opens the CSV, so a wrong column name validates
+    assert "default `limit`" in flat
+    assert "identify the model by `id`" in flat
+    # The caller's own row never carries `owner`, even when misfiled.
+    assert "that has no `owner`" in flat
+    assert "neither a forecast nor a cap" in flat
+    assert "upper bound" not in flat
+    assert "does not compare column-name settings with the file's header" in flat
+
+    assert "tamarind-mcp-submit-and-poll" in finetune
+    assert "no `mutatedFields`" in finetune
+    assert "finite deadline" in finetune
+    assert "do not loop `submitFinetuningRun`" in flat
 
 
 def test_assay_skill_keeps_lab_spend_with_the_user() -> None:

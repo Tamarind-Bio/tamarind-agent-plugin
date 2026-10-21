@@ -1,26 +1,30 @@
 ---
 name: tamarind-mcp-finetune
-description: Fine-tune a supported Tamarind-hosted model on labeled data and run its matching inference tool through MCP. Use for live account-visible finetune/inference pairs in protein, affinity, enzyme, or small-molecule workflows. Not for stock inference, ordinary batch prediction, or unsupported custom training code.
+description: Fine-tune (train) a Tamarind-hosted model on the user's labeled data with submitFinetuningRun, then run it by modelId through MCP, for clearly benign research, diagnostic, or therapeutic development. Use for training or retraining a property, affinity, fitness, or enzyme predictor, a training sweep, or running a model from listFinetunedModels. Not for stock inference or custom training code.
 ---
 
-# Fine-tune and run inference through MCP
+# Fine-tune and run a model through MCP
 
-Treat training and inference as two durable, separately validated jobs with explicit data and evaluation boundaries.
+## Confirm scope
 
-## Confirm a supported pair
+Proceed only for clearly benign research, diagnostic, or therapeutic development; decline requests intended to cause harm. Training and inference spend compute, so get explicit authorization from the live user before each.
 
-Call `getAvailableTools(function="finetuning")` or use a narrow `search`. Inspect both the training and inference tools with `getJobSchema`. Require the live schemas to document the handoff; do not infer a pair from names alone.
+## Train
 
-## Prepare training
+Find trainers with `getAvailableModels()` and their settings with `getJobSchema(jobType="<trainer>")`. Check the data's columns, units, split, balance, leakage and size, then `uploadFile` it. `validateJob` does not compare column-name settings with the file's header, so check them yourself.
 
-Check required columns, target units, identifiers, split strategy, class balance, leakage, held-out evaluation, and size limits. Upload the dataset with `uploadFile` and use the returned bare filename.
+Call `validateJob(type="<trainer>", jobName=..., settings=...)` and require `valid: true` with no `mutatedFields`; set `settings.parentModelId` first when retraining a model. Call `estimateTime`, but say a finetune estimate is neither a forecast nor a cap. Show the trainer, base model, epochs, data size, split and the estimate, and after authorization call `submitFinetuningRun(model="<trainer>", jobName=..., settings=...)` once, adding `projectTag` if required (`listProjects` if the 400 lacks it). Follow `tamarind-mcp-submit-and-poll` with a finite deadline, with `submitFinetuningRun` in place of `submitJob`. For a sweep, do not loop `submitFinetuningRun`; use one `submitBatch` with the trainer as `type`, following `tamarind-mcp-batch`.
 
-Call `validateJob` for the training payload, require no mutation warning, and call `estimateTime`. Surface the base model, epochs or steps, dataset size, split, expected runtime, and weighted hours when available. Obtain explicit authorization because training can be materially expensive.
+## Find the model
 
-## Train and infer
+Call `listFinetunedModels(type="<trainer>")` with the default `limit`; a small one misfiles your own models. Take the row named after the training job that has no `owner` and was `created` after submission. Ask if several match; if none is listed or Available yet, check again rather than retraining. For an existing model, use the user's `id` or let them choose. Then identify the model by `id`. Only `status: "Available"` runs, through its `inferenceType` (null means none).
 
-Run training with `tamarind-mcp-submit-and-poll`. Require an explicit success state. Inspect `listJobFiles` and the training row for the exact trained-model reference required by the inference schema.
+## Run and evaluate
 
-Build and validate the inference payload with that exact reference. Estimate and separately authorize inference when it materially expands scope, then run it through `tamarind-mcp-submit-and-poll` or `tamarind-mcp-batch` for many independent inputs.
+Validate and estimate the `inferenceType` job, then pass the model as a top-level `modelId`, not inside `settings`:
 
-Evaluate on held-out data and compare against the stock/base model. Report leakage risks, calibration limits, dataset applicability, and uncertainty before using predictions downstream.
+```json
+{"jobName": "<name>", "type": "<inferenceType>", "modelId": "<id>", "settings": {}}
+```
+
+Use `submitJob` for one input set or one `submitBatch` for many, following `tamarind-mcp-submit-and-poll` or `tamarind-mcp-batch`. Compare against the base model on held-out data, and report leakage, the training data's applicability domain and uncertainty.
