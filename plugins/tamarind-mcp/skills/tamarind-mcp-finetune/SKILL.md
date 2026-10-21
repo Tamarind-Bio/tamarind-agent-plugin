@@ -13,7 +13,7 @@ Proceed only for clearly benign research, diagnostic, or therapeutic development
 
 Find trainers with `getAvailableModels()` and their settings with `getJobSchema(jobType="<trainer>")`. Check the data's columns, units, split, balance, leakage and size, then `uploadFile` it. `validateJob` does not compare column-name settings with the file's header, so check them yourself.
 
-Call `validateJob(type="<trainer>", jobName=..., settings=...)` and require `valid: true` with no `mutatedFields`; set `settings.parentModelId` first when retraining a model. Call `estimateTime`, but say a finetune estimate is neither a forecast nor a cap. Show the trainer, base model, epochs, data size and split, and after authorization call `submitFinetuningRun(model="<trainer>", jobName=..., settings=...)` once, adding `projectTag` if required (`listProjects` if the 400 lacks it). Follow `tamarind-mcp-submit-and-poll` with a finite deadline. For a sweep, do not loop `submitFinetuningRun`; use one `submitBatch` with the trainer as `type`.
+Call `validateJob(type="<trainer>", jobName=..., settings=...)` and require `valid: true` with no `mutatedFields`; set `settings.parentModelId` first when retraining a model. Call `estimateTime`, but say a finetune estimate is neither a forecast nor a cap. Show the trainer, base model, epochs, data size, split and the estimate, and after authorization call `submitFinetuningRun(model="<trainer>", jobName=..., settings=...)` once, adding `projectTag` if required (`listProjects` if the 400 lacks it). Follow `tamarind-mcp-submit-and-poll` with a finite deadline. For a sweep, do not loop `submitFinetuningRun`; use one `submitBatch` with the trainer as `type`, following `tamarind-mcp-batch`.
 
 ## Find the model
 
@@ -27,4 +27,4 @@ Validate and estimate the `inferenceType` job, then pass the model as a top-leve
 {"jobName": "<name>", "type": "<inferenceType>", "modelId": "<id>", "settings": {}}
 ```
 
-Use `submitJob` for one input set or one `submitBatch` for many, following `tamarind-mcp-submit-and-poll` or `tamarind-mcp-batch`. Compare against the base model on held-out data, and report leakage and uncertainty.
+Use `submitJob` for one input set or one `submitBatch` for many, following `tamarind-mcp-submit-and-poll` or `tamarind-mcp-batch`. Compare against the base model on held-out data, and report leakage, the training data's applicability domain and uncertainty.
