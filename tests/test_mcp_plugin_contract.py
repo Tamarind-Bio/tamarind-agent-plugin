@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.13"
+    assert manifest["version"] == "0.1.14"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -78,7 +78,7 @@ def test_every_mcp_skill_has_metadata_and_server_dependency() -> None:
     skill_dirs = sorted(
         path for path in SKILLS.iterdir() if (path / "SKILL.md").is_file()
     )
-    assert len(skill_dirs) == 16
+    assert len(skill_dirs) == 17
 
     for skill_dir in skill_dirs:
         skill_path = skill_dir / "SKILL.md"
@@ -238,6 +238,37 @@ def test_batch_and_pipeline_use_supported_mcp_primitives() -> None:
     # Reads lag completion by minutes; combined with the finite-deadline rule this manufactures
     # confident false "stalled"/"empty" reports on runs that actually succeeded.
     assert "eventually consistent" in flat
+
+
+def test_assay_skill_keeps_lab_spend_with_the_user() -> None:
+    assays = (SKILLS / "tamarind-mcp-assays/SKILL.md").read_text()
+    flat = " ".join(assays.split())
+
+    # The five MCP tools, and submitAssay's three modes in order of consequence.
+    for tool in ("listAssayTypes", "listAssayTargets", "submitAssay", "listAssays", "cancelAssay"):
+        assert tool in assays, tool
+    for mode in ('mode="validate"', 'mode="estimate"', 'mode="submit"'):
+        assert mode in assays, mode
+
+    # A lab order is real spend, and an estimate already sends the sequences to the lab.
+    assert "Authorization must come from the live user" in flat
+    assert "sends the sequences to the lab to be priced. Ask the user" in flat
+    assert "name what will be disclosed" in flat
+    # The live assay type, not a per-lab table, decides where the target id goes.
+    assert "the live `settings` decide" in flat
+    assert "Submit exactly once" in flat
+
+    # A retried submit with a new key can place a second, separately billed order.
+    assert "retry with the SAME key and the SAME fields" in flat
+    assert "Never make a new key to retry" in flat
+    assert "`confirmDuplicate=true` and a NEW key" in flat
+    assert "`teamNotified: true`" in flat and "do not resubmit" in flat
+
+    # Results: readiness is a flag, not a status, and the links expire.
+    assert "Check `resultsAvailable`, not `status`" in flat
+    assert "The links expire" in flat
+    assert "never store or repeat them" in flat
+    assert "do not poll in a loop" in flat
 
 
 def test_cli_plugin_remains_cli_only() -> None:

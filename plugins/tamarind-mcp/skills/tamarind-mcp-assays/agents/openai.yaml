@@ -1,0 +1,11 @@
+interface:
+  display_name: "Tamarind MCP Wet-Lab Assays"
+  short_description: "Order and track wet-lab assays through MCP"
+  default_prompt: "Use $tamarind-mcp-assays to validate, price and place this wet-lab assay order."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "tamarind"
+      description: "Authenticated Tamarind Bio MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.tamarind.bio/mcp"
