@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.15"
+    assert manifest["version"] == "0.1.16"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -300,6 +300,8 @@ def test_assay_skill_keeps_lab_spend_with_the_user() -> None:
     # The live assay type, not a per-lab table, decides where the target id goes.
     assert "the live `settings` decide" in flat
     assert "Submit exactly once" in flat
+    # Validation is a format check; the lab can still refuse the order.
+    assert "`quote_rejected`" in flat
 
     # A retried submit with a new key can place a second, separately billed order.
     assert "retry with the SAME key and the SAME fields" in flat
