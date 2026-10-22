@@ -15,7 +15,7 @@ Call `listAssayTypes()`. If `wetLabAccess` is false, stop and share `requestAcce
 
 ## Validate and estimate
 
-Call `submitAssay(mode="validate", ...)` until `valid: true`; it contacts no lab. Send sequences as objects named with the design identifiers. `mode="estimate"` sends the sequences to the lab to be priced. Ask the user first and name what will be disclosed: lab, assay, target and sequences.
+Call `submitAssay(mode="validate", ...)` until `valid: true`; it contacts no lab. `valid: true` means well formed, not accepted: the lab can still refuse the order at estimate (`quote_rejected`), so pass its reasons to the user. Send sequences as objects named with the design identifiers. `mode="estimate"` sends the sequences to the lab to be priced. Ask the user first and name what will be disclosed: lab, assay, target and sequences.
 
 ## Submit
 
