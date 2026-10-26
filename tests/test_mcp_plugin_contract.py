@@ -30,7 +30,7 @@ def test_mcp_plugin_manifests_and_server_config() -> None:
     assert manifest["name"] == "tamarind-mcp"
     # Bump on every shipped change: hosts cache the plugin in a version-keyed
     # directory, so an unchanged version can serve a stale `.mcp.json`.
-    assert manifest["version"] == "0.1.17"
+    assert manifest["version"] == "0.1.18"
     assert claude_manifest["name"] == manifest["name"]
     assert claude_manifest["version"] == manifest["version"]
     assert manifest["skills"] == "./skills/"
@@ -247,9 +247,9 @@ def test_finetune_uses_the_dedicated_finetuning_tools() -> None:
     # The skill predated the server's finetuning tools and taught discovery via
     # getAvailableTools(function="finetuning") and training via submitJob.
     for tool in (
-        "getAvailableFinetunedModels",
+        "getAvailableModels",
         "submitFinetuningRun",
-        "listMyFinetunedModels",
+        "listFinetunedModels",
         "submitBatch",
         "parentModelId",
         "inferenceType",
