@@ -124,12 +124,12 @@ pipeline builder. You can add outputs later without rebuilding the image.
 
 ## What is validated where
 
-- **By `deployCustomTool(validateOnly=True)`**: `Dockerfile` present, `run.sh` present (warning
-  if absent), `config.json` parses as a JSON object, and archive paths are safe. This spends no
-  build and mutates nothing, but it is **not** a local check — `files` and `binaryFiles` travel
-  to the server either way.
-- **By the server, at build admission**: everything else, including the full `config.json`
-  contract. A clean `validateOnly` report is necessary but not sufficient.
+- **By `deployCustomTool(validateOnly=True)`**: `Dockerfile` and `run.sh` present, archive paths
+  safe, and the server's full `config.json` contract, with the message a build would give. This
+  spends no build and mutates nothing, but it is **not** a local check — `files` and `binaryFiles`
+  travel to the server either way.
+- **By the server, at build admission**: the same `config.json` check, then the image build, which
+  is the first thing to run the `Dockerfile`.
 
 Editing `config.json` and editing the Config tab in the web UI are equivalent; both write the same
 tool record, and neither mints a version on its own.

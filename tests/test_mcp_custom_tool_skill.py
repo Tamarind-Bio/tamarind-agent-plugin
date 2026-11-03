@@ -39,10 +39,8 @@ RULES = [
      r"/app/out/"),
     ('terminal is not success — only publish a Complete version',
      r"Terminal is not success|`Complete` and `error` is null"),
-    ('a missing run.sh is a warning but must block the build',
-     r"One warning is blocking|run_script_missing"),
-    ('the blocking run.sh warning is called out as blocking',
-     r"Treat `run_script_missing` as a hard stop"),
+    ('a missing run.sh is an error, as the build treats it',
+     r"missing `Dockerfile` or `run\.sh` comes back as an error"),
     # The authorization invariant survives the corrected model, but it now has
     # TWO halves: the deploy is the moment execution changes, the publish moves
     # the pin. Both need the user's say-so.
@@ -72,10 +70,12 @@ RULES = [
      r"Deploy without `publish`, poll, then"),
     ('a job is not submitted until the build is terminal',
      r"[Ww]ait for the build to be terminal first"),
-    # Measured: memory 2Gi/4Gi/16Gi each validated clean and were then refused by
-    # the deploy as "config.json is invalid", naming no field. 8Gi deployed.
-    ('validateOnly does not check the resource values in config.json',
-     r"checks the archive, not the values inside it"),
+    # validateOnly once checked only the archive, so configs passed it and the deploy
+    # refused them. It now runs the build's own config check, so it is worth running.
+    ('validateOnly runs the check a build applies to config.json',
+     r"runs the check a build applies to `config.json`"),
+    ('validateOnly reports one config problem at a time',
+     r"one `config\.json` problem at a time"),
     # The rejected deploy still created the tool record, so the corrected retry
     # with expectNew=True 409s and the hint misattributes it to another member.
     ('a rejected deploy still claims the name',
